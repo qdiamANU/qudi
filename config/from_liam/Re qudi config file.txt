@@ -1,0 +1,94 @@
+From:	Liam McGuinness <lpmcguinness@gmail.com>
+Sent:	Friday, 24 November 2017 01:07
+To:	Michael Barson
+Subject:	Re: qudi config file
+Attachments:	setup12_default.cfg
+
+Hi Michael,
+Here is a config file using FPGA fast counter
+
+On Thu, Nov 23, 2017 at 2:05 PM, Liam McGuinness <lpmcguinness@gmail.com> wrote:
+Hi Michael,
+I am sending you the config file that we use for our setup.
+
+You need to comment out, 'myawg', 'mymotor', 'myrotationalmotor'.
+
+For the logic, you wont be using at the moment, 'pulsedmasterlogic', 'sequencegeneratorlogic', 
+'pulseextrationlogic', 'pulsedanalysislgic', pulsedmeasurementlogic', 'gatedcounterlogic', 'magnetlogic, 
+'magnet_motor_interfuse'
+
+It has a nanopositioner with +10, -10 input and a 200x200x25um range. Note that our z-range is only 25 
+microns not 200 like yours, so you need to change z_range to be -200e-6 and 200e-6. To be safe you 
+could connect the NI analogue outputs to an oscilloscope first and check the configuration settings in 
+case you damage the scanner. But I dont think the NI card can put out more than +/-10V anyways.
+
+Regarding the counters, I am not sure exactly how it is programmed. On the old version 2 counters 
+would work. I thought you need 1 counter for confocal scanner (to do timing of sending output to 
+scanner and catch apd counts) and also a separate counter for odmr (to do timing of sending output to 
+SMIQ and catch apd counts). We had a problem if we had 2 apds connected to NI separately then we 
+needed an extra counter. But maybe they have done something different in the new version. It might 
+have something to do with the scanner_clock_frequency being independent of the clock_frequency.
+
+If you have 2 cards then it should work. Unless there is some problem connecting to the NI counters. It 
+could also be some error in the confocal scanner module as you have a different NI card, but I think it 
+should be compatible.
+
+I will look for a confi file that is using FPGA pulse generator and FPGA pulse acquisition as they are the 
+most similar to the Swabian instruments card. but I think you will need to write a new hardware file for 
+this instrument. I have attached the hardware files for the FPGA fast counter and pulser that we are 
+using as a template.
+Cheers,
+Liam
+
+
+
+On Wed, Nov 22, 2017 at 10:29 PM, Michael Barson <michael.barson@anu.edu.au> wrote:
+Hi Liam,
+Thanks for the reply!
+We have a TimeTagger and a PulseStreamer from Swabian instruments. A 3 axis nanopositioner from 
+PI (-10V,10V analog input 200x200x200 um range). SMIQ 03 microwave generator, DAQs NI PCI 6289, 
+NI PCI 6229.
+I think I worked out part of my problem, the ni_card.py scanner methods need 4 counters and our 
+card only has two. I put in a separate card so hopefully I can work that out. Using 4 counters does 
+seem a bit greedy, especially since I can use the TimeTagger as a slow counter.
+Pretty much my only problem at the moment is getting the scanner confocal part working, we can 
+count photons and generate pulses.
+And yes! Come to ANU! Canberra is the best! I can introduce you to at least a dozen really serious 
+climbers, many of whom are in our group!
+Michael.
+
+On 23/11/17 08:14, Liam McGuinness wrote:
+Hi Michael,  
+Great that you are using Qudi and i am glad you liked the paper. 
+Sorry for the late reply, I was trying to get my future fellowship application finished so 
+hopefully I can come to ANU.
+For the config file, I can send you some working examples. Maybe if you tell me what 
+hardware you have, then I can send you the best version we have. 
+For example, what scanner do you have for the confocal, what signal generator, pulse 
+generator and timing card?
+Cheers,  
+Liam
+
+On 21 Nov 2017 08:56, "Michael Barson" <michael.barson@anu.edu.au> wrote:
+Hello Liam,
+
+We are getting into the full swing of using qudi at the moment for our new 
+confocal system. It seems great, but there are quite a lot of layers of 
+abstraction to dig through. I was hoping that you could send me an example 
+of a working config file. Not just the example one with the dummy modules 
+being loading. I figure our system will be fairly similar to something you might 
+use and we could use it for reference.
+
+Hope all things are going well for you at Ulm, the continuous sampling paper 
+you put out was really interesting, hopefully something I can get to try in the 
+future!
+
+Thanks,
+
+Michael.
+
+
+
+
+
+
