@@ -43,6 +43,7 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
     _modtype = 'hardware'
     _gpib_address = ConfigOption('gpib_address', missing='error')
     _gpib_timeout = ConfigOption('gpib_timeout', 10, missing='warn')
+    _vector = ConfigOption('vector',False,missing='warn')
 
     # Indicate how fast frequencies within a list or sweep mode can be changed:
     _FREQ_SWITCH_SPEED = 0.003  # Frequency switching speed in s (acc. to specs)
@@ -141,6 +142,12 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
 
         if mode == 'list':
             self._command_wait(':FREQ:MODE CW')
+
+        if self._vector:
+            self._gpib_connection.write('SOUR:DM:IQ:STAT OFF')
+            self._gpib_connection.write('*WAI')
+            while int(float(self._gpib_connection.query('SOUR:DM:IQ:STAT?'))) != 0:
+                time.sleep(0.2)
 
         self._gpib_connection.write('OUTP:STAT OFF')
         self._gpib_connection.write('*WAI')
@@ -259,6 +266,8 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
         actual_freq = self.get_frequency()
         actual_power = self.get_power()
         return actual_freq, actual_power, mode
+
+    def set_vector(self):
 
     def list_on(self):
         """
