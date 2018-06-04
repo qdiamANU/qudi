@@ -876,9 +876,18 @@ class PulseTrainCounter:
         try:
             self.clear()
         except Exception as e:
-            print str(e)
+            print(str(e))
+
 
 def test():
+
+    counter = PulseTrainCounter('/Dev1/ctr0','/Dev1/ctr1','/Dev1/PFI8')
+    counter.configure(100,0.001)
+    print(counter.run())
+    counter.clear()
+    del(counter)
+
+def test2():
     #stage = nidaqStage(1, 1, 0, '0:2')
     stage = 1
     x = stage._xRange
@@ -887,22 +896,22 @@ def test():
     stage.setPosition(0.3*(x[0]+x[1]), y[0], z[0])
     stage.startCounter()
     time.sleep(0.1)
-    print stage.Count()
+    print(stage.Count())
     stage.stopCounter()
     X = numpy.linspace(x[0], x[1], 100)
     Y = numpy.linspace(y[0], y[1], 100)
     Z = numpy.linspace(z[0], z[1], 100)
-    print stage.ScanLine( numpy.vstack((X,Y,Z)) )
+    print(stage.ScanLine( numpy.vstack((X,Y,Z)) ))
     stage.setPosition(0.7*(x[0]+x[1]), y[0], z[0])
 
-    print 'board 2'
+    print('board 2')
 
     Connect('/dev1/pfi8', '/dev2/pfi8')
 
     counter = CounterBoard(2,1,0)
     counter.startCounter()
     time.sleep(0.1)
-    print counter.Count()
+    print(counter.Count())
     counter.stopCounter()
 
     del stage
@@ -910,4 +919,3 @@ def test():
 
 if __name__=='__main__':
     test()
-
