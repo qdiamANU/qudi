@@ -30,20 +30,7 @@ class ODMRCounterInterface(metaclass=InterfaceMetaclass):
     _modclass = 'interface'
 
     @abc.abstractmethod
-    def set_up_odmr_clock(self, clock_frequency=None, clock_channel=None):
-        """ Configures the hardware clock of the NiDAQ card to give the timing.
-
-        @param float clock_frequency: if defined, this sets the frequency of the
-                                      clock
-        @param str clock_channel: if defined, this is the physical channel of
-                                  the clock
-
-        @return int: error code (0:OK, -1:error)
-        """
-        pass
-
-    @abc.abstractmethod
-    def set_up_odmr(self, counter_channel=None, photon_source=None,
+    def set_up_odmr_counter(self, counter_channel=None, clock_frequency=None, photon_source=None,
                     clock_channel=None, odmr_trigger_channel=None):
         """ Configures the actual counter with a given clock.
 
@@ -53,6 +40,8 @@ class ODMRCounterInterface(metaclass=InterfaceMetaclass):
                                   the photons are to count from
         @param str clock_channel: if defined, this specifies the clock for the
                                   counter
+        @param float clock_frequency: if defined, this sets the frequency of the
+                                      clock
         @param str odmr_trigger_channel: if defined, this specifies the trigger
                                          output for the microwave
 
@@ -82,14 +71,6 @@ class ODMRCounterInterface(metaclass=InterfaceMetaclass):
 
     @abc.abstractmethod
     def close_odmr(self):
-        """ Close the odmr and clean up afterwards.
-
-        @return int: error code (0:OK, -1:error)
-        """
-        pass
-
-    @abc.abstractmethod
-    def close_odmr_clock(self):
         """ Close the odmr and clean up afterwards.
 
         @return int: error code (0:OK, -1:error)

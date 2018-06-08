@@ -437,9 +437,6 @@ class ODMRLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        clock_status = self._odmr_counter.set_up_odmr_clock(clock_frequency=self.clock_frequency)
-        if clock_status < 0:
-            return -1
 
         counter_status = self._odmr_counter.set_up_odmr()
         if counter_status < 0:

@@ -33,95 +33,129 @@ class PulseTrainCounter(Base, ODMRCounterInterface):
 
         pass
 
-    def set_up_odmr(self, counter_channel=None, photon_source=None,
-                    clock_channel=None, odmr_trigger_channel=None):
+    def set_up_odmr(self, counter_channel=None, clock_frequency=None, photon_source=None,
+                    clock_channel=None, odmr_trigger_channel=None, duty_cycle=None, max_counts=1e7):
 
         self._counter_channel = counter_channel
         self._photon_source = photon_source
         self._clock_channel = clock_channel
         self._odmr_trigger_channel = odmr_trigger_channel
-
-        self._counter_task = daq.TaskHandle()
-        daq.DAQmxCreateTask('', daq.byref(self._counter_task))
-
-            # ctr0 is used to count photons. Used to count ticks in N+1 gates
-        daq.DAQmxCreateCIPulseWidthChan(self._counter_task,
-                                        self._counter_channel,
-                                        '',
-                                        0.,
-                                        MaxCount * DutyCycle / self._clock_frequency,
-                                        daq.DAQmx_Val_Ticks,
-                                        daq.DAQmx_Val_Rising, '')
-
-        daq.DAQmxSetCIPulseWidthTerm(self._counter_task, self._CounterIn, self._CounterOut + 'InternalOutput')
-        daq.DAQmxSetCICtrTimebaseSrc(self._counter_task, self._CounterIn, self._TickSource)
-
-
-    def set_up_odmr_clock(self, clock_frequency=None, clock_channel=None):
-
         self._clock_frequency = clock_frequency
-        self._clock_channel = clock_channel
+
 
         # nidaq Tasks
-        self._clock_Task = daq.TaskHandle()
-        daq.DAQmxCreateTask('', daq.byref(self._clock_task))
+        try:
+            self._clock_Task = daq.TaskHandle()
+            daq.DAQmxCreateTask('', daq.byref(self._clock_task))
 
 
-        # ctr1 generates a continuous square wave with given duty cycle. This serves simultaneously
-        # as sampling clock for AO (update DAC at falling edge), and as gate for counter (count between
-        # rising and falling edge)
-        daq.DAQmxCreateCOPulseChanFreq(self._clock_task,
-                                       self._clock_channel, '',
-                                       daq.DAQmx_Val_Hz,
-                                       daq.DAQmx_Val_Low,
-                                       0,
-                                       self._clock_frequency,
-                                       DutyCycle)
+            # ctr1 generates a continuous square wave with given duty cycle. This serves simultaneously
+            # as sampling clock for AO (update DAC at falling edge), and as gate for counter (count between
+            # rising and falling edge)
+            daq.DAQmxCreateCOPulseChanFreq(self._clock_task,
+                                           self._clock_channel, '',
+                                           daq.DAQmx_Val_Hz,
+                                           daq.DAQmx_Val_Low,
+                                           0,
+                                           self._clock_frequency,
+                                           duty_cycle)
+
+            self._counter_task = daq.TaskHandle()
+            daq.DAQmxCreateTask('', daq.byref(self._counter_task))
+
+                # ctr0 is used to count photons. Used to count ticks in N+1 gates
+            daq.DAQmxCreateCIPulseWidthChan(self._counter_task,
+                                            self._counter_channel,
+                                            '',
+                                            0.,
+                                            max_counts * duty_cycle / self._clock_frequency,
+                                            daq.DAQmx_Val_Ticks,
+                                            daq.DAQmx_Val_Rising, '')
+
+            daq.DAQmxSetCIPulseWidthTerm(self._counter_task, self._CounterIn, self._CounterOut + 'InternalOutput')
+            daq.DAQmxSetCICtrTimebaseSrc(self._counter_task, self._CounterIn, self._TickSource)
+        except:
+            self.log.exception('Error while setting up ODMR scan.')
+            return -1
+        return 0
+
+    '''
+        def set_up_odmr_clock(self, clock_frequency=None, clock_channel=None):
+
+            self._clock_frequency = clock_frequency
+            self._clock_channel = clock_channel
+    
+            # nidaq Tasks
+            self._clock_Task = daq.TaskHandle()
+            daq.DAQmxCreateTask('', daq.byref(self._clock_task))
+    
+    
+            # ctr1 generates a continuous square wave with given duty cycle. This serves simultaneously
+            # as sampling clock for AO (update DAC at falling edge), and as gate for counter (count between
+            # rising and falling edge)
+            daq.DAQmxCreateCOPulseChanFreq(self._clock_task,
+                                           self._clock_channel, '',
+                                           daq.DAQmx_Val_Hz,
+                                           daq.DAQmx_Val_Low,
+                                           0,
+                                           self._clock_frequency,
+                                           DutyCycle)
+    '''
 
     def set_odmr_length(self, length=100):
 
-        daq.DAQmxCfgImplicitTiming(self._clock_task, daq.DAQmx_Val_ContSamps, SampleLength)
-        daq.DAQmxCfgImplicitTiming(self._counter_task, daq.DAQmx_Val_FiniteSamps, SampleLength)
+        # ADd the 2*(L+1) length stuff that Ulm do
+        self._odmr_length = length
 
-        # read samples from beginning of acquisition, do not overwrite
-        daq.DAQmxSetReadRelativeTo(self._counter_task, daq.DAQmx_Val_CurrReadPos)
-        daq.DAQmxSetReadOffset(self._counter_task, 0)
-        daq.DAQmxSetReadOverWrite(self._counter_task, daq.DAQmx_Val_DoNotOverwriteUnreadSamps)
+        try:
+            daq.DAQmxCfgImplicitTiming(self._clock_task, daq.DAQmx_Val_ContSamps, 2*(self._odmr_length+1))
+            daq.DAQmxCfgImplicitTiming(self._counter_task, daq.DAQmx_Val_FiniteSamps, 2*(self._odmr_length+1))
+
+            # read samples from beginning of acquisition, do not overwrite
+            daq.DAQmxSetReadRelativeTo(self._counter_task, daq.DAQmx_Val_CurrReadPos)
+            daq.DAQmxSetReadOffset(self._counter_task, 0)
+            daq.DAQmxSetReadOverWrite(self._counter_task, daq.DAQmx_Val_DoNotOverwriteUnreadSamps)
+        except:
+            self.log.error('failed to set ODMR length')
+            return -1
+        return 0
 
 
-    def run(self):
+    def count_odmr(self, length = 100):
 
-        self._CIData = np.empty((SampleLength,), dtype=np.uint32)
+        self._CIData = np.empty((length,), dtype=np.uint32)
         self._CINread = daq.int32()
 
-        self._SampleLength = SampleLength
-        self._TaskTimeout = 4 * SampleLength / f
-        self._RWTimeout = RWTimeout
+        self._length = length
+        self._TaskTimeout = 4 * length / self._clock_frequency
+        try:
+            daq.DAQmxStartTask(self._counter_task)
+            daq.DAQmxStartTask(self._clock_task)
+            daq.DAQmxWaitUntilTaskDone(self._counter_task, daq.c_double(self._TaskTimeout))
+            daq.DAQmxReadCounterU32(self._counter_task,
+                                        self._length,
+                                        self._RWTimeout,
+                                        self._CIData,
+                                        self._length,
+                                        daq.byref(self._CINread), None)
+            daq.DAQmxStopTask(self._clock_task)
+            daq.DAQmxStopTask(self._counter_task)
+            return self._CIData
+        except:
+            self.log.error('failed to perform count_odmr')
+            return np.full((len(self.get_odmr_channels()), 1), [-1.])
 
-        daq.DAQmxStartTask(self._counter_task)
-        daq.DAQmxStartTask(self._clock_task)
-        daq.DAQmxWaitUntilTaskDone(self._counter_task, daq.c_double(self._TaskTimeout))
-        daq.DAQmxReadCounterU32(self._counter_task,
-                                    self._SampleLength,
-                                    self._RWTimeout,
-                                    self._CIData,
-                                    self._SampleLength,
-                                    daq.byref(self._CINread), None)
-        daq.DAQmxStopTask(self._clock_task)
-        daq.DAQmxStopTask(self._counter_task)
-        return self._CIData
 
-    def clear(self):
+    def close_odmr(self):
+        daq.DAQmxDisconnectTerms(self._clock_channel + 'InternalOutput', self._odmr_trigger_channel)
         daq.DAQmxClearTask((self._counter_task))
         daq.DAQmxClearTask((self._clock_task))
         del self._counter_task
         del self._clock_task
 
-    def __del__(self):
-        try:
-            self.clear()
-        except Exception as e:
-            print(str(e))
+    def get_odmr_channels(self):
+         return [self._counter_channel]
+
 
 
 def test():
