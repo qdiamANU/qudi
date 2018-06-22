@@ -23,8 +23,9 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-import visa
-import time
+#import visa
+#import time
+from core.util.modules import get_main_dir
 import ctypes
 import os
 
@@ -34,6 +35,10 @@ from interface.microwave_interface import MicrowaveLimits
 from interface.microwave_interface import MicrowaveMode
 from interface.microwave_interface import TriggerEdge
 
+'''
+self._vaunixdll.fnLMS_SetUseInternalSweepTrigger(self._devID,ctypes.c_bool(False))
+self._vaunixdll.fnLMS_GetUseInternalSweepTrigger(self._devID) # 0 -> using external trigger
+'''
 
 class MicrowaveVaunix(Base, MicrowaveInterface):
     """ Hardware control file for Vaunix Microwave Devices.
@@ -51,8 +56,7 @@ class MicrowaveVaunix(Base, MicrowaveInterface):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-
-        path_dll = os.path.join('C:\ProgramData\Anaconda3\DLLs',
+        path_dll = os.path.join(get_main_dir(),
                                 'thirdparty',
                                 'vaunix',
                                 'vnx_fmsynth.dll'
@@ -64,18 +68,16 @@ class MicrowaveVaunix(Base, MicrowaveInterface):
 
         activeDevices = (ctypes.c_uint*64)()
         numofdevs = self._vaunixdll.fnLMS_GetDevInfo(activeDevices)
-        print(numofdevs, activeDevices)
+
         self._sweepMode = True
 
         if numofdevs == 1:
             #device_name = ctypes.c_char_p(pi_devices[0].encode())
             self._devID = activeDevices[0]
             devStatus = self._vaunixdll.fnLMS_GetDeviceStatus(self._devID)
-            print(devStatus)
             err = self._vaunixdll.fnLMS_InitDevice(self._devID)
-            print(err)
             devStatus = self._vaunixdll.fnLMS_GetDeviceStatus(self._devID)
-            print(devStatus)
+
             return 0
 
         elif numofdevs > 1:
@@ -130,7 +132,7 @@ class MicrowaveVaunix(Base, MicrowaveInterface):
         # define	FAST_PULSE_OPTION	0x00000080		// set if the fast pulse mode option is installed"""
 
         devStatus = self._vaunixdll.fnLMS_GetDeviceStatus(self._devID)
-        print(devStatus)
+
         if devStatus == 4 or devStatus == 8:
             is_sweep_active = True
         else:
