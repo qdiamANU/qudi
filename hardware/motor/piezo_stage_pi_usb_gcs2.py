@@ -17,6 +17,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 import time
+from core.util.modules import get_main_dir
 import ctypes
 import os
 
@@ -76,7 +77,7 @@ class PiezoStagePI(Base, MotorInterface):
             @return int error code (0:OK, -1:error)
         """
 
-        path_dll = os.path.join(self.get_main_dir(),
+        path_dll = os.path.join(get_main_dir(),
                                 'thirdparty',
                                 'physik_instrumente',
                                 'PI_GCS2_DLL_x64.dll'
@@ -95,7 +96,6 @@ class PiezoStagePI(Base, MotorInterface):
 
         # split list into elements, check for PI devices
         pi_devices = [device for device in device_list if 'PI' in device]
-
         if len(pi_devices) == 1:
             device_name = ctypes.c_char_p(pi_devices[0].encode())
             self._pidll.PI_ConnectUSB(device_name)
@@ -107,11 +107,13 @@ class PiezoStagePI(Base, MotorInterface):
         else:
             self.log.warning('I cannot find any connected devices with "PI" in their name.')
 
-        if self._pidll.PI_IsConnected(self._devID) is False:
+        if not self._pidll.PI_IsConnected(self._devID):
             return 1
         else:
             self._set_servo_state(True)
             self._configured_constraints = self.get_constraints()
+            #PIdevice.SVO(axis, switchOn);
+            #self._pidll.PI_MOV(self._devID, ctypes.c_char_p('0'.encode()), self._double1d(0 * 1e3))
             return 0
 
     def on_deactivate(self):
@@ -142,18 +144,43 @@ class PiezoStagePI(Base, MotorInterface):
         axis0['channel'] = config['x']['channel']
         axis0['pos_min'] = config['x']['constraints']['pos_min']
         axis0['pos_max'] = config['x']['constraints']['pos_max']
+        axis0['unit'] = 'm'
+        axis0['pos_step'] = 0.0
+        axis0['pos_step'] = 10e-6
+        axis0['vel_min'] = 0.0
+        axis0['vel_max'] = 100.0
+        axis0['vel_step'] = 0.01
+        axis0['acc_min'] = 0.001
+        axis0['acc_max'] = 0.001
+        axis0['acc_step'] = 0.001
 
         axis1 = {}
         axis1['label'] = 'y'
         axis1['channel'] = config['y']['channel']
         axis1['pos_min'] = config['y']['constraints']['pos_min']
         axis1['pos_max'] = config['y']['constraints']['pos_max']
+        axis1['unit'] = 'm'
+        axis1['pos_step'] = 10e-6
+        axis1['vel_min'] = 1.0
+        axis1['vel_max'] = 20.0
+        axis1['vel_step'] = 0.1
+        axis1['acc_min'] = 0.0001
+        axis1['acc_max'] = 0.0001
+        axis1['acc_step'] = 0.001
 
         axis2 = {}
         axis2['label'] = 'z'
         axis2['channel'] = config['z']['channel']
         axis2['pos_min'] = config['z']['constraints']['pos_min']
         axis2['pos_max'] = config['z']['constraints']['pos_max']
+        axis2['unit'] = 'm'
+        axis2['pos_step'] = 10e-6
+        axis2['vel_min'] = 1.0
+        axis2['vel_max'] = 20.0
+        axis2['vel_step'] = 0.1
+        axis2['acc_min'] = 0.0001
+        axis2['acc_max'] = 0.0001
+        axis2['acc_step'] = 0.001
 
         # assign the parameter container for x to a name which will identify it
         constraints[axis0['label']] = axis0
@@ -188,14 +215,14 @@ class PiezoStagePI(Base, MotorInterface):
         """
 
         invalid_axis = set(param_dict) - set(['x', 'y', 'z'])
-
         if invalid_axis:
             for axis in invalid_axis:
                 self.log.warning('Desired axis {axis} is undefined'
                                  .format(axis=axis))
 
-        for axis in ['x', 'y', 'z']:
+        self._configured_constraints = self.get_constraints()
 
+        for axis in ['x', 'y', 'z']:
             if axis in param_dict.keys():
                 if axis == 'x':
                     channel = self._configured_constraints[axis]['channel']
@@ -237,11 +264,10 @@ class PiezoStagePI(Base, MotorInterface):
         axesBuffer = ctypes.c_char_p(''.encode())
 
         err = self._pidll.PI_qPOS(ctypes.c_int(0), axesBuffer, posBuffer)
-
         param_dict = {}
-        param_dict['x'] = posBuffer[0] / 1e6  # unit conversion from communication
-        param_dict['y'] = posBuffer[1] / 1e6  # unit conversion from communication
-        param_dict['z'] = posBuffer[2] / 1e6  # unit conversion from communication
+        param_dict['x'] = posBuffer[0] / 1e3  # unit conversion from communication
+        param_dict['y'] = posBuffer[1] / 1e3  # unit conversion from communication
+        param_dict['z'] = posBuffer[2] / 1e3  # unit conversion from communication
 
         if param_list:
             param_list = [x.lower() for x in param_list]  # make all param_list elements lower case
@@ -329,8 +355,11 @@ class PiezoStagePI(Base, MotorInterface):
         @param int channel: channel of the axis to be moved
         @param float to_pos: desired position in meters
         """
-        newpos = self._double1d(to_pos * 1e6)  # unit conversion for communication
+
+        newpos = self._double1d(to_pos * 1e3)  # unit conversion for communication
         ax = ctypes.c_char_p(channel.encode())
+        #ax = ctypes.c_char_p(channel)
+
         self._pidll.PI_MOV(self._devID, ax, newpos)
         onT = self._bool1d(0)
         while not onT[0]:
