@@ -28,6 +28,7 @@ import time
 import re
 import visa
 import numpy as np
+import ctypes
 from socket import socket, AF_INET, SOCK_STREAM
 from ftplib import FTP
 from collections import OrderedDict
@@ -56,6 +57,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.log.warning('no card found...')
             return 1
 
+        #prepare the card in a defined state
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_RESET)
+
         # read type, function and sn and check for A/D card
         lCardType = int32(0)
         spcm_dwGetParam_i32(hCard, SPC_PCITYP, byref(lCardType))
@@ -66,7 +70,15 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         sCardName = 'M4i.6631-x8'
 
-        spcm_dwSetParam_i32(hCard, SPC_TIMEOUT, 15000)  # timeout 5 s
+        spcm_dwSetParam_i32(hCard, SPC_TIMEOUT, 15000)  # timeout 15 s
+
+        self._active_channels = {'a_ch1' : True,
+                                 'a_ch2' : True,
+                                 'd_ch1' : False,
+                                 'd_ch2' : False,
+                                 'd_ch3' : False,
+                                }
+        self.set_active_channels(self._active_channels)
 
     def on_deactivate(self):
         """ Required tasks to be performed during deactivation of the module.
@@ -198,25 +210,25 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         constraints.sample_rate.step = 1
         constraints.sample_rate.default = 1.25e9
 
-        constraints.a_ch_amplitude.min = 0.08
-        constraints.a_ch_amplitude.max = 2.0
-        constraints.a_ch_amplitude.step = 0.001
-        constraints.a_ch_amplitude.default = 2.0
+        constraints.a_ch_amplitude.min = 0.08*2
+        constraints.a_ch_amplitude.max = 2.0*2
+        constraints.a_ch_amplitude.step = 0.001*2
+        constraints.a_ch_amplitude.default = 2.0*2
 
         #offset is fixed to 0.0V for Spectrum M4i series
         constraints.a_ch_offset.min = 0.0
         constraints.a_ch_offset.max = 0.0
-        constraints.a_ch_offset.step = 0.001
+        constraints.a_ch_offset.step = 0.000
         constraints.a_ch_offset.default = 0.0
 
         constraints.d_ch_low.min = 0.0
         constraints.d_ch_low.max = 0.0
-        constraints.d_ch_low.step = 0.01
+        constraints.d_ch_low.step = 0.00
         constraints.d_ch_low.default = 0.0
 
         constraints.d_ch_high.min = 3.3
         constraints.d_ch_high.max = 3.3
-        constraints.d_ch_high.step = 0.01
+        constraints.d_ch_high.step = 0.00
         constraints.d_ch_high.default = 3.3
 
         constraints.sampled_file_length.min = 80
@@ -264,9 +276,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # channels. Here all possible channel configurations are stated, where only the generic
         # names should be used. The names for the different configurations can be customary chosen.
         activation_conf = OrderedDict()
-        activation_conf['yourconf'] = ['a_ch1', 'a_ch2', 'd_ch1', 'd_ch2', 'd_ch3']
-        #activation_conf['different_conf'] = ['a_ch1', 'd_ch1', 'd_ch2']
-        #activation_conf['something_else'] = ['a_ch2', 'd_ch3', 'd_ch4']
+        activation_conf['all'] = ['a_ch1', 'a_ch2', 'd_ch1', 'd_ch2', 'd_ch3']
+        activation_conf['digital_1'] = ['a_ch1', 'a_ch2', 'd_ch1']
+        activation_conf['digital_2'] = ['a_ch1', 'a_ch2', 'd_ch1', 'd_ch3']
         constraints.activation_config = activation_conf
 
         return constraints
@@ -327,7 +339,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         pass
 
 
-    def get_loaded_asset(self):
+    def   get_loaded_asset(self):
         """ Retrieve the currently loaded asset name of the device.
 
         @return str: Name of the current asset ready to play. (no filename)
@@ -340,7 +352,12 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+
+        spcm_dwInvalidateBuf(self._hCard, SPCM_BUF_DATA)
+        if self._readOutError():
+            return -1
+        else:
+            return 0
 
 
     def get_status(self):
@@ -349,8 +366,19 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return (int, dict): tuple with an interger value of the current status and a corresponding
                              dictionary containing status description for all the possible status
                              variables of the pulse generator hardware.
-        """
-        #Fixme
+
+                             1h Acquisition modes only: the pretrigger area has been filled.
+                             2h The first trigger has been detected.
+                             4h The card has finished its run and is ready.
+                             8h Multi/ABA/Gated acquisition of M4i/M4x/M2p only:
+                                the pretrigger area of one segment has been filled.)
+        """             
+        
+        status = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPC_M2STATUS, byref(status))
+        self._readOutError()
+        self.log.info('M4i6631x8 status: {0:x} (see manual for more information)'.format(status.value))
+
         return (0, {0 : 'dummy status'})
 
 
@@ -362,7 +390,11 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         Do not return a saved sample rate from an attribute, but instead retrieve the current
         sample rate directly from the device.
         """
-        pass
+
+        sample_rate = int64(0)
+        spcm_dwGetParam_i64(self._hCard, SPC_SAMPLERATE, byref(sample_rate))
+        self._readOutError()
+        return float(sample_rate.value)
 
 
     def set_sample_rate(self, sample_rate):
@@ -375,7 +407,16 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         Note: After setting the sampling rate of the device, use the actually set return value for
               further processing.
         """
-        pass
+        constraints = self.get_constraints()
+        if (sample_rate > constraints.sample_rate.max) or (sample_rate < constraints.sample_rate.min):
+            self.log.info('Sample rate is out of constraints for the Spectrum M4i AWG series!\n'
+                          'Method call will be ignored.')
+        else:
+            spcm_dwSetParam_i64(self._hCard, SPC_SAMPLERATE, int32(int(sample_rate)))
+            self._readOutError()
+
+        return self.get_sample_rate()
+
 
 
     def get_analog_level(self, amplitude=None, offset=None):
@@ -410,8 +451,25 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        # Fixme
-        return ({'a_ch1' : 0.2}, {'a_ch1' : 0.0})
+
+        ampl_ch1 = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPC_AMP0, byref(ampl_ch1))  # channel0 amplitude in mV
+        self._readOutError()
+
+        ampl_ch2 = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPC_AMP1, byref(ampl_ch2))  # channel1 amplitude in mV
+        self._readOutError()
+
+        ampl_dict = {'a_ch1': float(ampl_ch1.value*2/1000), 'a_ch2': float(ampl_ch2.value*2/1000)}
+
+        if amplitude is not None:
+            ampl_dict = {key: ampl_dict[key] for key in amplitude}
+        if offset is not None:
+            offset_dict = {key: 0.0 for key in offset}
+        else:
+            offset_dict = {'a_ch1' : 0.0, 'a_ch2' : 0.0}
+
+        return ampl_dict, offset_dict
 
 
     def set_analog_level(self, amplitude=None, offset=None):
@@ -442,8 +500,32 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        #Fixme
-        return ({'a_ch1' : 0.0}, {'a_ch1' : 0.0})
+
+        if offset is not None:
+            self.log.warning('Setting analog offset values is not available for the Spectrum M4i AWG series!\n'
+                             'Method call will be ignored.')
+
+        constraints = self.get_constraints()
+        if 'a_ch1' in amplitude.keys():
+            if (amplitude['a_ch1'] >= constraints.a_ch_amplitude.min) and\
+                (amplitude['a_ch1'] <= constraints.a_ch_amplitude.max):
+
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(amplitude['a_ch1']*1000/2)))  # channel0 amplitude in mV
+                self._readOutError()
+            else:
+                self.log.warning('Amplitude voltage level for the analog output channel 1 is out of constraints for the'
+                                 'Spectrum M4i AWG series!\nMethod call will be ignored.')
+        if 'a_ch2' in amplitude.keys():
+            if (amplitude['a_ch2'] >= constraints.a_ch_amplitude.min) and\
+                (amplitude['a_ch2'] <= constraints.a_ch_amplitude.max):
+
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP1, int32(int(amplitude['a_ch2']*1000/2)))  # channel0 amplitude in mV
+                self._readOutError()
+            else:
+                self.log.warning('Amplitude voltage level for the analog output channel 2 is out of constraints for the'
+                                 'Spectrum M4i AWG series!\nMethod call will be ignored.')
+
+        return self.get_analog_level()
 
 
     def get_digital_level(self, low=None, high=None):
@@ -476,7 +558,18 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        pass
+        constraints = self.get_constraints()
+        voltage_low = constraints.d_ch_low.default
+        voltage_high = constraints.d_ch_high.default
+        low_dict = {'d_ch1': voltage_low, 'd_ch2': voltage_low, 'd_ch3': voltage_low}
+        high_dict = {'d_ch1': voltage_high, 'd_ch2': voltage_high, 'd_ch3': voltage_high}
+
+        if low is not None:
+            low_dict = {key: low_dict[key] for key in low}
+        if high is not None:
+            high_dict = {key: high_dict[key] for key in high}
+
+        return low_dict, high_dict
 
 
     def set_digital_level(self, low=None, high=None):
@@ -506,7 +599,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        pass
+        self.log.warning('Setting the digital voltage levels is not available for the Spectrum M4i AWG series!\n'
+                         'Method call will be ignored.')
+        return self.get_digital_level()
 
 
     def get_active_channels(self, ch=None):
@@ -525,8 +620,39 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         If no parameter (or None) is passed to this method all channel states will be returned.
         """
-        #Fixme
-        return {'a_ch1' : False}
+        #a_ch1 and a_ch2
+        a_channel = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPC_CHENABLE, byref(a_channel))
+        self._readOutError()
+
+        self._active_channels['a_ch1'] = bool(a_channel.value & CHANNEL0)
+        self._active_channels['a_ch2'] = bool(a_channel.value & CHANNEL1)
+
+        #d_ch1
+        x0_mode = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPCM_X0_MODE, byref(x0_mode))
+        self._readOutError()
+        self._active_channels['d_ch1']\
+            = bool(x0_mode.value & SPCM_XMODE_DIGOUT) and bool(x0_mode.value & SPCM_XMODE_DIGOUTSRC_CH0)
+
+        # d_ch2
+        x1_mode = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPCM_X1_MODE, byref(x1_mode))
+        self._readOutError()
+        self._active_channels['d_ch2'] \
+            = bool(x1_mode.value & SPCM_XMODE_DIGOUT) and bool(x1_mode.value & SPCM_XMODE_DIGOUTSRC_CH0)
+
+        # d_ch3
+        x2_mode = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPCM_X2_MODE, byref(x2_mode))
+        self._readOutError()
+        self._active_channels['d_ch3'] \
+            = bool(x2_mode.value & SPCM_XMODE_DIGOUT) and bool(x2_mode.value & SPCM_XMODE_DIGOUTSRC_CH1)
+
+        if ch is None:
+            return self._active_channels
+        else:
+            return {key: self._active_channels[key] for key in ch.keys()}
 
 
     def set_active_channels(self, ch=None):
@@ -550,8 +676,69 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         The hardware itself has to handle, whether separate channel activation is possible.
         """
-        #Fixme
-        return {'a_ch1' : False}
+
+        if ch is None:
+            return self.get_active_channels()
+
+        for channel in ch:
+            if channel in self._active_channels:
+                self._active_channels[channel] = ch[channel]
+            else:
+                self.log.error('Trying to (de)activate channel "{0}". This channel is not present '
+                               'in AWG. Setting channels aborted.'.format(channel))
+
+        # analog channels
+        channel0 = CHANNEL0 * self._active_channels['a_ch1']
+        channel1 = CHANNEL1 * self._active_channels['a_ch2']
+
+        if (self._active_channels['d_ch1'] or self._active_channels['d_ch2']) \
+            and (not self._active_channels['a_ch1']):
+            self.log.warning('a_ch1 disable state is overwritten because d_ch1 or d_ch2 is enabled')
+            channel0 = CHANNEL0
+
+        if self._active_channels['d_ch3'] and (not self._active_channels['a_ch2']):
+            self.log.warning('a_ch2 disable state is overwritten because d_ch3 is enabled')
+            channel1 = CHANNEL1
+
+        if channel0 | channel1:
+            spcm_dwSetParam_i32(self._hCard, SPC_CHENABLE, int32(channel0 | channel1))
+            self._readOutError()
+        else:
+            self.log.info('Disabling all channels is not implemented for the Spectrum M4i AWG series!')
+
+        #digital channels
+        """
+        digital channels are encoded in analog samples for synchonous readout
+        -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
+        
+        current implementation:
+        analog channel 1: bit 0-13: a_ch1
+                          bit   15: d_ch1
+                          bit   14: d_ch2
+        analog channel 2: bit 0-14: a_ch2
+                          bit   15: d_ch3
+        """
+        #d_ch1
+        if self._active_channels['d_ch1']:
+            spcm_dwSetParam_i32(
+                self._hCard, SPCM_X0_MODE, SPCM_XMODE_DIGOUT | SPCM_XMODE_DIGOUTSRC_CH0 | SPCM_XMODE_DIGOUTSRC_BIT15)
+        else:
+            spcm_dwSetParam_i32(self._hCard, SPCM_X0_MODE, SPCM_XMODE_DISABLE)
+        # d_ch2
+        if self._active_channels['d_ch2']:
+            spcm_dwSetParam_i32(
+                self._hCard, SPCM_X1_MODE, SPCM_XMODE_DIGOUT | SPCM_XMODE_DIGOUTSRC_CH0 | SPCM_XMODE_DIGOUTSRC_BIT14)
+        else:
+            spcm_dwSetParam_i32(self._hCard, SPCM_X1_MODE, SPCM_XMODE_DISABLE)
+        # d_ch3
+        if self._active_channels['d_ch3']:
+            spcm_dwSetParam_i32(
+                self._hCard, SPCM_X2_MODE, SPCM_XMODE_DIGOUT | SPCM_XMODE_DIGOUTSRC_CH1 | SPCM_XMODE_DIGOUTSRC_BIT15)
+        else:
+            spcm_dwSetParam_i32(self._hCard, SPCM_X2_MODE, SPCM_XMODE_DISABLE)
+
+        self._active_channels = self.get_active_channels()
+        return self._active_channels
 
 
     def get_uploaded_asset_names(self):
@@ -562,7 +749,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         Unused for pulse generators without sequence storage capability (PulseBlaster, FPGA).
         """
-        #Fixme
+        self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
+                         'Method call will be ignored.')
         return []
 
 
@@ -573,7 +761,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return list: List of all saved asset name strings in the current
                       directory of the host PC.
         """
-        pass
+        self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
+                         'Method call will be ignored.')
+        return []
 
 
     def delete_asset(self, asset_name):
@@ -587,7 +777,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         Unused for pulse generators without sequence storage capability (PulseBlaster, FPGA).
         """
-        pass
+        if asset_name:
+            self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
+                             'Method call will be ignored.')
+        return []
 
 
     def set_asset_dir_on_device(self, dir_path):
@@ -599,7 +792,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         Unused for pulse generators without changeable file structure (PulseBlaster, FPGA).
         """
-        pass
+        if dir_path:
+            self.log.warning('Asset dir paths are not available for the Spectrum M4i AWG series!\n'
+                             'Method call will be ignored.')
+        return 0
 
 
     def get_asset_dir_on_device(self):
@@ -609,7 +805,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         Unused for pulse generators without changeable file structure (i.e. PulseBlaster, FPGA).
         """
-        pass
+
+        return ''
 
 
     def get_interleave(self):
@@ -619,7 +816,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         Will always return False for pulse generator hardware without interleave.
         """
-        pass
+        return False
 
 
     def set_interleave(self, state=False):
@@ -635,7 +832,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         Unused for pulse generator hardware other than an AWG.
         """
-        pass
+        if state:
+            self.log.warning('Interleave mode not available for the Spectrum M4i AWG series!\n'
+                             'Method call will be ignored.')
+        return False
 
 
     def tell(self, command):
@@ -663,7 +863,13 @@ a
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+
+        self._readOutError()
+        if spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_RESET):
+            self._readOutError()
+            return -1
+        else:
+            return 0
 
 
     def has_sequence_mode(self):
@@ -671,34 +877,42 @@ a
 
         @return: bool, True for yes, False for no.
         """
-        pass
 
-    def _testfunction(self, channel, amplitude, offset, numberofsamples=int64(KILO_B(8))):
+        availableModes = int32(0)
+        spcm_dwSetParam_i32(self._hCard, SPC_AVAILCARDMODES, byref(availableModes))
+        self._readOutError()
+        if availableModes.value & SPC_REP_STD_SEQUENCE:
+            return True
+        else:
+            return False
+
+    def _readOutError(self):
+        """checks the error state and prints it out. Errors must be read out before the AWG
+        can accept further commands"""
+        errortext = (ctypes.c_char*ERRORTEXTLEN)()
+        err = spcm_dwGetErrorInfo_i32(self._hCard, None, None, errortext)
+        if err:
+            self.log.warning(errortext.value)
+        return err
+
+    def _testfunction(self, channel, amplitude, offset, numberofsamples=int64(KILO_B(64))):
         """we try to produce a sine wave"""
 
         # setup the mode
         #qwChEnable = uint64(channel+1)
         llMemSamples = numberofsamples
         self.log.info(llMemSamples)
-        llLoops = int64(0)  # loop continuously
-        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_CONTINUOUS)
-        spcm_dwSetParam_i64(self._hCard, SPC_CHENABLE, 1)
-        spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, llMemSamples)
-        spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)
+        llLoops = int64(3)  # loop continuously
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SINGLERESTART) #continuous
+        spcm_dwSetParam_i64(self._hCard, SPC_CHENABLE, CHANNEL0)                  #channel enabled 1
+        spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, llMemSamples)               #replay lenth
+        spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)                      #number of repetitions
 
-        spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 1)
-        #spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 1)
-        #if channel == 0:
-        #    spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 1)
-        #elif channel == 1:
-        #    spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 1)
-        #else:
-        #    print('error')
-        #print(0)
+        spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 1)                       #enable analog output 1
 
-        lSetChannels = int32(0)
+        lSetChannels = int32(0)                                                 #number of activated channels
         spcm_dwGetParam_i32(self._hCard, SPC_CHCOUNT, byref(lSetChannels))
-        lBytesPerSample = int32(0)
+        lBytesPerSample = int32(0)                                              #bytes per sample
         spcm_dwGetParam_i32(self._hCard, SPC_MIINST_BYTESPERSAMPLE, byref(lBytesPerSample))
 
         # setup the trigger mode
@@ -711,8 +925,8 @@ a
         spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK1, 0)
         spcm_dwSetParam_i32(self._hCard, SPC_TRIGGEROUT, 0)
 
-        lChannel = int32(0)
-        spcm_dwSetParam_i32(self._hCard, SPC_AMP0 + lChannel.value * (SPC_AMP1 - SPC_AMP0), int32(1000))
+        spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(1000)) #channel0 amplitude in mV
+        spcm_dwSetParam_i32(self._hCard, SPC_AMP1, int32(1000)) #channel1 amplitude in mV
 
         # setup software buffer
         qwBufferSize = uint64(llMemSamples.value * lBytesPerSample.value * lSetChannels.value)
@@ -738,8 +952,9 @@ a
         # We'll start and wait until the card has finished or until a timeout occurs
         spcm_dwSetParam_i32(self._hCard, SPC_TIMEOUT, 15000)
         print("Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)\n")
-        dwError = spcm_dwSetParam_i32(self._hCard, SPC_M2CMD,
-                                      M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER | M2CMD_CARD_WAITREADY)
-        if dwError == ERR_TIMEOUT:
-            spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
-            print("error: ", dwError)
+        dwError = spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START)
+        #dwError = spcm_dwSetParam_i32(self._hCard, SPC_M2CMD,
+        #                             M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER | M2CMD_CARD_WAITREADY)
+        #if dwError == ERR_TIMEOUT:
+        #    spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
+        #    print("error: ", dwError)
