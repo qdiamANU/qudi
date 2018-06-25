@@ -336,15 +336,15 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        return 0
 
 
-    def   get_loaded_asset(self):
+    def get_loaded_asset(self):
         """ Retrieve the currently loaded asset name of the device.
 
         @return str: Name of the current asset ready to play. (no filename)
         """
-        pass
+        return ""
 
 
     def clear_all(self):
@@ -352,12 +352,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-
-        spcm_dwInvalidateBuf(self._hCard, SPCM_BUF_DATA)
-        if self._readOutError():
-            return -1
-        else:
-            return 0
+        return -1
 
 
     def get_status(self):
@@ -391,8 +386,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         sample rate directly from the device.
         """
 
-        sample_rate = int64(0)
-        spcm_dwGetParam_i64(self._hCard, SPC_SAMPLERATE, byref(sample_rate))
+        sample_rate = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPC_SAMPLERATE, byref(sample_rate))
         self._readOutError()
         return float(sample_rate.value)
 
@@ -412,7 +407,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.log.info('Sample rate is out of constraints for the Spectrum M4i AWG series!\n'
                           'Method call will be ignored.')
         else:
-            spcm_dwSetParam_i64(self._hCard, SPC_SAMPLERATE, int32(int(sample_rate)))
+            spcm_dwSetParam_i32(self._hCard, SPC_SAMPLERATE, int32(int(sample_rate)))
             self._readOutError()
 
         return self.get_sample_rate()
