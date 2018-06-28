@@ -29,6 +29,7 @@ import re
 import visa
 import numpy as np
 import ctypes
+import matplotlib.pyplot as plt
 from socket import socket, AF_INET, SOCK_STREAM
 from ftplib import FTP
 from collections import OrderedDict
@@ -202,10 +203,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         constraints = PulserConstraints()
 
         # The file formats are hardware specific.
-        constraints.waveform_format = ['wfm', 'wfmx']
-        constraints.sequence_format = ['seq', 'seqx']
+        constraints.waveform_format = ['wfm']
+        constraints.sequence_format = ['seq']
 
-        constraints.sample_rate.min = 1
+        constraints.sample_rate.min = 50e6
         constraints.sample_rate.max = 1.25e9
         constraints.sample_rate.step = 1
         constraints.sample_rate.default = 1.25e9
@@ -288,7 +289,14 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 1)  # enable analog output 1
+        spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 1)  # enable analog output 1
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER | M2CMD_CARD_FORCETRIGGER)
+        err = self._readOutError()
+        if err:
+            return -1
+        else:
+            return 0
 
 
     def pulser_off(self):
@@ -296,7 +304,14 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
+        spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 0)  # enable analog output 1
+        spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 0)  # enable analog output 1
+        err = self._readOutError()
+        if err:
+            return -1
+        else:
+            return 0
 
 
     def upload_asset(self, asset_name=None):
@@ -313,7 +328,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         This method has no effect when using pulser hardware without own mass memory
         (i.e. PulseBlaster, FPGA)
         """
-        pass
+        self.log.warning('Uploading assets is not available for the Spectrum M4i AWG series!\n'
+                         'Method call will be ignored.')
+        return 0
 
 
     def load_asset(self, asset_name, load_dict=None):
@@ -336,6 +353,47 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+
+        try:
+            asset_name
+        except NameError:
+            pass
+        else:
+            print(asset_name)
+
+        # setup the mode
+        llLoops = int64(0)  # loop continuously
+        llMemSamples = int64(KILO_B(64))
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SINGLE)  # continuous
+        spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, llMemSamples)  # replay lenth
+        spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)  # number of repetitions
+
+        # setup the trigger mode -> no trigger
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_NONE);
+        #spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_SOFTWARE) # (SW trigger, no output)
+        #spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ANDMASK, 0)
+        #spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK0, 0)
+        #spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK1, 0)
+        #spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK0, 0)
+        #spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK1, 0)
+        #spcm_dwSetParam_i32(self._hCard, SPC_TRIGGEROUT, 0)
+
+        a_ch1_signal = (np.sin(np.arange(llMemSamples.value)/llMemSamples.value * 2*np.pi) *(2**15-1)).astype(dtype=np.int16)
+        a_ch2_signal = (np.cos(np.arange(llMemSamples.value)/llMemSamples.value * 2*np.pi) *(2**15-1)).astype(dtype=np.int16)
+        d_ch1_signal = (np.sin(np.arange(llMemSamples.value)/llMemSamples.value*2 * 2*np.pi) < 0).astype(dtype=np.bool)
+        d_ch2_signal = (np.sin(np.arange(llMemSamples.value)/llMemSamples.value*4 * 2*np.pi) < 0).astype(dtype=np.bool)
+        d_ch3_signal = (np.sin(np.arange(llMemSamples.value)/llMemSamples.value*8 * 2*np.pi) < 0).astype(dtype=np.bool)
+
+        pvBuffer, qwBufferSize = self._create_combined_buffer_data(llMemSamples, {
+            'a_ch1': a_ch1_signal, 'a_ch2': a_ch2_signal,
+            'd_ch1': d_ch1_signal, 'd_ch2': d_ch2_signal, 'd_ch3': d_ch3_signal})
+
+        # we define the buffer for transfer and start the DMA transfer
+        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, int32(0), pvBuffer, uint64(0),
+                               qwBufferSize)
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
+
+        self._readOutError()
         return 0
 
 
@@ -623,6 +681,20 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self._active_channels['a_ch1'] = bool(a_channel.value & CHANNEL0)
         self._active_channels['a_ch2'] = bool(a_channel.value & CHANNEL1)
 
+        #digital channels
+        # FIXME -> configfile
+        """
+        digital channels are encoded in analog samples for synchonous readout
+        -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
+
+        current implementation:
+        analog channel 1: bit 0-13: a_ch1
+                          bit   15: d_ch1
+                          bit   14: d_ch2
+        analog channel 2: bit 0-14: a_ch2
+                          bit   15: d_ch3
+        """
+
         #d_ch1
         x0_mode = int32(0)
         spcm_dwGetParam_i32(self._hCard, SPCM_X0_MODE, byref(x0_mode))
@@ -702,6 +774,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.log.info('Disabling all channels is not implemented for the Spectrum M4i AWG series!')
 
         #digital channels
+        #FIXME -> configfile
         """
         digital channels are encoded in analog samples for synchonous readout
         -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
@@ -800,7 +873,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         Unused for pulse generators without changeable file structure (i.e. PulseBlaster, FPGA).
         """
-
+        if dir_path:
+            self.log.warning('Asset dir paths are not available for the Spectrum M4i AWG series!\n'
+                             'Method call will be ignored.')
         return ''
 
 
@@ -884,11 +959,112 @@ a
     def _readOutError(self):
         """checks the error state and prints it out. Errors must be read out before the AWG
         can accept further commands"""
+        spcm_dwGetParam_i32
         errortext = (ctypes.c_char*ERRORTEXTLEN)()
         err = spcm_dwGetErrorInfo_i32(self._hCard, None, None, errortext)
         if err:
             self.log.warning(errortext.value)
         return err
+
+    def _spcm_dwGetParam_i32(self, lRegister):
+
+        value = int32(0)
+        spcm_dwGetParam_i32(self._hCard, lRegister, byref(value))
+        err = self._readOutError()
+        if err:
+           return -1
+        else:
+            return value.value
+
+    def _spcm_dwSetParam_i32(self, lRegister, plValue):
+        spcm_dwSetParam_i32(self._hCard, lRegister, int32(plValue))
+        err = self._readOutError()
+        if err:
+           return -1
+        else:
+            return 0
+
+    def _create_combined_buffer_data(self, llMemSamples, channel_data):
+        """
+        digital channels are encoded in analog samples for synchonous readout
+        -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
+
+        #FIXME -> configfile
+        current implementation:
+        analog channel 1: bit 0-13: a_ch1
+                          bit   15: d_ch1
+                          bit   14: d_ch2
+        analog channel 2: bit 0-14: a_ch2
+                          bit   15: d_ch3
+        """
+        active_channels = self.get_active_channels()
+
+        for key in channel_data.keys():
+            if channel_data[key].size != llMemSamples.value:
+                self.log.error('Channel data for channel {} has the wrong size!'.format(key))
+                return -1
+
+
+        if not 'a_ch1' in channel_data.keys():
+            a_ch1_data = np.zeros(llMemSamples.value, dtype=np.dtype(np.int16))
+        else:
+            a_ch1_data = channel_data['a_ch1']
+
+        if not 'a_ch2' in channel_data.keys():
+            a_ch2_data = np.zeros(llMemSamples.value, dtype=np.dtype(np.int16))
+        else:
+            a_ch2_data = channel_data['a_ch2']
+
+        if not 'd_ch1' in channel_data.keys():
+            d_ch1_data = np.zeros(llMemSamples.value, dtype=np.dtype('?'))
+        else:
+            d_ch1_data = channel_data['d_ch1']
+
+        if not 'd_ch2' in channel_data.keys():
+            d_ch2_data = np.zeros(llMemSamples.value, dtype=np.dtype('?'))
+        else:
+            d_ch2_data = channel_data['d_ch2']
+
+        if not 'd_ch3' in channel_data.keys():
+            d_ch3_data = np.zeros(llMemSamples.value, dtype=np.dtype('?'))
+        else:
+            d_ch3_data = channel_data['d_ch3']
+
+        if active_channels['d_ch2']:
+            a_ch1_data = (a_ch1_data.astype(np.uint16) >> 2) | (d_ch1_data << 15) | (d_ch2_data << 14)
+        elif active_channels['d_ch1']:
+            a_ch1_data = (a_ch1_data.astype(np.uint16) >> 1) | (d_ch1_data << 15)
+
+        if active_channels['d_ch3']:
+            a_ch2_data = (a_ch2_data.astype(np.uint16) >> 1) | (d_ch3_data << 15)
+
+        if active_channels['a_ch1'] and active_channels['a_ch2']:
+            combined_channel_data = np.vstack((a_ch1_data, a_ch2_data)).ravel('F').astype(np.int16)
+        elif active_channels['a_ch1']:
+            combined_channel_data = a_ch1_data.astype(np.int16)
+        elif active_channels['a_ch2']:
+            combined_channel_data = a_ch2_data.astype(np.int16)
+        else:
+            self.log.error('No channel activated.')
+            return -1
+
+        # setup software buffer
+        chcount = int32(0)  # number of activated channels
+        spcm_dwGetParam_i32(self._hCard, SPC_CHCOUNT, byref(chcount))
+
+        lBytesPerSample = int32(0)  # bytes per sample
+        spcm_dwGetParam_i32(self._hCard, SPC_MIINST_BYTESPERSAMPLE, byref(lBytesPerSample))
+
+        qwBufferSize = uint64(llMemSamples.value * lBytesPerSample.value * chcount.value)
+        pvBuffer = create_string_buffer(qwBufferSize.value)
+
+        # calculate the data
+        pnBuffer = cast(pvBuffer, ptr16)
+        for i in range(0, llMemSamples.value * chcount.value, 1):
+            pnBuffer[i] = int16(combined_channel_data[i])
+
+        return pvBuffer, qwBufferSize
+
 
     def _testfunction(self, channel, amplitude, offset, numberofsamples=int64(KILO_B(64))):
         """we try to produce a sine wave"""
@@ -953,3 +1129,98 @@ a
         #if dwError == ERR_TIMEOUT:
         #    spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
         #    print("error: ", dwError)
+
+    def _testfunction2(self, frequency_1 = 100e6, frequency_2 = 200e6):
+
+        self.pulser_off()
+        # Setup of channel enable, output conditioning as well as trigger setup not shown for simplicity
+
+        #lBytesPerSample = int32(0)
+
+        # Read out used bytes per sample
+        #spcm_dwGetParam_i32(self._hCard, SPC_MIINST_BYTESPERSAMPLE, byref(lBytesPerSample));
+
+        # setup the trigger mode -> no trigger
+        self._readOutError()
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_NONE);
+        # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_SOFTWARE) # (SW trigger, no output)
+        # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ANDMASK, 0)
+        # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK0, 0)
+        # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK1, 0)
+        # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK0, 0)
+        # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK1, 0)
+        # spcm_dwSetParam_i32(self._hCard, SPC_TRIGGEROUT, 0)
+
+        # Setting up the card mode
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SEQUENCE); # enable sequence mode
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_MAXSEGMENTS, 2); # Divide on - board mem in two parts
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_STARTSTEP, 0); # Step#0 is the first step after card start
+
+        # Setting up the data memory and transfer data
+        llMemSamples = int64(KILO_B(64))
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_WRITESEGMENT, 0); # set current configuration switch to segment 0
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_SEGMENTSIZE, llMemSamples); # define size of current segment 0
+
+        sample_rate = self.get_sample_rate()
+        self._readOutError()
+
+        a_ch1_signal = (np.sin(np.arange(llMemSamples.value) * (frequency_1/sample_rate) * 2 * np.pi) * (2 ** 15 - 1)).astype(
+            dtype=np.int16)
+        a_ch2_signal = np.zeros(llMemSamples.value).astype(dtype=np.int16)
+        d_ch1_signal = np.zeros(llMemSamples.value).astype(dtype=np.bool)
+        d_ch2_signal = np.zeros(llMemSamples.value).astype(dtype=np.bool)
+        d_ch3_signal = np.zeros(llMemSamples.value).astype(dtype=np.bool)
+
+        pvBuffer, qwBufferSize = self._create_combined_buffer_data(llMemSamples, {
+            'a_ch1': a_ch1_signal, 'a_ch2': a_ch2_signal,
+            'd_ch1': d_ch1_signal, 'd_ch2': d_ch2_signal, 'd_ch3': d_ch3_signal})
+
+        # it is assumed, that the Buffer memory has been allocated and is already filled with valid data
+        llMemSamples = int64(KILO_B(64))
+        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize);
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA);
+
+        # Setting up the data memory and transfer data
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_WRITESEGMENT, 1); # set current configuration switch to segment 1
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_SEGMENTSIZE, llMemSamples); # define size of current segment 1
+
+        a_ch1_signal = np.zeros(llMemSamples.value).astype(dtype=np.int16)
+        a_ch2_signal = (np.sin(np.arange(llMemSamples.value) * (frequency_2 / sample_rate) * 2 * np.pi) * (2 ** 15 - 1)).astype(
+            dtype=np.int16)
+        d_ch1_signal = np.zeros(llMemSamples.value).astype(dtype=np.bool)
+        d_ch2_signal = np.zeros(llMemSamples.value).astype(dtype=np.bool)
+        d_ch3_signal = np.zeros(llMemSamples.value).astype(dtype=np.bool)
+
+        pvBuffer, qwBufferSize = self._create_combined_buffer_data(llMemSamples, {
+            'a_ch1': a_ch1_signal, 'a_ch2': a_ch2_signal,
+            'd_ch1': d_ch1_signal, 'd_ch2': d_ch2_signal, 'd_ch3': d_ch3_signal})
+        # it is assumed, that the Buffer memory has been allocated and is already filled with valid data
+        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize);
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA);
+
+        # Setting up the sequence memory(Only two steps used here as an example)
+        lStep = 0; # current step is Step  # 0
+        llSegment = 0; # associated with memory
+        llLoop = 1; # Pattern will be repeated 10 times
+        llNext = 1; # Next step is Step  # 1
+        llCondition = SPCSEQ_ENDLOOPONTRIG; # Unconditionally leave current step
+
+        # combine all the parameters to one int64 bit value
+        llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment));
+        spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, llValue);
+
+        lStep = 1; # current step is Step  # 1
+        llSegment = 1; # associated with memory segment 1
+        llLoop = 1; # Pattern will be repeated once before condition is checked
+        llNext = 0; # Next step is Step  # 0
+        llCondition = SPCSEQ_ENDLOOPONTRIG; # Repeat current step until a trigger has occurred
+        llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment));
+        spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, llValue);
+
+        # Start the card
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER);
+
+        # ... wait here or do something else ...
+
+        #Stop the card
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP);
