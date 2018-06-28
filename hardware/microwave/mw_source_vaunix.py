@@ -337,7 +337,7 @@ class MicrowaveVaunix(Base, MicrowaveInterface):
         """
         """ Right now, this is for Vaunix Lab Brick LMS-203 only."""
         limits = MicrowaveLimits()
-        limits.supported_modes = (MicrowaveMode.CW, MicrowaveMode.LIST)
+        limits.supported_modes = (MicrowaveMode.CW)
 
         limits.min_frequency = 10e9 #unit: Hz
         limits.max_frequency = 20e9 #unit: Hz
