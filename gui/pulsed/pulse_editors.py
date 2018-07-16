@@ -707,7 +707,6 @@ class BlockOrganizer:
         for row_index, (pulse_block, repetitions) in enumerate(ensemble.block_list):
             column = self._cfg_param_pb['pulse_block']
             self.set_element(row_index, column, pulse_block.name)
-            print(pulse_block.name)
             column = self._cfg_param_pb['repetitions']
             self.set_element(row_index, column, int(repetitions))
         return

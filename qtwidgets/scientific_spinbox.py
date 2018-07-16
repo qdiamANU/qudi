@@ -928,7 +928,8 @@ class ScienDSpinBox(QtWidgets.QAbstractSpinBox):
                         step = max(step, self.__minimalStep)
                 value += s * step
         else:
-            value = value + max(self.__minimalStep * n, self.__singleStep * n)
+            step = max(self.__singleStep, self.__minimalStep)
+            value += step*n
         self.setValue(value)
         return
 

@@ -31,10 +31,10 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
     _modtype = 'hardware'
 
     _channel_apd_0 = ConfigOption('timetagger_channel_apd_0', missing='error')
-    _channel_apd_1 = ConfigOption('timetagger_channel_apd_1', missing='error')
+    _channel_apd_1 = ConfigOption('timetagger_channel_apd_1')
     _channel_detect = ConfigOption('timetagger_channel_detect', missing='error')
-    _channel_sequence = ConfigOption('timetagger_channel_sequence', missing='error')
-    _sum_channels = ConfigOption('timetagger_sum_channels', True, missing='warn')
+    _channel_sequence = ConfigOption('timetagger_channel_sequence')
+    _sum_channels = ConfigOption('timetagger_sum_channels', False)
 
     def on_activate(self):
         """ Connect and configure the access to the FPGA.
@@ -54,6 +54,8 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
 
         self.log.info('TimeTagger (fast counter) configured to use  channel {0}'
                       .format(self._channel_apd))
+
+        self._tagger.setTestSignal(0, True)
 
         self.statusvar = 0
 

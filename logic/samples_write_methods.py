@@ -42,6 +42,7 @@ class SamplesWriteMethods():
         self._write_to_file['seqx'] = self._write_seqx
         self._write_to_file['fpga'] = self._write_fpga
         self._write_to_file['pstream'] = self._write_pstream
+        self._write_to_file['npy'] = self._write_numpy_array
         return
 
     def _write_wfmx(self, name, analog_samples, digital_samples, total_number_of_samples,
@@ -543,6 +544,89 @@ class SamplesWriteMethods():
               'event_jump_to' : -1=to next; 0= nothing happens; int_num in [1:8000]
         """
         pass
+
+    def _write_wfmx(self, name, analog_samples, digital_samples, total_number_of_samples,
+                    is_first_chunk, is_last_chunk):
+        """
+        Appends a sampled chunk of a whole waveform to a wfmx-file. Create the file
+        if it is the first chunk.
+        If both flags (is_first_chunk, is_last_chunk) are set to TRUE it means
+        that the whole ensemble is written as a whole in one big chunk.
+
+        @param name: string, represents the name of the sampled ensemble
+        @param analog_samples: float32 numpy ndarray, contains the
+                                       samples for the analog channels that
+                                       are to be written by this function call.
+        @param digital_samples: bool numpy ndarray, contains the samples
+                                      for the digital channels that
+                                      are to be written by this function call.
+        @param total_number_of_samples: int, The total number of samples in the
+                                        entire waveform. Has to be known it advance.
+        @param is_first_chunk: bool, indicates if the current chunk is the
+                               first write to this file.
+        @param is_last_chunk: bool, indicates if the current chunk is the last
+                              write to this file.
+
+        @return list: the list contains the string names of the created files for the passed
+                      presampled arrays
+        """
+        return
+
+    def _write_numpy_array(self, name, analog_samples, digital_samples, total_number_of_samples,
+                    is_first_chunk, is_last_chunk):
+        """
+        Appends a sampled chunk of a whole waveform to a wfmx-file. Create the file
+        if it is the first chunk.
+        If both flags (is_first_chunk, is_last_chunk) are set to TRUE it means
+        that the whole ensemble is written as a whole in one big chunk.
+
+        @param name: string, represents the name of the sampled ensemble
+        @param analog_samples: float32 numpy ndarray, contains the
+                                       samples for the analog channels that
+                                       are to be written by this function call.
+        @param digital_samples: bool numpy ndarray, contains the samples
+                                      for the digital channels that
+                                      are to be written by this function call.
+        @param total_number_of_samples: int, The total number of samples in the
+                                        entire waveform. Has to be known it advance.
+        @param is_first_chunk: bool, indicates if the current chunk is the
+                               first write to this file.
+        @param is_last_chunk: bool, indicates if the current chunk is the last
+                              write to this file.
+
+        @return list: the list contains the string names of the created files for the passed
+                      presampled arrays
+        """
+
+        # record the name of the created files
+        created_files = []
+
+        # analyze the activation_config and extract analogue and digital channel numbers
+        number_analog_channels = len([chnl for chnl in self.activation_config if 'a_ch' in chnl])
+        number_digital_channels = len([chnl for chnl in self.activation_config if 'd_ch' in chnl])
+
+        filename = name + '.npy'
+        created_files.append(filename)
+        filepath = os.path.join(self.waveform_dir, filename)
+
+        write_array = np.zeros(digital_samples.shape[1],
+                               dtype='float32, '*number_analog_channels + 'bool, '*number_digital_channels)
+
+        for i in range(number_analog_channels):
+            write_array['f{}'.format(i)] = analog_samples[i][:]
+        for i in range(number_digital_channels):
+            write_array['f{}'.format(i + number_analog_channels)] = digital_samples[i][:]
+
+        # FIXME
+        if is_first_chunk:
+            pass
+        else:
+            existing_array = np.load(filepath)
+            write_array = np.concatenate((existing_array, write_array))
+
+        np.save(filepath, write_array)
+
+        return created_files
 
     def _create_xml_file(self, number_of_samples, temp_dir=''):
         """

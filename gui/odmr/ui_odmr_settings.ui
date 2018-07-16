@@ -31,6 +31,65 @@
        <string>ODMR</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout">
+       <item row="5" column="0">
+        <widget class="QLabel" name="label_6">
+         <property name="font">
+          <font>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Number of Loops:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="7" column="0">
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_2">
+         <property name="font">
+          <font>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="toolTip">
+          <string>That is the inverse time how long the scanner stays at the desired frequency and counts.</string>
+         </property>
+         <property name="text">
+          <string>Clock frequency :</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QDoubleSpinBox" name="clock_frequency_DoubleSpinBox">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>75</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="maximum">
+          <double>10000.000000000000000</double>
+         </property>
+        </widget>
+       </item>
        <item row="0" column="1">
         <widget class="QSpinBox" name="matrix_lines_SpinBox">
          <property name="sizePolicy">
@@ -44,6 +103,9 @@
            <width>75</width>
            <height>16777215</height>
           </size>
+         </property>
+         <property name="minimum">
+          <number>1</number>
          </property>
          <property name="maximum">
           <number>100000</number>
@@ -66,49 +128,91 @@
         </widget>
        </item>
        <item row="2" column="0">
-        <spacer name="verticalSpacer">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>40</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-       <item row="1" column="1">
-        <widget class="QDoubleSpinBox" name="clock_frequency_DoubleSpinBox">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>75</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="maximum">
-          <double>10000.000000000000000</double>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="0">
-        <widget class="QLabel" name="label_2">
+        <widget class="QLabel" name="label_3">
          <property name="font">
           <font>
            <pointsize>10</pointsize>
           </font>
          </property>
-         <property name="toolTip">
-          <string>That is the inverse time how long the scanner stays at the desired frequency and counts.</string>
+         <property name="text">
+          <string>AWG offset in respect to the local oscillator frequency [Hz]:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QDoubleSpinBox" name="awg_offset_frequency_doubleSpinBox">
+         <property name="maximum">
+          <double>400000000.000000000000000</double>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QDoubleSpinBox" name="awg_amplitude_doubleSpinBox">
+         <property name="maximum">
+          <double>4.000000000000000</double>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="1">
+        <widget class="QSpinBox" name="number_of_loops_spinBox">
+         <property name="minimum">
+          <number>1</number>
+         </property>
+         <property name="maximum">
+          <number>100000</number>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QSpinBox" name="number_of_samples_spinBox">
+         <property name="maximum">
+          <number>100000</number>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_4">
+         <property name="font">
+          <font>
+           <pointsize>10</pointsize>
+          </font>
          </property>
          <property name="text">
-          <string>Clock frequency :</string>
+          <string>Amplitude AWG analog output [V p-p]:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="0">
+        <widget class="QLabel" name="label_5">
+         <property name="font">
+          <font>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Number of Samples [kilo-samples]:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QLabel" name="label_7">
+         <property name="font">
+          <font>
+           <pointsize>10</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Sample Rate [samples/s]:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="6" column="1">
+        <widget class="QDoubleSpinBox" name="awg_sample_rate_doubleSpinBox">
+         <property name="minimum">
+          <double>1.000000000000000</double>
+         </property>
+         <property name="maximum">
+          <double>1250000000.000000000000000</double>
          </property>
         </widget>
        </item>
