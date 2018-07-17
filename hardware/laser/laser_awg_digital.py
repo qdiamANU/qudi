@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-This module acts like a laser.
+This module is for controlling a laser that only accepts a digital on/off signal, using an AWG digital output channel
 
 Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,9 +30,10 @@ import time
 
 class Laser_AWG_Digital(Base, SimpleLaserInterface):
     """
-    Lazor dummy
+    This module is for controlling a laser that only accepts a digital on/off signal,
+    using an AWG digital output channel
     """
-    _modclass = 'laserdummy'
+    _modclass = 'laserawgdigital'
     _modtype = 'hardware'
 
     def __init__(self, **kwargs):
@@ -59,21 +60,21 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return (float, float): power range
         """
-        return (0, 0.250)
+        pass
 
     def get_power(self):
         """ Return laser power
 
             @return float: Laser power in watts
         """
-        return self.power_setpoint * random.gauss(1, 0.01)
+        pass
 
     def get_power_setpoint(self):
         """ Return optical power setpoint.
 
             @return float: power setpoint in watts
         """
-        return self.power_setpoint
+        pass
 
     def set_power(self, power):
         """ Set power setpoint.
@@ -82,37 +83,35 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return float: actual new power setpoint
         """
-        self.power_setpoint = power
-        self.current_setpoint = math.sqrt(4*self.power_setpoint)*100
-        return self.power_setpoint
+        pass
 
     def get_current_unit(self):
         """ Get unit for laser current.
 
             @return str: unit
         """
-        return '%'
+        pass
 
     def get_current_range(self):
         """ Get laser current range.
 
             @return (float, float): laser current range
         """
-        return (0, 100)
+        pass
 
     def get_current(self):
         """ Get current laser current
 
             @return float: laser current in current curent units
         """
-        return self.current_setpoint * random.gauss(1, 0.05)
+        pass
 
     def get_current_setpoint(self):
         """ Get laser curent setpoint
 
             @return float: laser current setpoint
         """
-        return self.current_setpoint
+        pass
 
     def set_current(self, current):
         """ Set laser current setpoint
@@ -121,16 +120,14 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return float: actual laser current setpoint
         """
-        self.current_setpoint = current
-        self.power_setpoint = math.pow(self.current_setpoint/100, 2) / 4
-        return self.current_setpoint
+        pass
 
     def allowed_control_modes(self):
         """ Get supported control modes
 
             @return list(): list of supported ControlMode
         """
-        return [ControlMode.POWER, ControlMode.CURRENT]
+        return [ControlMode.POWER]
 
     def get_control_mode(self):
         """ Get the currently active control mode
@@ -199,38 +196,33 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return ShutterState: actual laser shutter state
         """
-        time.sleep(1)
-        self.shutter = state
-        return self.shutter
+        pass
 
     def get_temperatures(self):
         """ Get all available temperatures.
 
             @return dict: dict of temperature namce and value in degrees Celsius
         """
-        return {
-            'psu': 32.2 * random.gauss(1, 0.1),
-            'head': 42.0 * random.gauss(1, 0.2)
-            }
+        pass
 
     def set_temperatures(self, temps):
         """ Set temperatures for lasers with tunable temperatures.
 
             @return {}: empty dict, dummy not a tunable laser
         """
-        return {}
+        pass
 
     def get_temperature_setpoints(self):
         """ Get temperature setpoints.
 
             @return dict: temperature setpoints for temperature tunable lasers
         """
-        return {'psu': 32.2, 'head': 42.0}
+        pass
 
     def get_extra_info(self):
         """ Multiple lines of dignostic information
 
             @return str: much laser, very useful
         """
-        return "Dummy laser v0.9.9\nnot used very much\nvery cheap price very good quality"
+        return "Laser with only digital on/off\n remote control\n e.g. current-pulsed lasers from Stuttgart\n controlled by AWG digital channel"
 
