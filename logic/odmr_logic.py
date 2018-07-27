@@ -440,7 +440,7 @@ class ODMRLogic(GenericLogic):
 
         counter_status = self._odmr_counter.set_up_odmr()
         if counter_status < 0:
-            self._odmr_counter.close_odmr_clock()
+            self._odmr_counter.close_odmr()
             return -1
 
         return 0
@@ -455,12 +455,8 @@ class ODMRLogic(GenericLogic):
         ret_val1 = self._odmr_counter.close_odmr()
         if ret_val1 != 0:
             self.log.error('ODMR counter could not be stopped!')
-        ret_val2 = self._odmr_counter.close_odmr_clock()
-        if ret_val2 != 0:
-            self.log.error('ODMR clock could not be stopped!')
-
         # Check with a bitwise or:
-        return ret_val1 | ret_val2
+        return ret_val1
 
     def start_odmr_scan(self):
         """ Starting an ODMR scan.

@@ -30,7 +30,7 @@ class ODMRCounterInterface(metaclass=InterfaceMetaclass):
     _modclass = 'interface'
 
     @abc.abstractmethod
-    def set_up_odmr_counter(self, counter_channel=None, clock_frequency=None, photon_source=None,
+    def set_up_odmr(self, counter_channel=None, clock_frequency=None, photon_source=None,
                     clock_channel=None, odmr_trigger_channel=None):
         """ Configures the actual counter with a given clock.
 

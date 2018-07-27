@@ -22,9 +22,10 @@ class PulseTrainCounter(Base, ODMRCounterInterface):
 
     # config options
     _clock_frequency = ConfigOption('clock_frequency', 100, missing='warn')
-    _counter_in = ConfigOption('counter_in',  missing='error')
-    _counter_out = ConfigOption('counter_out', missing='error')
+    _counter_channel = ConfigOption('counter_in',  missing='error')
+    _clock_channel = ConfigOption('counter_out', missing='error')
     _photon_source = ConfigOption('photon_source', missing='error')
+    _odmr_trigger_channel = ConfigOption('odmr_trigger_channel', missing='error')
 
     MaxCount = 1.e7
     DutyCycle = 0.8
@@ -34,18 +35,23 @@ class PulseTrainCounter(Base, ODMRCounterInterface):
         pass
 
     def set_up_odmr(self, counter_channel=None, clock_frequency=None, photon_source=None,
-                    clock_channel=None, odmr_trigger_channel=None, duty_cycle=None, max_counts=1e7):
+                    clock_channel=None, odmr_trigger_channel=None, duty_cycle=DutyCycle, max_counts=MaxCount):
 
-        self._counter_channel = counter_channel
-        self._photon_source = photon_source
-        self._clock_channel = clock_channel
-        self._odmr_trigger_channel = odmr_trigger_channel
-        self._clock_frequency = clock_frequency
+        if counter_channel is not None:
+            self._counter_channel = counter_channel
+        if photon_source is not None:
+            self._photon_source = photon_source
+        if clock_channel is not None:
+            self._clock_channel = clock_channel
+        if odmr_trigger_channel is not None:
+            self._odmr_trigger_channel = odmr_trigger_channel
+        if clock_frequency is not None:
+            self._clock_frequency = clock_frequency
 
 
         # nidaq Tasks
         try:
-            self._clock_Task = daq.TaskHandle()
+            self._clock_task = daq.TaskHandle()
             daq.DAQmxCreateTask('', daq.byref(self._clock_task))
 
 
@@ -72,8 +78,8 @@ class PulseTrainCounter(Base, ODMRCounterInterface):
                                             daq.DAQmx_Val_Ticks,
                                             daq.DAQmx_Val_Rising, '')
 
-            daq.DAQmxSetCIPulseWidthTerm(self._counter_task, self._CounterIn, self._CounterOut + 'InternalOutput')
-            daq.DAQmxSetCICtrTimebaseSrc(self._counter_task, self._CounterIn, self._TickSource)
+            daq.DAQmxSetCIPulseWidthTerm(self._counter_task, self._counter_channel, self._clock_channel + 'InternalOutput')
+            daq.DAQmxSetCICtrTimebaseSrc(self._counter_task, self._counter_channel, self._photon_source)
         except:
             self.log.exception('Error while setting up ODMR scan.')
             return -1
@@ -108,8 +114,8 @@ class PulseTrainCounter(Base, ODMRCounterInterface):
         self._odmr_length = length
 
         try:
-            daq.DAQmxCfgImplicitTiming(self._clock_task, daq.DAQmx_Val_ContSamps, 2*(self._odmr_length+1))
-            daq.DAQmxCfgImplicitTiming(self._counter_task, daq.DAQmx_Val_FiniteSamps, 2*(self._odmr_length+1))
+            daq.DAQmxCfgImplicitTiming(self._clock_task, daq.DAQmx_Val_ContSamps, (self._odmr_length))
+            daq.DAQmxCfgImplicitTiming(self._counter_task, daq.DAQmx_Val_FiniteSamps, (self._odmr_length))
 
             # read samples from beginning of acquisition, do not overwrite
             daq.DAQmxSetReadRelativeTo(self._counter_task, daq.DAQmx_Val_CurrReadPos)
@@ -147,11 +153,17 @@ class PulseTrainCounter(Base, ODMRCounterInterface):
 
 
     def close_odmr(self):
-        daq.DAQmxDisconnectTerms(self._clock_channel + 'InternalOutput', self._odmr_trigger_channel)
-        daq.DAQmxClearTask((self._counter_task))
-        daq.DAQmxClearTask((self._clock_task))
-        del self._counter_task
-        del self._clock_task
+        try:
+            daq.DAQmxDisconnectTerms(self._clock_channel + 'InternalOutput', self._odmr_trigger_channel)
+            daq.DAQmxClearTask((self._counter_task))
+            daq.DAQmxClearTask((self._clock_task))
+            del self._counter_task
+            del self._clock_task
+            return 0
+        except:
+            self.log.error('failed to stop ODMR counter tasks')
+            return -1
+
 
     def get_odmr_channels(self):
          return [self._counter_channel]
