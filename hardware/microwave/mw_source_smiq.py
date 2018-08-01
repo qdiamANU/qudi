@@ -33,6 +33,8 @@ from interface.microwave_interface import MicrowaveLimits
 from interface.microwave_interface import MicrowaveMode
 from interface.microwave_interface import TriggerEdge
 
+from hardware.prologix_gpib_controller import PrologixController
+
 
 class MicrowaveSmiq(Base, MicrowaveInterface):
     """ This is the Interface class to define the controls for the simple
@@ -53,6 +55,8 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
     _gpib_address = ConfigOption('gpib_address', missing='error')
     _gpib_timeout = ConfigOption('gpib_timeout', 10, missing='warn')
     _gpib_baud_rate = ConfigOption('gpib_baud_rate', None)
+    _gpib_use_prologix = ConfigOption('gpib_use_prologix', False, missing='warn')
+    _gpib_prologix_com_address = ConfigOption('gpib_prologix_com_address', 'COM4', missing='warn')
 
     # Indicate how fast frequencies within a list or sweep mode can be changed:
     _FREQ_SWITCH_SPEED = 0.003  # Frequency switching speed in s (acc. to specs)
@@ -61,19 +65,32 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
         """ Initialisation performed during activation of the module. """
         self._gpib_timeout = self._gpib_timeout * 1000
         # trying to load the visa connection to the module
-        self.rm = visa.ResourceManager()
-        try:
-            if self._gpib_baud_rate is None:
-                self._gpib_connection = self.rm.open_resource(self._gpib_address,
-                                                            timeout=self._gpib_timeout)
-            else:
-                self._gpib_connection = self.rm.open_resource(self._gpib_address,
-                                                            timeout=self._gpib_timeout,
-                                                            baud_rate=self._gpib_baud_rate)
-        except:
-            self.log.error('This is MWSMIQ: could not connect to GPIB address >>{}<<.'
-                           ''.format(self._gpib_address))
-            raise
+
+        if not self._gpib_use_prologix:
+            self.rm = visa.ResourceManager()
+            try:
+                if self._gpib_baud_rate is None:
+                    self._gpib_connection = self.rm.open_resource(self._gpib_address,
+                                                                timeout=self._gpib_timeout)
+                else:
+                    self._gpib_connection = self.rm.open_resource(self._gpib_address,
+                                                                timeout=self._gpib_timeout,
+                                                                baud_rate=self._gpib_baud_rate)
+            except:
+                self.log.error('This is MWSMIQ: could not connect to GPIB address >>{}<<.'
+                               ''.format(self._gpib_address))
+                raise
+        else:
+            try:
+                self._gpib_connection = PrologixController(self._gpib_prologix_com_address,
+                                                           self._gpib_address,
+                                                           self._gpib_timeout)
+            except:
+                self.log.error('Prologix VISA controller initialisation failed: com:{0} visa:{1}'
+                               ''.format(self._gpib_prologix_com_address, self._gpib_address))
+                raise
+
+
 
         self.log.info('MWSMIQ initialised and connected to hardware.')
         self.model = self._gpib_connection.query('*IDN?').split(',')[1]
