@@ -1136,6 +1136,42 @@ a
         else:
             return 0
 
+    def set_digital_async_on(self,channel):
+        """
+        Turns on one of the Multi Purpose I/O Lines as a digital output
+
+        @param channel int: select channel 0,1,2
+
+        @return int: error code (0:OK, -1:error)
+        """
+        if channel == 0:
+            spcm_dwSetParam_i32(self._hCard, SPCM_X0_MODE, SPCM_XMODE_ASYNCOUT)
+        elif channel == 1:
+            spcm_dwSetParam_i32(self._hCard, SPCM_X1_MODE, SPCM_XMODE_ASYNCOUT)
+        elif channel == 2:
+            spcm_dwSetParam_i32(self._hCard, SPCM_X2_MODE, SPCM_XMODE_ASYNCOUT)
+
+
+        if self._read_out_error():
+            return -1
+        else:
+            return 0
+
+    def set_digital_async_off(self, channel):
+        """
+        Turns off one of the Multi Purpose I/O Lines as a digital output
+
+        @param channel int: select channel 0,1,2
+
+        @return int: error code (0:OK, -1:error)
+        """
+
+
+
+        if self._read_out_error():
+            return -1
+        else:
+            return 0
     def _testfunction(self, channel, amplitude, offset, numberofsamples=int64(KILO_B(64))):
         """we try to produce a sine wave"""
 
@@ -1224,7 +1260,7 @@ a
         # Setting up the card mode
         spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SEQUENCE); # enable sequence mode
         spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_MAXSEGMENTS, 2); # Divide on - board mem in two parts
-        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_STARTSTEP, 0); # Step#0 is the first step after card start
+        # spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_STARTSTEP, 0); # Step#0 is the first step after card start
 
         # Setting up the data memory and transfer data
         llMemSamples = int64(KILO_B(64))
@@ -1293,4 +1329,4 @@ a
         # ... wait here or do something else ...
 
         #Stop the card
-        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP);
+        # spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP);

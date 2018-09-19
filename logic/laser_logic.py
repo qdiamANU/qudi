@@ -144,7 +144,7 @@ class LaserLogic(GenericLogic):
 
     @QtCore.Slot(ControlMode)
     def set_control_mode(self, mode):
-        """ Change whether the laser is controlled by dioe current or output power. """
+        """ Change whether the laser is controlled by diode current or output power. """
         #print('set_control_mode', QtCore.QThread.currentThreadId())
         if mode in self._laser.allowed_control_modes():
             ctrl_mode = ControlMode.MIXED

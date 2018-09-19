@@ -55,7 +55,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         self.log.info('TimeTagger (fast counter) configured to use  channel {0}'
                       .format(self._channel_apd))
 
-        self._tagger.setTestSignal(0, True)
+        #self._tagger.setTestSignal(0, False)
 
         self.statusvar = 0
 

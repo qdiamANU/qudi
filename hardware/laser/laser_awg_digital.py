@@ -39,7 +39,7 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
     def __init__(self, **kwargs):
         """ """
         super().__init__(**kwargs)
-        self.lstate = LaserState.OFF
+        self.LaserState = LaserState.OFF
         self.shutter = ShutterState.NOSHUTTER
         self.mode = ControlMode.POWER
         self.current_setpoint = 0
@@ -60,21 +60,21 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return (float, float): power range
         """
-        pass
+        return (0, 0.250)
 
     def get_power(self):
         """ Return laser power
 
             @return float: Laser power in watts
         """
-        pass
+        return 0
 
     def get_power_setpoint(self):
         """ Return optical power setpoint.
 
             @return float: power setpoint in watts
         """
-        pass
+        return self.power_setpoint
 
     def set_power(self, power):
         """ Set power setpoint.
@@ -83,35 +83,37 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return float: actual new power setpoint
         """
-        pass
+        self.power_setpoint = power
+        self.current_setpoint = math.sqrt(4*self.power_setpoint)*100
+        return self.power_setpoint
 
     def get_current_unit(self):
         """ Get unit for laser current.
 
             @return str: unit
         """
-        pass
+        return '%'
 
     def get_current_range(self):
         """ Get laser current range.
 
             @return (float, float): laser current range
         """
-        pass
+        return (0, 100)
 
     def get_current(self):
         """ Get current laser current
 
             @return float: laser current in current curent units
         """
-        pass
+        return 0
 
     def get_current_setpoint(self):
         """ Get laser curent setpoint
 
             @return float: laser current setpoint
         """
-        pass
+        return self.current_setpoint
 
     def set_current(self, current):
         """ Set laser current setpoint
@@ -120,14 +122,16 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return float: actual laser current setpoint
         """
-        pass
+        self.current_setpoint = current
+        self.power_setpoint = math.pow(self.current_setpoint/100, 2) / 4
+        return self.current_setpoint
 
     def allowed_control_modes(self):
         """ Get supported control modes
 
             @return list(): list of supported ControlMode
         """
-        return [ControlMode.POWER]
+        return [ControlMode.POWER, ControlMode.CURRENT]
 
     def get_control_mode(self):
         """ Get the currently active control mode
@@ -146,41 +150,56 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
         self.mode = control_mode
         return self.mode
 
+    def get_laser_state(self):
+        """ Get laser operation state
+
+        @return LaserState: laser state
+        """
+        # if self.psu == PSUTypes.SMD6000:
+        #     state = self.inst.query('STAT?')
+        # else:
+        #     state = self.inst.query('STATUS?')S
+        # if 'ENABLED' in state:
+        #     return LaserState.ON
+        # elif 'DISABLED' in state:
+        #     return LaserState.OFF
+        # else:
+        #     return LaserState.UNKNOWN
+
+        # check AWG output state, convert into on/off
+
+        return self.LaserState
+
+    def set_laser_state(self, status):
+        """ Set desited laser state.
+
+        @param LaserState status: desired laser state
+        @return LaserState: actual laser state
+        """
+        actstat = self.get_laser_state()
+        if actstat != status:
+            if status == LaserState.ON:
+                # set AWG output high
+                self.LaserState = LaserState.ON
+            elif status == LaserState.OFF:
+                # self.inst.query('OFF')
+                # set AWG output low
+                self.LaserState = LaserState.OFF
+        return self.get_laser_state()
+
     def on(self):
-        """ Turn on laser.
+        """ Turn laser on.
 
             @return LaserState: actual laser state
         """
-        time.sleep(1)
-        self.lstate = LaserState.ON
-        return self.lstate
+        return self.set_laser_state(LaserState.ON)
 
     def off(self):
-        """ Turn off laser.
+        """ Turn laser off.
 
             @return LaserState: actual laser state
         """
-        time.sleep(1)
-        self.lstate = LaserState.OFF
-        return self.lstate
-
-    def get_laser_state(self):
-        """ Get laser state
-
-            @return LaserState: actual laser state
-        """
-        return self.lstate
-
-    def set_laser_state(self, state):
-        """ Set laser state.
-
-            @param LaserState state: desired laser state
-
-            @return LaserState: actual laser state
-        """
-        time.sleep(1)
-        self.lstate = state
-        return self.lstate
+        return self.set_laser_state(LaserState.OFF)
 
     def get_shutter_state(self):
         """ Get laser shutter state
@@ -196,33 +215,38 @@ class Laser_AWG_Digital(Base, SimpleLaserInterface):
 
             @return ShutterState: actual laser shutter state
         """
-        pass
+        time.sleep(1)
+        self.shutter = state
+        return self.shutter
 
     def get_temperatures(self):
         """ Get all available temperatures.
 
             @return dict: dict of temperature namce and value in degrees Celsius
         """
-        pass
+        return {
+            'psu': 0,
+            'head': 0
+            }
 
     def set_temperatures(self, temps):
         """ Set temperatures for lasers with tunable temperatures.
 
             @return {}: empty dict, dummy not a tunable laser
         """
-        pass
+        return {}
 
     def get_temperature_setpoints(self):
         """ Get temperature setpoints.
 
             @return dict: temperature setpoints for temperature tunable lasers
         """
-        pass
+        return {'psu': 32.2, 'head': 42.0}
 
     def get_extra_info(self):
         """ Multiple lines of dignostic information
 
             @return str: much laser, very useful
         """
-        return "Laser with only digital on/off\n remote control\n e.g. current-pulsed lasers from Stuttgart\n controlled by AWG digital channel"
+        return "Laser with only digital on/off remote control, e.g. current-pulsed lasers from Stuttgart\ncontrolled by AWG digital channel"
 

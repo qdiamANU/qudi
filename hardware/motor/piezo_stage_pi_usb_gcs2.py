@@ -198,9 +198,42 @@ class PiezoStagePI(Base, MotorInterface):
                                      to one of the axis.
             @return dict param_dict : dictionary with the current stage positions
         """
-        self.log.info('Function not yet implemented')
 
+        invalid_axis = set(param_dict) - set(['x', 'y', 'z'])
+        if invalid_axis:
+            for axis in invalid_axis:
+                self.log.warning('Desired axis {axis} is undefined'
+                                 .format(axis=axis))
+
+        self._configured_constraints = self.get_constraints()
+
+        for axis in ['x', 'y', 'z']:
+            if axis in param_dict.keys():
+                if axis == 'x':
+                    channel = self._configured_constraints[axis]['channel']
+                    rel_move = param_dict[axis]
+                    current_position = self.get_pos()
+                    print(current_position[axis])
+                    to_position = rel_move + current_position[axis]
+                    self._do_move_abs(axis, channel, to_position)
+                elif axis == 'y':
+                    channel = self._configured_constraints[axis]['channel']
+                    rel_move = param_dict[axis]
+                    current_position = self.get_pos()
+                    print(current_position[axis])
+                    to_position = rel_move + current_position[axis]
+                    self._do_move_abs(axis, channel, to_position)
+                elif axis == 'z':
+                    channel = self._configured_constraints[axis]['channel']
+                    rel_move = param_dict[axis]
+                    current_position = self.get_pos()
+                    print(current_position[axis])
+                    to_position = rel_move + current_position[axis]
+                    self._do_move_abs(axis, channel, to_position)
+
+        param_dict = self.get_pos()
         return param_dict
+
 
     def move_abs(self, param_dict):
         """ Move the stage to an absolute position
@@ -258,7 +291,6 @@ class PiezoStagePI(Base, MotorInterface):
         @return dict param_dict : with keys being the axis labels and item the current
                                   position.
         """
-
         # Now we create an instance of that object
         posBuffer = self._double3d()
         axesBuffer = ctypes.c_char_p(''.encode())
@@ -273,8 +305,10 @@ class PiezoStagePI(Base, MotorInterface):
             param_list = [x.lower() for x in param_list]  # make all param_list elements lower case
             for axis in list(set(param_dict.keys()) - set(param_list)):  # axes not in param_list
                 del param_dict[axis]
+                print(param_dict)
             return param_dict
         else:
+            print(param_dict)
             return param_dict
 
     def get_status(self, param_list=None):

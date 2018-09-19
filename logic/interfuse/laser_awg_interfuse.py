@@ -22,267 +22,239 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 from core.module import Connector
 from logic.generic_logic import GenericLogic
-from interface.magnet_interface import MagnetInterface
+from interface.simple_laser_interface import SimpleLaserInterface
+from interface.simple_laser_interface import LaserState
+from interface.simple_laser_interface import ShutterState
+from interface.simple_laser_interface import ControlMode
 
 
-class MagnetMotorInterfuse(GenericLogic, MagnetInterface):
+class LaserAWGInterfuse(GenericLogic, SimpleLaserInterface):
 
-    _modclass = 'MagnetMotorInterfuse'
+    _modclass = 'LaserAWGInterfuse'
     _modtype = 'interfuse'
 
     # declare connectors, here you can see the interfuse action: the in
     # connector will cope a motor hardware, that means a motor device can
     # connect to the in connector of the logic.
-    motorstage = Connector(interface='MotorInterface')
+    # laser = Connector(interface='SimpleLaserInterface')
+    awg = Connector(interface='PulserInterface')
 
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-        # save the idle state in this class variable, since that is not present
-        # in the actual motor hardware device. Use this variable to decide
-        # whether movement commands are passed to the hardware.
-        self._magnet_idle = False
+        self.LaserState = LaserState.OFF
+        self.shutter = ShutterState.NOSHUTTER
+        self.mode = ControlMode.POWER
+        self.current_setpoint = 0
+        self.power_setpoint = 0
 
     def on_activate(self):
-        """ Initialisation performed during activation of the module.
+        """ Activate module.
         """
+        self._awg_device = self.awg()
 
-        self._motor_device = self.motorstage()
 
     def on_deactivate(self):
-        """ Deinitialisation performed during deactivation of the module.
+        """ Deactivate module.
         """
         pass
 
-    def get_constraints(self):
-        """ Retrieve the hardware constrains from the magnet driving device.
+    def get_power_range(self):
+        """ Return optical power range
 
-        @return dict: dict with constraints for the magnet hardware. These
-                      constraints will be passed via the logic to the GUI so
-                      that proper display elements with boundary conditions
-                      could be made.
+            @return (float, float): power range
         """
-        return self._motor_device.get_constraints()
+        return (0, 0.250)
 
+    def get_power(self):
+        """ Return laser power
 
-    def move_rel(self, param_dict):
-        """ Moves stage in given direction (relative movement)
-
-        @param dict param_dict: dictionary, which passes all the relevant
-                                parameters, which should be changed. Usage:
-                                 {'axis_label': <the-abs-pos-value>}.
-                                 'axis_label' must correspond to a label given
-                                 to one of the axis.
-
-        A smart idea would be to ask the position after the movement.
+            @return float: Laser power in watts
         """
-
-        if not self._magnet_idle:
-            self._motor_device.move_rel(param_dict)
-        else:
-            self.log.warning('Motor Device is in Idle state and cannot '
-                    'perform "move_rel" commands. Couple the Motor to '
-                    'control via the command "set_magnet_idle_state(False)" '
-                    'to have control over its movement.')
-        return param_dict
-
-
-    def move_abs(self, param_dict):
-        """ Moves stage to absolute position (absolute movement)
-
-        @param dict param_dict: dictionary, which passes all the relevant
-                                parameters, which should be changed. Usage:
-                                 {'axis_label': <the-abs-pos-value>}.
-                                 'axis_label' must correspond to a label given
-                                 to one of the axis.
-        """
-        if not self._magnet_idle:
-            self._motor_device.move_abs(param_dict)
-        else:
-            self.log.warning('Motor Device is in Idle state and cannot '
-                    'perform "move_abs" commands. Couple the Motor to '
-                    'control via the command "set_magnet_idle_state (False)" '
-                    'to have control over its movement.')
-        return param_dict
-
-
-    def abort(self):
-        """ Stops movement of the stage
-
-        @return int: error code (0:OK, -1:error)
-        """
-        self._motor_device.abort()
         return 0
 
+    def get_power_setpoint(self):
+        """ Return optical power setpoint.
 
-    def get_pos(self, param_list=None):
-        """ Gets current position of the stage
-
-        @param list param_list: optional, if a specific position of an axis
-                                is desired, then the labels of the needed
-                                axis should be passed in the param_list.
-                                If nothing is passed, then from each axis the
-                                position is asked.
-
-        @return dict: with keys being the axis labels and item the current
-                      position.
+            @return float: power setpoint in watts
         """
-        return self._motor_device.get_pos(param_list)
+        return self.power_setpoint
 
+    def set_power(self, power):
+        """ Set power setpoint.
 
-    def get_status(self, param_list=None):
-        """ Get the status of the position
+            @param float power: power setpoint
 
-        @param list param_list: optional, if a specific status of an axis
-                                is desired, then the labels of the needed
-                                axis should be passed in the param_list.
-                                If nothing is passed, then from each axis the
-                                status is asked.
-
-        @return dict: with the axis label as key and the status number as item.
+            @return float: actual new power setpoint
         """
-        return self._motor_device.get_status(param_list)
+        self.power_setpoint = power
+        self.current_setpoint = math.sqrt(4*self.power_setpoint)*100
+        return self.power_setpoint
 
+    def get_current_unit(self):
+        """ Get unit for laser current.
 
-    def calibrate(self, param_list=None):
-        """ Calibrates the stage.
-
-        @param dict param_list: param_list: optional, if a specific calibration
-                                of an axis is desired, then the labels of the
-                                needed axis should be passed in the param_list.
-                                If nothing is passed, then all connected axis
-                                will be calibrated.
-
-        @return int: error code (0:OK, -1:error)
-
-        After calibration the stage moves to home position which will be the
-        zero point for the passed axis. The calibration procedure will be
-        different for each stage.
+            @return str: unit
         """
-        if not self._magnet_idle:
-            self._motor_device.calibrate(param_list)
-        else:
-            self.log.warning('Motor Device is in Idle state and cannot '
-                    'perform "calibrate" commands. Couple the Motor to '
-                    'control via the command "set_magnet_idle_state(False)" '
-                    'to have control over its movement.')
+        return '%'
 
-    def get_velocity(self, param_list=None):
-        """ Gets the current velocity for all connected axes.
+    def get_current_range(self):
+        """ Get laser current range.
 
-        @param dict param_list: optional, if a specific velocity of an axis
-                                is desired, then the labels of the needed
-                                axis should be passed as the param_list.
-                                If nothing is passed, then from each axis the
-                                velocity is asked.
-
-        @return dict: with the axis label as key and the velocity as item.
+            @return (float, float): laser current range
         """
-        return self._motor_device.get_velocity(param_list)
+        return (0, 100)
 
+    def get_current(self):
+        """ Get current laser current
 
-    def set_velocity(self, param_dict=None):
-        """ Write new value for velocity.
-
-        @param dict param_dict: dictionary, which passes all the relevant
-                                parameters, which should be changed. Usage:
-                                 {'axis_label': <the-velocity-value>}.
-                                 'axis_label' must correspond to a label given
-                                 to one of the axis.
-
-        @return int: error code (0:OK, -1:error)
+            @return float: laser current in current curent units
         """
-        if not self._magnet_idle:
-            self._motor_device.set_velocity(param_dict)
-        else:
-            self.log.warning('Motor Device is in Idle state and cannot '
-                    'perform "set_velocity" commands. Couple the Motor to '
-                    'control via the command "set_magnet_idle_state(False)" '
-                    'to have control over its movement.')
-        return param_dict
-
-
-    def tell(self, param_dict=None):
-        """ Send a command to the magnet.
-
-        @param dict param_dict: dictionary, which passes all the relevant
-                                parameters, which should be changed. Usage:
-                                 {'axis_label': <the command string>}.
-                                 'axis_label' must correspond to a label given
-                                 to one of the axis.
-
-        @return int: error code (0:OK, -1:error)
-        """
-        self.log.info('You can tell the motor dummy as much as you want, it '
-                'has always an open ear for you. But do not expect an '
-                'answer, it is very shy!')
-        return param_dict
-
-    def ask(self, param_dict=None):
-        """ Ask the magnet a question.
-
-        @param dict param_dict: dictionary, which passes all the relevant
-                                parameters, which should be changed. Usage:
-                                 {'axis_label': <the question string>}.
-                                 'axis_label' must correspond to a label given
-                                 to one of the axis.
-
-        @return dict: contains the answer to the specific axis coming from the
-                      magnet. Keywords are the axis names, item names are the
-                      string answers of the axis.
-        """
-
-        self.log.info('The Motor Hardware does not support an "ask" command '
-                'and is not be able to answer the questions "{0}" to the '
-                'axis "{1}"! If you want to talk to someone ask Siri, maybe '
-                'she will listen to you and answer your questions '
-                ':P.'.format(list(param_dict.values()), list(param_dict)))
-
-        return_val = {}
-        for entry in param_dict:
-            return_val[entry] = 'Nothing to say, Motor is quite.'
-
-        return return_val
-
-
-    def initialize(self):
-        """
-        Acts as a switch. When all coils of the superconducting magnet are
-        heated it cools them, else the coils get heated.
-        @return int: (0: Ok, -1:error)
-        """
-        self.log.info('Motor Hardware does not need initialization for '
-                'starting or ending a movement. Nothing will happen.')
         return 0
 
+    def get_current_setpoint(self):
+        """ Get laser curent setpoint
 
-    def set_magnet_idle_state(self, magnet_idle=True):
-        """ Set the magnet to couple/decouple to/from the control.
-
-        @param bool magnet_idle: if True then magnet will be set to idle and
-                                 each movement command will be ignored from the
-                                 hardware file. If False the magnet will react
-                                 on movement changes of any kind.
-
-        @return bool: the actual state which was set in the magnet hardware.
-                        True = idle, decoupled from control
-                        False = Not Idle, coupled to control
+            @return float: laser current setpoint
         """
+        return self.current_setpoint
 
-        self._magnet_idle = magnet_idle
-        return self._magnet_idle
+    def set_current(self, current):
+        """ Set laser current setpoint
 
+            @prarm float current: desired laser current setpoint
 
-    def get_magnet_idle_state(self):
-        """ Retrieve the current state of the magnet, whether it is idle or not.
-
-        @return bool: the actual state which was set in the magnet hardware.
-                        True = idle, decoupled from control
-                        False = Not Idle, coupled to control
+            @return float: actual laser current setpoint
         """
+        self.current_setpoint = current
+        self.power_setpoint = math.pow(self.current_setpoint/100, 2) / 4
+        return self.current_setpoint
 
-        return self._magnet_idle
+    def allowed_control_modes(self):
+        """ Get supported control modes
+
+            @return list(): list of supported ControlMode
+        """
+        return [ControlMode.POWER, ControlMode.CURRENT]
+
+    def get_control_mode(self):
+        """ Get the currently active control mode
+
+            @return ControlMode: active control mode
+        """
+        return self.mode
+
+    def set_control_mode(self, control_mode):
+        """ Set the active control mode
+
+            @param ControlMode control_mode: desired control mode
+
+            @return ControlMode: actual active ControlMode
+        """
+        self.mode = control_mode
+        return self.mode
+
+    def get_laser_state(self):
+        """ Get laser operation state
+
+        @return LaserState: laser state
+        """
+        # if self.psu == PSUTypes.SMD6000:
+        #     state = self.inst.query('STAT?')
+        # else:
+        #     state = self.inst.query('STATUS?')S
+        # if 'ENABLED' in state:
+        #     return LaserState.ON
+        # elif 'DISABLED' in state:
+        #     return LaserState.OFF
+        # else:
+        #     return LaserState.UNKNOWN
+
+        # check AWG output state, convert into on/off
+
+        return self.LaserState
+
+    def set_laser_state(self, status):
+        """ Set desired laser state.
+
+        @param LaserState status: desired laser state
+        @return LaserState: actual laser state
+        """
+        actstat = self.get_laser_state()
+        if actstat != status:
+            if status == LaserState.ON:
+                # set AWG output high
+                # self.awg.pulser_on
+                self.LaserState = LaserState.ON
+            elif status == LaserState.OFF:
+                # self.inst.query('OFF')
+                # set AWG output low
+                # self.awg.pulser_off
+                self.LaserState = LaserState.OFF
+        return self.get_laser_state()
+
+    def on(self):
+        """ Turn laser on.
+
+            @return LaserState: actual laser state
+        """
+        return self.set_laser_state(LaserState.ON)
+
+    def off(self):
+        """ Turn laser off.
+
+            @return LaserState: actual laser state
+        """
+        return self.set_laser_state(LaserState.OFF)
+
+    def get_shutter_state(self):
+        """ Get laser shutter state
+
+            @return ShutterState: actual laser shutter state
+        """
+        return self.shutter
+
+    def set_shutter_state(self, state):
+        """ Set laser shutter state.
+
+            @param ShutterState state: desired laser shutter state
+
+            @return ShutterState: actual laser shutter state
+        """
+        time.sleep(1)
+        self.shutter = state
+        return self.shutter
+
+    def get_temperatures(self):
+        """ Get all available temperatures.
+
+            @return dict: dict of temperature namce and value in degrees Celsius
+        """
+        return {
+            'psu': 0,
+            'head': 0
+            }
+
+    def set_temperatures(self, temps):
+        """ Set temperatures for lasers with tunable temperatures.
+
+            @return {}: empty dict, dummy not a tunable laser
+        """
+        return {}
+
+    def get_temperature_setpoints(self):
+        """ Get temperature setpoints.
+
+            @return dict: temperature setpoints for temperature tunable lasers
+        """
+        return {'psu': 32.2, 'head': 42.0}
+
+    def get_extra_info(self):
+        """ Multiple lines of dignostic information
+
+            @return str: much laser, very useful
+        """
+        return "Laser with only digital on/off remote control, e.g. current-pulsed lasers from Stuttgart\ncontrolled by AWG digital channel"
 
 
 

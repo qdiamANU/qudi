@@ -52,6 +52,8 @@ class TimeTaggerSlowCounter(Base, SlowCounterInterface, ODMRCounterInterface):
         self._tagger.reset()
         self._count_frequency = 50  # Hz
 
+        self._tagger.setTestSignal([0, 1], False)
+
         self.odmr_counter = None
 
         if self._sum_channels and self._channel_apd_1 is None:
@@ -111,7 +113,7 @@ class TimeTaggerSlowCounter(Base, SlowCounterInterface, ODMRCounterInterface):
 
         # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
         # set at startup
-        self._tagger.setTestSignal(0, True)
+        #self._tagger.setTestSignal(0, True)
         #self._tagger.setTestSignal(1, True)
         if self._mode == 1:
             channel_combined = tt.Combiner(self._tagger, channels = [self._channel_apd_0, self._channel_apd_1])
@@ -235,8 +237,8 @@ class TimeTaggerSlowCounter(Base, SlowCounterInterface, ODMRCounterInterface):
         """
         # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
         # set at startup
-        self._tagger.setTestSignal(0, True)
-        # self._tagger.setTestSignal(1, True)
+        self._tagger.setTestSignal(0, False)
+        self._tagger.setTestSignal(1, False)
         if self._mode == 0:
             self._channel_apd = self._channel_apd_0
             self.odmr_counter = tt.CountBetweenMarkers(

@@ -65,6 +65,7 @@ class ConfocalHistoryEntry(QtCore.QObject):
         self.current_x = (self.x_range[0] + self.x_range[1]) / 2
         self.current_y = (self.y_range[0] + self.y_range[1]) / 2
         self.current_z = (self.z_range[0] + self.z_range[1]) / 2
+        print(self.current_z)
         self.current_a = 0.0
 
         # Sets the size of the image to the maximal scanning range

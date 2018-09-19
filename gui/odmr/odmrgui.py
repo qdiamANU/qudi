@@ -219,11 +219,11 @@ class ODMRGui(GUIBase):
         self._sd.clock_frequency_DoubleSpinBox.setValue(self._odmr_logic.clock_frequency)
 
         # additional stuff for AWG-microwave-combo
-        self._sd.number_of_loops_spinBox.setValue(self._odmr_logic._mw_device.number_of_loops)
-        self._sd.number_of_samples_spinBox.setValue(self._odmr_logic._mw_device.number_of_samples)
-        self._sd.awg_amplitude_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_amplitude)
-        self._sd.awg_offset_frequency_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_offset)
-        self._sd.awg_sample_rate_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_sample_rate)
+        #self._sd.number_of_loops_spinBox.setValue(self._odmr_logic._mw_device.number_of_loops)
+        #self._sd.number_of_samples_spinBox.setValue(self._odmr_logic._mw_device.number_of_samples)
+        #self._sd.awg_amplitude_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_amplitude)
+        #self._sd.awg_offset_frequency_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_offset)
+        #self._sd.awg_sample_rate_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_sample_rate)
 
         # fit settings
         self._fsd = FitSettingsDialog(self._odmr_logic.fc)
