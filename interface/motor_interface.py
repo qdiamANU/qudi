@@ -33,7 +33,65 @@ class MotorInterface(metaclass=InterfaceMetaclass):
 
     _modtype = 'MotorInterface'
     _modclass = 'interface'
+    '''
+    @abc.abstractmethod
+    def on_activate(self):
+        """ Initialise and activate the hardware module.
+            @return int error code (0:OK, -1:error)
+        """
 
+        """ Example (from piezo_stage_pi_usb_gcs2.py)
+        path_dll = os.path.join(self.get_main_dir(),
+                                'thirdparty',
+                                'physik_instrumente',
+                                'PI_GCS2_DLL_x64.dll'
+                                )
+        self._pidll = ctypes.windll.LoadLibrary(path_dll)
+
+        # Find out what devices are connected
+        emptybufferpy = ' ' * 1000  # TODO find out how long this should be?
+        charBuffer = ctypes.c_char_p(emptybufferpy.encode())
+        bufSize = ctypes.c_int(1000)
+
+        numofdevs = self._pidll.PI_EnumerateUSB(charBuffer, bufSize, ctypes.c_char_p(b''))
+
+        # read the device list out of ctype charBuffer into a regular python list of strings
+        device_list = charBuffer.value.decode().split('\n')
+
+        # split list into elements, check for PI devices
+        pi_devices = [device for device in device_list if 'PI' in device]
+
+        if len(pi_devices) == 1:
+            device_name = ctypes.c_char_p(pi_devices[0].encode())
+            self._pidll.PI_ConnectUSB(device_name)
+            self._devID = ctypes.c_int(0)
+
+        elif len(pi_devices) > 1:
+            self.log.warning('There is more than 1 PI device connected, I do not know which one to choose!')
+
+        else:
+            self.log.warning('I cannot find any connected devices with "PI" in their name.')
+
+        if self._pidll.PI_IsConnected(self._devID) is False:
+            return 1
+        else:
+            self._set_servo_state(True)
+            self._configured_constraints = self.get_constraints()
+            return 0
+        """
+
+    @abc.abstractmethod
+    def on_deactivate(self):
+        """ Deinitialise and deactivate the hardware module.
+            @return: error code (0:OK, -1:error)
+        """
+
+        """ Example (from piezo_stage_pi_usb_gcs2.py)
+        self._set_servo_state(False)
+        self._pidll.PI_RTO(self._devID, ctypes.c_char_p(''.encode()))
+        return 0
+        """
+    '''
     @abc.abstractmethod
     def get_constraints(self):
         """ Retrieve the hardware constrains from the motor device.

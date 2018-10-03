@@ -19,43 +19,42 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from interface.fast_counter_interface import FastCounterInterface
 import numpy as np
-import TimeTagger as tt
-from core.module import Base, ConfigOption
 import os
+import thirdparty.stuttgart_counter.TimeTagger as tt
+
+from core.module import Base, ConfigOption
+from interface.fast_counter_interface import FastCounterInterface
 
 
-class TimeTaggerFastCounter(Base, FastCounterInterface):
-    _modclass = 'TimeTaggerFastCounter'
+class FastCounterFGAPiP3(Base, FastCounterInterface):
+    _modclass = 'FastCounterFGAPiP3'
     _modtype = 'hardware'
 
-    _channel_apd_0 = ConfigOption('timetagger_channel_apd_0', missing='error')
-    _channel_apd_1 = ConfigOption('timetagger_channel_apd_1')
-    _channel_detect = ConfigOption('timetagger_channel_detect', missing='error')
-    _channel_sequence = ConfigOption('timetagger_channel_sequence')
-    _sum_channels = ConfigOption('timetagger_sum_channels', False)
+    # config options
+    _fpgacounter_serial = ConfigOption('fpgacounter_serial', missing='error')
+    _channel_apd_0 = ConfigOption('fpgacounter_channel_apd_0', 1, missing='warn')
+    _channel_apd_1 = ConfigOption('fpgacounter_channel_apd_1', 3, missing='warn')
+    _channel_detect = ConfigOption('fpgacounter_channel_detect', 2, missing='warn')
+    _channel_sequence = ConfigOption('fpgacounter_channel_sequence', 6, missing='warn')
 
     def on_activate(self):
         """ Connect and configure the access to the FPGA.
         """
-        self._tagger = tt.createTimeTagger()
-        self._tagger.reset()
+        tt._Tagger_setSerial(self._fpgacounter_serial)
+        thirdpartypath = os.path.join(self.get_main_dir(), 'thirdparty')
+        bitfilepath = os.path.join(thirdpartypath, 'stuttgart_counter', 'TimeTaggerController.bit')
+        tt._Tagger_setBitfilePath(bitfilepath)
+        del bitfilepath, thirdpartypath
 
         self._number_of_gates = int(100)
         self._bin_width = 1
         self._record_length = int(4000)
 
-        if self._sum_channels == True:
-            self._channel_combined = tt.Combiner(self._tagger, channels=[self._channel_apd_0, self._channel_apd_1])
-            self._channel_apd = self._channel_combined.getChannel()
-        else:
-            self._channel_apd = self._channel_apd_0
-
-        self.log.info('TimeTagger (fast counter) configured to use  channel {0}'
-                      .format(self._channel_apd))
-
-        #self._tagger.setTestSignal(0, False)
+        self.configure(
+            self._bin_width * 1e-9,
+            self._record_length * 1e-9,
+            self._number_of_gates)
 
         self.statusvar = 0
 
@@ -108,7 +107,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
     def on_deactivate(self):
         """ Deactivate the FPGA.
         """
-        if self.module_state() == 'locked':
+        if self.getState() == 'locked':
             self.pulsed.stop()
         self.pulsed.clear()
         self.pulsed = None
@@ -131,26 +130,22 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         """
         self._number_of_gates = number_of_gates
         self._bin_width = bin_width_s * 1e9
-        self._record_length = 1 + int(record_length_s / bin_width_s)
+        self._record_length = int(record_length_s / bin_width_s)
         self.statusvar = 1
 
-        self.pulsed = tt.TimeDifferences(
-            tagger=self._tagger,
-            click_channel=self._channel_apd,
-            start_channel=self._channel_detect,
-            next_channel=self._channel_detect,
-            sync_channel=tt.CHANNEL_UNUSED,
-            binwidth=int(np.round(self._bin_width * 1000)),
-            n_bins=int(self._record_length),
-            n_histograms=number_of_gates)
-
-        self.pulsed.stop()
-
+        self.pulsed = tt.Pulsed(
+            self._record_length,
+            int(np.round(self._bin_width*1000)),
+            self._number_of_gates,
+            self._channel_apd_0,
+            self._channel_detect,
+            self._channel_sequence
+        )
         return (bin_width_s, record_length_s, number_of_gates)
 
     def start_measure(self):
         """ Start the fast counter. """
-        self.module_state.lock()
+        self.lock()
         self.pulsed.clear()
         self.pulsed.start()
         self.statusvar = 2
@@ -158,9 +153,9 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
 
     def stop_measure(self):
         """ Stop the fast counter. """
-        if self.module_state() == 'locked':
+        if self.getState() == 'locked':
             self.pulsed.stop()
-            self.module_state.unlock()
+            self.unlock()
         self.statusvar = 1
         return 0
 
@@ -169,7 +164,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
 
         Fast counter must be initially in the run state to make it pause.
         """
-        if self.module_state() == 'locked':
+        if self.getState() == 'locked':
             self.pulsed.stop()
             self.statusvar = 3
         return 0
@@ -179,7 +174,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
 
         If fast counter is in pause state, then fast counter will be continued.
         """
-        if self.module_state() == 'locked':
+        if self.getState() == 'locked':
             self.pulsed.start()
             self.statusvar = 2
         return 0

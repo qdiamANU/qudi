@@ -218,6 +218,13 @@ class ODMRGui(GUIBase):
         self._sd.matrix_lines_SpinBox.setValue(self._odmr_logic.number_of_lines)
         self._sd.clock_frequency_DoubleSpinBox.setValue(self._odmr_logic.clock_frequency)
 
+        # additional stuff for AWG-microwave-combo
+        #self._sd.number_of_loops_spinBox.setValue(self._odmr_logic._mw_device.number_of_loops)
+        #self._sd.number_of_samples_spinBox.setValue(self._odmr_logic._mw_device.number_of_samples)
+        #self._sd.awg_amplitude_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_amplitude)
+        #self._sd.awg_offset_frequency_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_offset)
+        #self._sd.awg_sample_rate_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_sample_rate)
+
         # fit settings
         self._fsd = FitSettingsDialog(self._odmr_logic.fc)
         self._fsd.sigFitsUpdated.connect(self._mw.fit_methods_ComboBox.setFitFunctions)
@@ -249,6 +256,13 @@ class ODMRGui(GUIBase):
         self._mw.action_Save.triggered.connect(self.save_data)
         self._mw.action_RestoreDefault.triggered.connect(self.restore_defaultview)
         self._mw.do_fit_PushButton.clicked.connect(self.do_fit)
+
+        # additional stuff for AWG-microwave-combo
+        self._sd.number_of_loops_spinBox.editingFinished.connect(self.change_awg_params)
+        self._sd.number_of_samples_spinBox.editingFinished.connect(self.change_awg_params)
+        self._sd.awg_offset_frequency_doubleSpinBox.editingFinished.connect(self.change_awg_params)
+        self._sd.awg_amplitude_doubleSpinBox.editingFinished.connect(self.change_awg_params)
+        self._sd.awg_sample_rate_doubleSpinBox.editingFinished.connect(self.change_awg_params)
 
         # Control/values-changed signals to logic
         self.sigCwMwOn.connect(self._odmr_logic.mw_cw_on, QtCore.Qt.QueuedConnection)
@@ -717,3 +731,11 @@ class ODMRGui(GUIBase):
 
         self.sigSaveMeasurement.emit(filetag, cb_range, pcile_range)
         return
+
+    def change_awg_params(self):
+        # additional stuff for AWG-microwave-combo
+        self._odmr_logic._mw_device.awg_amplitude = self._sd.awg_amplitude_doubleSpinBox.value()
+        self._odmr_logic._mw_device.awg_offset = self._sd.awg_offset_frequency_doubleSpinBox.value()
+        self._odmr_logic._mw_device.number_of_samples = self._sd.number_of_samples_spinBox.value()
+        self._odmr_logic._mw_device.number_of_loops = self._sd.number_of_loops_spinBox.value()
+        self._odmr_logic._mw_device.awg_sample_rate = self._sd.awg_sample_rate_doubleSpinBox.value()

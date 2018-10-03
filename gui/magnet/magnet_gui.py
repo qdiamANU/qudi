@@ -848,7 +848,7 @@ class MagnetGui(GUIBase):
             func_name = '_update_move_abs_{0}_slider'.format(axis_label)
             setattr(self, func_name, self._function_builder_update_slider(func_name, axis_label, slider_obj))
             update_func_slider_ref = getattr(self, func_name)
-            # dspinbox_ref.valueChanged.connect(update_func_slider_ref)
+            dspinbox_ref.valueChanged.connect(update_func_slider_ref)
 
             # the editingFinished idea has to be implemented properly at first:
             dspinbox_ref.editingFinished.connect(update_func_slider_ref)
@@ -1582,8 +1582,8 @@ class MagnetGui(GUIBase):
         axis0_value = self.get_ref_move_abs_ScienDSpinBox(axis0_name).value()
         axis1_value = self.get_ref_move_abs_ScienDSpinBox(axis1_name).value()
 
-        center_x = axis0_value + 0.5 * self.roi_magnet.size()[0]
-        center_y = axis1_value + 0.5 * self.roi_magnet.size()[1]
+        center_x = axis0_value - 0.5 * self.roi_magnet.size()[0]
+        center_y = axis1_value - 0.5 * self.roi_magnet.size()[1]
         self.roi_magnet.setPos([center_x, center_y])
 
         return 0
@@ -1610,8 +1610,8 @@ class MagnetGui(GUIBase):
         """
         # first get the size of axis0 and axis1 range
         x_range = self._mw.align_2d_axis0_range_DSpinBox.value()
-        y_range = self._mw.align_2d_axis0_range_DSpinBox.value()
-        self.roi_magnet.setSize([x_range/100, y_range/100])
+        y_range = self._mw.align_2d_axis1_range_DSpinBox.value()
+        self.roi_magnet.setSize([x_range, y_range])
 
 
     def update_align_2d_axis0_name(self,axisname):
