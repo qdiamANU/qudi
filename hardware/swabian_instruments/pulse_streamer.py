@@ -44,6 +44,7 @@ class PulseStreamer(Base, PulserInterface):
     _pulsestreamer_ip = ConfigOption('pulsestreamer_ip', '192.168.1.100', missing='warn')
     _laser_channel = ConfigOption('laser_channel', 0, missing='warn')
     _uw_x_channel = ConfigOption('uw_x_channel', 2, missing='warn')
+    _apd_gate_channel = ConfigOption('apd_gate_channel',5, missing='warn')
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -168,7 +169,7 @@ class PulseStreamer(Base, PulserInterface):
         @return int: error code (0:OK, -1:error)
         """
         # stop the pulse sequence
-        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
+        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel, self._apd_gate_channel])
         self.pulse_streamer.constant(pulse_streamer_pb2.PulseMessage(ticks=0, digi=channels, ao0=0, ao1=0))
         self.current_status = 0
         return 0
@@ -224,8 +225,8 @@ class PulseStreamer(Base, PulserInterface):
             pulse_sequence.append(pulse_streamer_pb2.PulseMessage(ticks=pulse[0], digi=pulse[1], ao0=0, ao1=1))
 
         blank_pulse = pulse_streamer_pb2.PulseMessage(ticks=0, digi=0, ao0=0, ao1=0)
-        laser_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=self._convert_to_bitmask([self._laser_channel]), ao0=0, ao1=0)
-        laser_and_uw_channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
+        laser_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=self._convert_to_bitmask([self._laser_channel, self._apd_gate_channel]), ao0=0, ao1=0)
+        laser_and_uw_channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel,self._apd_gate_channel])
         laser_and_uw_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=laser_and_uw_channels, ao0=0, ao1=0)
         self._sequence = pulse_streamer_pb2.SequenceMessage(pulse=pulse_sequence, n_runs=0, initial=laser_on,
             final=laser_and_uw_on, underflow=blank_pulse, start=1)
@@ -548,7 +549,7 @@ a
 
         @return int: error code (0:OK, -1:error)
         """
-        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
+        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel, self._apd_gate_channel])
         self.pulse_streamer.constant(pulse_streamer_pb2.PulseMessage(ticks=0, digi=channels, ao0=0, ao1=0))
         self.pulse_streamer.constant(laser_on)
         return 0
