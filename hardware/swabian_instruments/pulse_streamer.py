@@ -42,8 +42,8 @@ class PulseStreamer(Base, PulserInterface):
     _modtype = 'hardware'
 
     _pulsestreamer_ip = ConfigOption('pulsestreamer_ip', '192.168.1.100', missing='warn')
-    _laser_channel = ConfigOption('laser_channel', 0, missing='warn')
-    _uw_x_channel = ConfigOption('uw_x_channel', 2, missing='warn')
+    _laser_channel = ConfigOption('laser_channel', 1, missing='warn')
+    _uw_x_channel = ConfigOption('uw_x_channel', 3, missing='warn')
     _apd_gate_channel = ConfigOption('apd_gate_channel',5, missing='warn')
 
     def __init__(self, config, **kwargs):
