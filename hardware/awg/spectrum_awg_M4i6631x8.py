@@ -112,101 +112,19 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         PulserConstraints.activation_config differs, since it contain the channel
         configuration/activation information of the form:
-            {<descriptor_str>: <channel_list>,
-             <descriptor_str>: <channel_list>,
+            {<descriptor_str>: <channel_set>,
+             <descriptor_str>: <channel_set>,
              ...}
 
         If the constraints cannot be set in the pulsing hardware (e.g. because it might have no
         sequence mode) just leave it out so that the default is used (only zeros).
-
-        # Example for configuration with default values:
-        constraints = PulserConstraints()
-
-        # The file formats are hardware specific.
-        constraints.waveform_format = ['wfm', 'wfmx']
-        constraints.sequence_format = ['seq', 'seqx']
-
-        constraints.sample_rate.min = 10.0e6
-        constraints.sample_rate.max = 12.0e9
-        constraints.sample_rate.step = 10.0e6
-        constraints.sample_rate.default = 12.0e9
-
-        constraints.a_ch_amplitude.min = 0.02
-        constraints.a_ch_amplitude.max = 2.0
-        constraints.a_ch_amplitude.step = 0.001
-        constraints.a_ch_amplitude.default = 2.0
-
-        constraints.a_ch_offset.min = -1.0
-        constraints.a_ch_offset.max = 1.0
-        constraints.a_ch_offset.step = 0.001
-        constraints.a_ch_offset.default = 0.0
-
-        constraints.d_ch_low.min = -1.0
-        constraints.d_ch_low.max = 4.0
-        constraints.d_ch_low.step = 0.01
-        constraints.d_ch_low.default = 0.0
-
-        constraints.d_ch_high.min = 0.0
-        constraints.d_ch_high.max = 5.0
-        constraints.d_ch_high.step = 0.01
-        constraints.d_ch_high.default = 5.0
-
-        constraints.sampled_file_length.min = 80
-        constraints.sampled_file_length.max = 64800000
-        constraints.sampled_file_length.step = 1
-        constraints.sampled_file_length.default = 80
-
-        constraints.waveform_num.min = 1
-        constraints.waveform_num.max = 32000
-        constraints.waveform_num.step = 1
-        constraints.waveform_num.default = 1
-
-        constraints.sequence_num.min = 1
-        constraints.sequence_num.max = 8000
-        constraints.sequence_num.step = 1
-        constraints.sequence_num.default = 1
-
-        constraints.subsequence_num.min = 1
-        constraints.subsequence_num.max = 4000
-        constraints.subsequence_num.step = 1
-        constraints.subsequence_num.default = 1
-
-        # If sequencer mode is available then these should be specified
-        constraints.repetitions.min = 0
-        constraints.repetitions.max = 65539
-        constraints.repetitions.step = 1
-        constraints.repetitions.default = 0
-
-        constraints.trigger_in.min = 0
-        constraints.trigger_in.max = 2
-        constraints.trigger_in.step = 1
-        constraints.trigger_in.default = 0
-
-        constraints.event_jump_to.min = 0
-        constraints.event_jump_to.max = 8000
-        constraints.event_jump_to.step = 1
-        constraints.event_jump_to.default = 0
-
-        constraints.go_to.min = 0
-        constraints.go_to.max = 8000
-        constraints.go_to.step = 1
-        constraints.go_to.default = 0
-
-        # the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
-        # channels. Here all possible channel configurations are stated, where only the generic
-        # names should be used. The names for the different configurations can be customary chosen.
-        activation_conf = OrderedDict()
-        activation_conf['yourconf'] = ['a_ch1', 'd_ch1', 'd_ch2', 'a_ch2', 'd_ch3', 'd_ch4']
-        activation_conf['different_conf'] = ['a_ch1', 'd_ch1', 'd_ch2']
-        activation_conf['something_else'] = ['a_ch2', 'd_ch3', 'd_ch4']
-        constraints.activation_config = activation_conf
         """
         # Example for configuration with default values:
         constraints = PulserConstraints()
 
-        # The file formats are hardware specific.
-        constraints.waveform_format = ['npy']
-        constraints.sequence_format = ['seq']
+        ## The file formats are hardware specific.
+        #constraints.waveform_format = ['npy']
+        #constraints.sequence_format = ['seq']
 
         constraints.sample_rate.min = 50e6
         constraints.sample_rate.max = 1.25e9
@@ -234,10 +152,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         constraints.d_ch_high.step = 0.00
         constraints.d_ch_high.default = 3.3
 
-        constraints.sampled_file_length.min = 80
-        constraints.sampled_file_length.max = 64800000
-        constraints.sampled_file_length.step = 1
-        constraints.sampled_file_length.default = 80
+        #onstraints.sampled_file_length.min = 80
+        #constraints.sampled_file_length.max = 64800000
+        #constraints.sampled_file_length.step = 1
+        #constraints.sampled_file_length.default = 80
 
         constraints.waveform_num.min = 1
         constraints.waveform_num.max = 32000
@@ -260,6 +178,18 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         constraints.repetitions.step = 1
         constraints.repetitions.default = 0
 
+        #constraints.event_triggers = ['A', 'B']
+        #constraints.flags = ['A', 'B', 'C', 'D']
+        # Device has only one trigger and no flags
+        constraints.event_triggers = ['ON']
+        constraints.flags = list()
+
+        constraints.sequence_steps.min = 0
+        constraints.sequence_steps.max = 4096
+        constraints.sequence_steps.step = 1
+        constraints.sequence_steps.default = 0
+
+        '''
         constraints.trigger_in.min = 0
         constraints.trigger_in.max = 2
         constraints.trigger_in.step = 1
@@ -274,7 +204,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         constraints.go_to.max = 8000
         constraints.go_to.step = 1
         constraints.go_to.default = 0
-
+        '''
         # the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
         # channels. Here all possible channel configurations are stated, where only the generic
         # names should be used. The names for the different configurations can be customary chosen.
@@ -319,7 +249,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             return -1
         else:
             return 0
-
+    '''
     def upload_asset(self, asset_name=None):
         """ Upload an already hardware conform file to the device mass memory.
             Also loads these files into the device workspace if present.
@@ -337,6 +267,61 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         #self.log.warning('Uploading assets is not available for the Spectrum M4i AWG series!\n'
         #                 'Method call will be ignored.')
         return 0
+    '''
+
+    def load_waveform(self, load_dict):
+        """ Loads a waveform to the specified channel of the pulsing device.
+
+        @param dict|list load_dict: a dictionary with keys being one of the
+                                    available channel index and values being the
+                                    name of the already written waveform to load
+                                    into the channel. Examples:
+
+                                        {1: rabi_ch1, 2: rabi_ch2}
+                                    or
+                                        {1: rabi_ch2, 2: rabi_ch1}
+
+                                    If just a list of waveform names if given,
+                                    the channel association will be invoked from
+                                    the channel suffix '_ch1', '_ch2' etc. A
+                                    possible configuration can be e.g.
+
+                                        ['rabi_ch1', 'rabi_ch2', 'rabi_ch3']
+
+        @return dict: Dictionary containing the actually loaded waveforms per
+                      channel.
+
+        For devices that have a workspace (i.e. AWG) this will load the waveform
+        from the device workspace into the channel. For a device without mass
+        memory, this will make the waveform/pattern that has been previously
+        written with self.write_waveform ready to play.
+
+        Please note that the channel index used here is not to be confused with the number suffix
+        in the generic channel descriptors (i.e. 'd_ch1', 'a_ch1'). The channel index used here is
+        highly hardware specific and corresponds to a collection of digital and analog channels
+        being associated to a SINGLE wavfeorm asset.
+        """
+        pass
+
+    def load_sequence(self, sequence_name):
+        """ Loads a sequence to the channels of the device in order to be ready for playback.
+        For devices that have a workspace (i.e. AWG) this will load the sequence from the device
+        workspace into the channels.
+        For a device without mass memory this will make the waveform/pattern that has been
+        previously written with self.write_waveform ready to play.
+
+        @param sequence_name:  dict|list, a dictionary with keys being one of the available channel
+                                      index and values being the name of the already written
+                                      waveform to load into the channel.
+                                      Examples:   {1: rabi_ch1, 2: rabi_ch2} or
+                                                  {1: rabi_ch2, 2: rabi_ch1}
+                                      If just a list of waveform names if given, the channel
+                                      association will be invoked from the channel
+                                      suffix '_ch1', '_ch2' etc.
+
+        @return dict: Dictionary containing the actually loaded waveforms per channel.
+        """
+        pass
 
     def load_asset(self, asset_name, load_dict=None):
         """ Loads a sequence or waveform to the specified channel of the pulsing device.
@@ -403,19 +388,31 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         else:
             return 0
 
-    def get_loaded_asset(self):
-        """ Retrieve the currently loaded asset name of the device.
-
-        @return str: Name of the current asset ready to play. (no filename)
+    def get_loaded_assets(self):
         """
-        return self._loaded_asset
+        Retrieve the currently loaded asset names for each active channel of the device.
+        The returned dictionary will have the channel numbers as keys.
+        In case of loaded waveforms the dictionary values will be the waveform names.
+        In case of a loaded sequence the values will be the sequence name appended by a suffix
+        representing the track loaded to the respective channel (i.e. '<sequence_name>_1').
+
+        @return (dict, str): Dictionary with keys being the channel number and values being the
+                             respective asset loaded into the channel,
+                             string describing the asset type ('waveform' or 'sequence')
+        """
+
+        loaded_assets = dict()
+        current_type = None
+
+        return loaded_assets, current_type
+
 
     def clear_all(self):
         """ Clears all loaded waveforms from the pulse generators RAM/workspace.
 
         @return int: error code (0:OK, -1:error)
         """
-        self._loaded_asset = ''
+        self._loaded_assets = ''
         return -1
 
     def get_status(self):
@@ -763,6 +760,81 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self._read_out_error()
         return self._active_channels
 
+    def write_waveform(self, name, analog_samples, digital_samples, is_first_chunk, is_last_chunk,
+                       total_number_of_samples):
+        """
+        Write a new waveform or append samples to an already existing waveform on the device memory.
+        The flags is_first_chunk and is_last_chunk can be used as indicator if a new waveform should
+        be created or if the write process to a waveform should be terminated.
+
+        NOTE: All sample arrays in analog_samples and digital_samples must be of equal length!
+
+        @param str name: the name of the waveform to be created/append to
+        @param dict analog_samples: keys are the generic analog channel names (i.e. 'a_ch1') and
+                                    values are 1D numpy arrays of type float32 containing the
+                                    voltage samples.
+        @param dict digital_samples: keys are the generic digital channel names (i.e. 'd_ch1') and
+                                     values are 1D numpy arrays of type bool containing the marker
+                                     states.
+        @param bool is_first_chunk: Flag indicating if it is the first chunk to write.
+                                    If True this method will create a new empty wavveform.
+                                    If False the samples are appended to the existing waveform.
+        @param bool is_last_chunk:  Flag indicating if it is the last chunk to write.
+                                    Some devices may need to know when to close the appending wfm.
+        @param int total_number_of_samples: The number of sample points for the entire waveform
+                                            (not only the currently written chunk)
+
+        @return (int, list): Number of samples written (-1 indicates failed process) and list of
+                             created waveform names
+        """
+        pass
+
+    def write_sequence(self, name, sequence_parameters):
+        """
+        Write a new sequence on the device memory.
+
+        @param name: str, the name of the waveform to be created/append to
+        @param sequence_parameters: dict, dictionary containing the parameters for a sequence
+
+        @return: int, number of sequence steps written (-1 indicates failed process)
+        """
+        pass
+
+    def get_waveform_names(self):
+        """ Retrieve the names of all uploaded waveforms on the device.
+
+        @return list: List of all uploaded waveform name strings in the device workspace.
+        """
+        pass
+
+    def get_sequence_names(self):
+        """ Retrieve the names of all uploaded sequence on the device.
+
+        @return list: List of all uploaded sequence name strings in the device workspace.
+        """
+        pass
+
+    def delete_waveform(self, waveform_name):
+        """ Delete the waveform with name "waveform_name" from the device memory.
+
+        @param str waveform_name: The name of the waveform to be deleted
+                                  Optionally a list of waveform names can be passed.
+
+        @return list: a list of deleted waveform names.
+        """
+        pass
+
+    def delete_sequence(self, sequence_name):
+        """ Delete the sequence with name "sequence_name" from the device memory.
+
+        @param str sequence_name: The name of the sequence to be deleted
+                                  Optionally a list of sequence names can be passed.
+
+        @return list: a list of deleted sequence names.
+        """
+        pass
+
+    '''
     def get_uploaded_asset_names(self):
         """ Retrieve the names of all uploaded assets on the device.
 
@@ -785,7 +857,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         #self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
         #                 'Method call will be ignored.')
         return []
+    '''
 
+    '''
     def delete_asset(self, asset_name):
         """ Delete all files associated with an asset with the passed asset_name from the device
             memory (mass storage as well as i.e. awg workspace/channels).
@@ -801,7 +875,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         #    self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
         #                     'Method call will be ignored.')
         return []
+    '''
 
+    '''
     def set_asset_dir_on_device(self, dir_path):
         """ Change the directory where the assets are stored on the device.
 
@@ -815,7 +891,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.log.warning('Asset dir paths are not available for the Spectrum M4i AWG series!\n'
                              'Method call will be ignored.')
         return 0
-
+    
     def get_asset_dir_on_device(self):
         """ Ask for the directory where the hardware conform files are stored on the device.
 
@@ -825,7 +901,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         """
         self.log.warning('Asset dir paths are not available for the Spectrum M4i AWG series!\n'
                          'Method call will be ignored.')
-        return ''
+        return 
+        
+    '''
 
     def get_interleave(self):
         """ Check whether Interleave is ON or OFF in AWG.
@@ -854,6 +932,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              'Method call will be ignored.')
         return False
 
+    '''
     def tell(self, command):
         """ Sends a command string to the device.
 
@@ -871,6 +950,8 @@ a
         @return string: the answer of the device to the 'question' in a string
         """
         pass
+
+    '''
 
     def reset(self):
         """ Reset the device.
@@ -899,7 +980,7 @@ a
         else:
             return False
 
-    def load_sequence(self, channel_data, llLoops=1):
+    def load_sequence_hardcoded(self, channel_data, llLoops=1):
         """ Loads a sequence to the awg
 
         @param channel_data: list of dictionaries with channel_data:
