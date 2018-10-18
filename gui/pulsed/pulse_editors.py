@@ -862,29 +862,9 @@ class EnsembleEditor(QtWidgets.QTableView):
         @param at_position:
         @return: bool, operation success
         """
-<<<<<<< HEAD
         # Sanity checking
         if count < 1:
             return False
-=======
-        # Sanity checks:
-        if ensemble is None:
-            return
-        # clear the block organizer table
-        self.clear_table()
-        # get amout of rows needed for display
-        rows = len(ensemble.block_list)
-        # add as many rows as there are blocks in the ensemble minus 1 because a single row is
-        # already present after clear
-        self.insert_rows(1, rows - 1)
-        # run through all blocks in the block_elements block_list to fill in the row informations
-        for row_index, (pulse_block, repetitions) in enumerate(ensemble.block_list):
-            column = self._cfg_param_pb['pulse_block']
-            self.set_element(row_index, column, pulse_block.name)
-            column = self._cfg_param_pb['repetitions']
-            self.set_element(row_index, column, int(repetitions))
-        return
->>>>>>> qcomp
 
         # Insert new block(s) as row to the table model/view at the specified position.
         # Append new block(s) to the table model/view if no position was given.
