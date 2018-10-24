@@ -57,31 +57,31 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
-        self.log.info('Pulser __init__')
-
+        #self.log.info('Pulser __init__')
+#
         self.connected = False
-        self.sample_rate = 1.25e9
-
+        #self.sample_rate = 1.25e9
+#
         # Deactivate all channels at first:
         self.channel_states = {'a_ch1': False, 'a_ch2': False,
                                'd_ch1': False, 'd_ch2': False, 'd_ch3': False}
-
-        # for each analog channel one value
-        self.amplitude_dict = {'a_ch1': 4.0, 'a_ch2': 4.0}
-        self.offset_dict = {}
-
-        # for each digital channel one value
-        self.digital_high_dict = {'d_ch1': 3.3, 'd_ch2': 3.3, 'd_ch3': 3.3}
-        self.digital_low_dict = {'d_ch1': 0.0, 'd_ch2': 0.0, 'd_ch3': 0.0}
-
-        self.waveform_set = set()
-        self.sequence_dict = dict()
-
+#
+        ## for each analog channel one value
+        #self.amplitude_dict = {'a_ch1': 4.0, 'a_ch2': 4.0}
+        #self.offset_dict = {}
+#
+        ## for each digital channel one value
+        #self.digital_high_dict = {'d_ch1': 3.3, 'd_ch2': 3.3, 'd_ch3': 3.3}
+        #self.digital_low_dict = {'d_ch1': 0.0, 'd_ch2': 0.0, 'd_ch3': 0.0}
+#
+        #self.waveform_set = set()
+        #self.sequence_dict = dict()
+#
         self.current_loaded_assets = dict()
-
-        self.use_sequencer = True
-        #self.interleave = False
-
+#
+        #self.use_sequencer = True
+        ##self.interleave = False
+#
         self.current_status = 0    # that means off, not running.
 
         # FIXME -> initialisation leaves digital output states high
@@ -89,7 +89,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-
         # open card
         hCard = spcm_hOpen(create_string_buffer(b'/dev/spcm0'))
         self._hCard = hCard
@@ -270,13 +269,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:stopped, -1:error, 1:running)
         """
-        #if self.current_status == 0:
-        #    self.current_status = 1
-        #    self.log.info('PulserDummy: Switch on the Output.')
-        #   time.sleep(1)
-        #    return 0
-        #else:
-        #    return -1
 
         if self.current_status == 1:
             self.log.info('Pulser already on!')
@@ -286,12 +278,18 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.current_status = 1
             self.log.info('Pulser: Switch on the output.')
 
-            # FIXME -> this assumes we always want both AWG channels activated, which is inconsistent with the full range of possible AWG configurations
-            if self._spcm_dwGetParam_i32(SPC_ENABLEOUT0) == 0:
-                spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 1)  # enable channel 1: a_ch1, d_ch1, d_ch2
-            if self._spcm_dwGetParam_i32(SPC_ENABLEOUT1) == 0:
-                spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 1)  # enable channel 2: a_ch2, d_ch3
+            # check which AWG channels are required for the current active channels
+            channel0 = CHANNEL0 * (self._active_channels['a_ch1'] or self._active_channels['d_ch1'] or
+                                   self._active_channels['d_ch2'])
+            channel1 = CHANNEL1 * (self._active_channels['a_ch2'] or self._active_channels['d_ch3'])
+            if channel0 == 1:
+                if self._spcm_dwGetParam_i32(SPC_ENABLEOUT0) == 0:
+                    spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 1)  # enable channel 1 output: a_ch1, d_ch1, d_ch2
+            if channel1 == 1:
+                if self._spcm_dwGetParam_i32(SPC_ENABLEOUT1) == 0:
+                    spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 1)  # enable channel 2 output: a_ch2, d_ch3
 
+            # start AWG card and enable trigger
             if self._spcm_dwGetParam_i32(SPC_M2STATUS) & M2STAT_CARD_READY:
                 spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
 
@@ -315,8 +313,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
             spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
 
-            spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 0)  # disable channel 1: a_ch1, d_ch1, d_ch2
-            spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 0)  # disable channel 2: a_ch2, d_ch3
+            spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 0)  # disable channel 1 output: a_ch1, d_ch1, d_ch2
+            spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 0)  # disable channel 2 output: a_ch2, d_ch3
 
         if self._read_out_error():
             return -1
@@ -350,9 +348,23 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return (int, list): Number of samples written (-1 indicates failed process) and list of
                              created waveform names
         """
+
+        """
+                digital channels are encoded in analog samples for synchronous readout
+                -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
+
+                @param llMemSamples: number of samples (must be identical?) for all channels
+                       channel_data: dictionary with channel keys and channel data
+                                     e.g. {'a_ch1': np.array([...]), 'd_ch1': np.array([])}
+
+                @return (ptr16,  int64): pointer to buffer data, buffersize in bytes
+        """
+
         # TODO -> change from PulserDummy
         waveforms = list()
+        number_of_samples = 0
 
+        '''
         # Sanity checks
         if len(analog_samples) > 0:
             number_of_samples = len(analog_samples[list(analog_samples)[0]])
@@ -389,6 +401,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 time.sleep(number_of_samples * 8 / 1024 ** 3)
 
         self.waveform_set.update(waveforms)
+        '''
 
         self.log.info('Waveforms with nametag "{0}" directly written on dummy pulser.'.format(name))
         return number_of_samples, waveforms
@@ -404,6 +417,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return: int, number of sequence steps written (-1 indicates failed process)
         """
         # TODO -> change from PulserDummy
+
+        '''
         # Check if all waveforms are present on virtual device memory
         for waveform_tuple, param_dict in sequence_parameter_list:
             for waveform in waveform_tuple:
@@ -417,7 +432,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         self.sequence_dict[name] = len(sequence_parameter_list[0][0])
         time.sleep(1)
-
+        '''
         self.log.info('Sequence with name "{0}" directly written on dummy pulser.'.format(name))
         return len(sequence_parameter_list)
 
@@ -426,16 +441,17 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return list: List of all uploaded waveform name strings in the device workspace.
         """
-        # TODO -> change from PulserDummy
-        return list(self.waveform_set)
+
+        self.log.warning('Spectrum M4i AWG series has only basic onboard memory: uploaded waveform names not available')
+        return list()
 
     def get_sequence_names(self):
         """ Retrieve the names of all uploaded sequence on the device.
 
         @return list: List of all uploaded sequence name strings in the device workspace.
         """
-        # TODO -> change from PulserDummy
-        return list(self.sequence_dict)
+        self.log.warning('Spectrum M4i AWG series has only basic onboard memory: uploaded waveform names not available')
+        return list()
 
     def delete_waveform(self, waveform_name):
         """ Delete the waveform with name "waveform_name" from the device memory.
@@ -445,17 +461,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return list: a list of deleted waveform names.
         """
-        # TODO -> change from PulserDummy
-        if isinstance(waveform_name, str):
-            waveform_name = [waveform_name]
-
-        deleted_waveforms = list()
-        for waveform in waveform_name:
-            if waveform in self.waveform_set:
-                self.waveform_set.remove(waveform)
-                deleted_waveforms.append(waveform)
-
-        return deleted_waveforms
+        self.log.warning('Spectrum M4i AWG series has only basic onboard memory: \ncannot delete specific waveforms.')
+        return list()
 
     def delete_sequence(self, sequence_name):
         """ Delete the sequence with name "sequence_name" from the device memory.
@@ -465,17 +472,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return list: a list of deleted sequence names.
         """
-        # TODO -> change from PulserDummy
-        if isinstance(sequence_name, str):
-            sequence_name = [sequence_name]
-
-        deleted_sequences = list()
-        for sequence in sequence_name:
-            if sequence in self.sequence_dict:
-                del self.sequence_dict[sequence]
-                deleted_sequences.append(sequence)
-
-        return deleted_sequences
+        self.log.warning(
+            'Spectrum M4i AWG series has only basic onboard memory: \ncannot delete specific sequences.')
+        return list()
 
     def load_waveform(self, load_dict):
         """ Loads a waveform to the specified channel of the pulsing device.
@@ -498,6 +497,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              type ('waveform' or 'sequence')
         """
         # TODO -> change from PulserDummy
+        # probably just needs to be some pre-trigger call
+
         if isinstance(load_dict, list):
             new_dict = dict()
             for waveform in load_dict:
@@ -610,17 +611,34 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
     def clear_all(self):
         """ Clears all loaded waveform from the pulse generators RAM.
-
         @return int: error code (0:OK, -1:error)
 
         Unused for digital pulse generators without storage capability
         (PulseBlaster, FPGA).
+
+        For the Spectrum AWG, we achieve this by uploading a list of
+        zeros to each channel.
+
+        This function is called by the clear button in the GUI
         """
-        # TODO -> change from PulserDummy
-        self.current_loaded_assets = dict()
-        self.waveform_set = set()
-        self.sequence_dict = dict()
-        return 0
+        # TODO check this works, once write_waveform has been implemented
+        self.log.warning('clear all does nothing at the moment')
+
+        # upload zeros to all channels
+        total_number_of_samples = 100
+        analog_samples = {"a_ch1": np.zeros(total_number_of_samples),
+                          "a_ch2": np.zeros(total_number_of_samples)}
+        digital_samples = {"d_ch1": np.zeros(total_number_of_samples),
+                          "d_ch2": np.zeros(total_number_of_samples),
+                          "d_ch3": np.zeros(total_number_of_samples)}
+        #self.write_waveform('cleared_AWG', analog_samples, digital_samples, True, True, total_number_of_samples)
+
+        self.current_loaded_assets = dict()  # still needed??
+
+        if self._read_out_error():
+            return -1
+        else:
+            return 0
 
     def get_status(self):
         """ Retrieves the status of the pulsing hardware
@@ -725,7 +743,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
-        # TODO -> check this works
 
         ampl_ch1 = int32(0)
         spcm_dwGetParam_i32(self._hCard, SPC_AMP0, byref(ampl_ch1))  # channel0 amplitude in mV
@@ -774,7 +791,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
-        # TODO -> check if this works
         # TODO -> change to be robust against out-of-bounds inputs. Base off tektronix_awg70k
         # if sample_rate > constraint.max:
         #    self.sample_rate = constraint.max
@@ -860,7 +876,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
-        # TODO -> check this works
 
         constraints = self.get_constraints()
         voltage_low = constraints.d_ch_low.default
@@ -923,20 +938,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         If no parameters are passed to this method all channels will be asked
         for their setting.
         """
-        # TODO -> check this works
-        #if ch is None:
-        #    ch = []
-#
-        #active_ch = {}
-#
-        #if not ch:
-        #    active_ch = self.channel_states
-#
-        #else:
-        #    for channel in ch:
-        #        active_ch[channel] = self.channel_states[channel]
-#
-        #return active_ch
+        # TODO -> This works for a12d123 config, but need to check for other settings
 
         # a_ch1 and a_ch2
         a_channel = self._spcm_dwGetParam_i32(SPC_CHENABLE)
@@ -1001,23 +1003,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         to activate analog channel 2 digital channel 3 and 4 and to deactivate
         digital channel 1. All other available channels will remain unchanged.
         """
-        # TODO -> check this works
-        #if ch is None:
-        #    ch = {}
-        #old_activation = self.channel_states.copy()
-        #for channel in ch:
-        #    self.channel_states[channel] = ch[channel]
-#
-        #active_channel_set = {chnl for chnl, is_active in self.channel_states.items() if is_active}
-        #if active_channel_set not in self.get_constraints().activation_config.values():
-        #    self.log.error('Channel activation to be set not found in constraints.\n'
-        #                   'Channel activation unchanged.')
-        #    self.channel_states = old_activation
-        #else:
-        #    self.activation_config = active_channel_set
-#
-        #return self.get_active_channels(ch=list(ch))
-
+        # TODO - integrate with activation_config
         if ch is None:
             return self.get_active_channels()
 
@@ -1097,27 +1083,47 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
     def write(self, command):
         """ Sends a command string to the device.
+        With the Spectrum AWG, this command is used to set an
+        internal register
 
         @param string command: string containing the command
 
         @return int: error code (0:OK, -1:error)
+
+
+        @param lRegister (int): register, that should be set
+               plValue   (int): value of the register
+
+        @return int: (-1: error , else parameter value)
         """
-        # TODO -> change from PulserDummy
-        self.log.info('It is so nice that you talk to me and told me "{0}"; '
-                      'as a dummy it is very dull out here! :) '.format(command))
-        return 0
+        # TODO -> finish this
+        # need to work out how to go from str command input to give
+        # the required lRegister and plValue
+
+        #lRegister
+        #plValue
+        #temp = _spcm_dwSetParam_i32(self, lRegister, plValue)
+        #return temp
+
+        self.log.warning('AWG write command not yet implemented')
+        return -1
 
     def query(self, question):
         """ Asks the device a 'question' and receive and return an answer from it.
 
-        @param string question: string containing the command
+        @param string question: string containing the command. For the Spectrum AWG,
+        this is converted to an integer corresponding to the register that should be
+        read out. I.e. the input should be an integer-like string.
 
-        @return string: the answer of the device to the 'question' in a string
+        @return string: the answer of the device to the 'question' in a string.
         """
-        # TODO -> change from PulserDummy
-        self.log.info('Dude, I\'m a dummy! Your question \'{0}\' is way too '
-                      'complicated for me :D !'.format(question))
-        return 'I am a dummy!'
+        # TODO -> check this works
+
+        temp = _spcm_dwGetParam_i32(self, int(question))
+        if temp == -1:
+            return 'error'
+        else:
+            return str(temp)
 
     def reset(self):
         """ Reset the device.
@@ -1187,6 +1193,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: (-1: error , else parameter value)
         """
+        # TODO -> shift all usage to query??
         value = int32(0)
         spcm_dwGetParam_i32(self._hCard, lRegister, byref(value))
         if self._read_out_error():
@@ -1203,6 +1210,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: (-1: error , else parameter value)
         """
+        # TODO -> shift all usage to write??
         spcm_dwSetParam_i32(self._hCard, lRegister, int32(plValue))
         if self._read_out_error():
            return -1
@@ -1211,10 +1219,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
     def _create_combined_buffer_data(self, llMemSamples, channel_data):
         """
-        digital channels are encoded in analog samples for synchonous readout
+        digital channels are encoded in analog samples for synchronous readout
         -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
 
-        @param llMemSamples: number of samples for all channels
+        @param llMemSamples: number of samples (must be identical?) for all channels
                channel_data: dictionary with channel keys and channel data
                              e.g. {'a_ch1': np.array([...]), 'd_ch1': np.array([])}
 
@@ -1302,7 +1310,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         else:
             return 0
 
-    def set_digital_async_on(self,channel):
+    def _set_digital_async_on(self,channel):
         """
         Turns on one of the Multi Purpose I/O Lines as a digital output
 
@@ -1323,7 +1331,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         else:
             return 0
 
-    def set_digital_async_off(self, channel):
+    def _set_digital_async_off(self, channel):
         """
         Turns off one of the Multi Purpose I/O Lines as a digital output
 
@@ -1338,6 +1346,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             return -1
         else:
             return 0
+
+
     def _testfunction(self, channel, amplitude, offset, numberofsamples=int64(KILO_B(64))):
         """we try to produce a sine wave"""
 
@@ -1491,8 +1501,60 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         # Start the card
         spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
-
+        print('start')
         # ... wait here or do something else ...
 
         #Stop the card
         # spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP);
+
+    def _load_sequence_hardcoded(self, channel_data):
+        """ Loads a sequence to the awg
+
+        @param channel_data: list of dictionaries with channel_data:
+                             [{'a_ch1' : np.array([...]), 'd_ch1' : np.array([])},
+                              {'a_ch1' : np.array([...]), 'd_ch1' : np.array([])}
+                             ]
+
+        @return int: error code (0:OK, -1:error)
+        """
+
+        if len(channel_data) <= 1:
+            self.log.error('Length of frequency list must be larger than 1')
+            return -1
+
+        # just zeros
+        channel_data.append({'d_ch1': np.full(384, 1)})
+        channel_data.append({'d_ch1': np.full(384, 0)})
+        max_segments = len(channel_data)
+        max_steps = 2 * max_segments
+        if max_steps > self.get_constraints().sequence_num.max:
+            self.log.error('Number of sequence steps ({}) is larger than the hardware constraints ({})'.format(
+                max_steps, self.get_constraints().sequence_num.max))
+            return -1
+
+        # set trigger settings
+        self._set_trigger()
+
+        # Setting up the card mode
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SEQUENCE)  # enable sequence mode
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_MAXSEGMENTS, max_segments)  # Divide on - board mem in parts
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_STARTSTEP, 0)  # Step#0 is the first step after card start
+
+        # Setting up the data memory and transfer data
+        for i in range(max_segments):
+            llMemSamples = int64(list(channel_data[i].values())[0].size)
+
+            # set current configuration switch to segment i
+            spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_WRITESEGMENT, i)
+            spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_SEGMENTSIZE,
+                                llMemSamples)  # define size of current segment 0
+
+            pvBuffer, qwBufferSize = self._create_combined_buffer_data(llMemSamples, channel_data[i])
+
+            # it is assumed, that the Buffer memory has been allocated and is already filled with valid data
+            spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize)
+            spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
+
+            print('\rUploaded segment {:4d} of {:4d}. '.format(i + 1, max_segments) +
+                  '|' * round(50 * (i + 1) / max_segments) + '-' * round(50 - 50 * (i + 1) / max_segments), end='')
+        print('')
