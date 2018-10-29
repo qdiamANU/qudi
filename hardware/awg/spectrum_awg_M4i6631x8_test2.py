@@ -50,33 +50,35 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
-        self.connected = False
-        self.sample_rate = 25e9
+       #self.connected = False
+       #self.sample_rate = 25e9
 
-        # Deactivate all channels at first:
-        self.channel_states = {'a_ch1': False, 'a_ch2': False, 'a_ch3': False,
-                               'd_ch1': False, 'd_ch2': False, 'd_ch3': False, 'd_ch4': False,
-                               'd_ch5': False, 'd_ch6': False, 'd_ch7': False, 'd_ch8': False}
+       ## Deactivate all channels at first:
+       #self.channel_states = {'a_ch1': False, 'a_ch2': False, 'a_ch3': False,
+       #                       'd_ch1': False, 'd_ch2': False, 'd_ch3': False, 'd_ch4': False,
+       #                       'd_ch5': False, 'd_ch6': False, 'd_ch7': False, 'd_ch8': False}
 
-        # for each analog channel one value
-        self.amplitude_dict = {'a_ch1': 1.0, 'a_ch2': 1.0, 'a_ch3': 1.0}
-        self.offset_dict = {'a_ch1': 0.0, 'a_ch2': 0.0, 'a_ch3': 0.0}
+       ## for each analog channel one value
+       #self.amplitude_dict = {'a_ch1': 1.0, 'a_ch2': 1.0, 'a_ch3': 1.0}
+       #self.offset_dict = {'a_ch1': 0.0, 'a_ch2': 0.0, 'a_ch3': 0.0}
 
-        # for each digital channel one value
-        self.digital_high_dict = {'d_ch1': 5.0, 'd_ch2': 5.0, 'd_ch3': 5.0, 'd_ch4': 5.0,
-                                  'd_ch5': 5.0, 'd_ch6': 5.0, 'd_ch7': 5.0, 'd_ch8': 5.0}
-        self.digital_low_dict = {'d_ch1': 0.0, 'd_ch2': 0.0, 'd_ch3': 0.0, 'd_ch4': 0.0,
-                                 'd_ch5': 0.0, 'd_ch6': 0.0, 'd_ch7': 0.0, 'd_ch8': 0.0}
+       ## for each digital channel one value
+       #self.digital_high_dict = {'d_ch1': 5.0, 'd_ch2': 5.0, 'd_ch3': 5.0, 'd_ch4': 5.0,
+       #                          'd_ch5': 5.0, 'd_ch6': 5.0, 'd_ch7': 5.0, 'd_ch8': 5.0}
+       #self.digital_low_dict = {'d_ch1': 0.0, 'd_ch2': 0.0, 'd_ch3': 0.0, 'd_ch4': 0.0,
+       #                         'd_ch5': 0.0, 'd_ch6': 0.0, 'd_ch7': 0.0, 'd_ch8': 0.0}
 
-        self.waveform_set = set()
-        self.sequence_dict = dict()
+       #self.waveform_set = set()
+       #self.sequence_dict = dict()
 
-        self.current_loaded_assets = dict()
+       #self.current_loaded_assets = dict()
 
-        self.use_sequencer = True
-        self.interleave = False
+       #self.use_sequencer = True
+       #self.interleave = False
 
-        self.current_status = 0  # that means off, not running.
+       #self.current_status = 0  # that means off, not running.
+
+        print('init complete')
 
     ##################################
 
@@ -104,11 +106,11 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 #
         #spcm_dwSetParam_i32(hCard, SPC_TIMEOUT, 25000)  # timeout 15 s
 #
-        #self._active_channels = {'a_ch1': True,
-        #                         'a_ch2': True,
-        #                         'd_ch1': True,
-        #                         'd_ch2': True,
-        #                         'd_ch3': True, }
+        self._active_channels = {'a_ch1': True,
+                                 'a_ch2': True,
+                                 'd_ch1': True,
+                                 'd_ch2': True,
+                                 'd_ch3': True, }
         #self.set_active_channels(self._active_channels)
 
         #self.set_analog_level({'a_ch1': 4.0, 'a_ch2': 4.0})
@@ -135,6 +137,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.channel_states[chnl] = True
 
         ##################################
+
+        print('on_activate complete')
 
     def on_deactivate(self):
         """ Required tasks to be performed during deactivation of the module.
@@ -172,134 +176,43 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         If the constraints cannot be set in the pulsing hardware (e.g. because it might have no
         sequence mode) just leave it out so that the default is used (only zeros).
         """
-        ## Example for configuration with default values:
-        #constraints = PulserConstraints()
-#
-        ### The file formats are hardware specific.
-        ##constraints.waveform_format = ['npy']
-        ##constraints.sequence_format = ['seq']
-#
-        #constraints.sample_rate.min = 50e6
-        #constraints.sample_rate.max = 1.25e9
-        #constraints.sample_rate.step = 1
-        #constraints.sample_rate.default = 1.25e9
-#
-        #constraints.a_ch_amplitude.min = 0.08*2
-        #constraints.a_ch_amplitude.max = 2.0*2
-        #constraints.a_ch_amplitude.step = 0.001*2
-        #constraints.a_ch_amplitude.default = 2.0*2
-#
-        ## offset is fixed to 0.0V for Spectrum M4i series
-        #constraints.a_ch_offset.min = 0.0
-        #constraints.a_ch_offset.max = 0.0
-        #constraints.a_ch_offset.step = 0.000
-        #constraints.a_ch_offset.default = 0.0
-#
-        #constraints.d_ch_low.min = 0.0
-        #constraints.d_ch_low.max = 0.0
-        #constraints.d_ch_low.step = 0.00
-        #constraints.d_ch_low.default = 0.0
-#
-        #constraints.d_ch_high.min = 3.3
-        #constraints.d_ch_high.max = 3.3
-        #constraints.d_ch_high.step = 0.00
-        #constraints.d_ch_high.default = 3.3
-#
-        ##onstraints.sampled_file_length.min = 80
-        ##constraints.sampled_file_length.max = 64800000
-        ##constraints.sampled_file_length.step = 1
-        ##constraints.sampled_file_length.default = 80
-#
-        #constraints.waveform_num.min = 1
-        #constraints.waveform_num.max = 32000
-        #constraints.waveform_num.step = 1
-        #constraints.waveform_num.default = 1
-#
-        #constraints.sequence_num.min = 1
-        #constraints.sequence_num.max = 4096
-        #constraints.sequence_num.step = 1
-        #constraints.sequence_num.default = 1
-#
-        #constraints.subsequence_num.min = 1
-        #constraints.subsequence_num.max = 4000
-        #constraints.subsequence_num.step = 1
-        #constraints.subsequence_num.default = 1
-#
-        ## If sequencer mode is available then these should be specified
-        #constraints.repetitions.min = 0
-        #constraints.repetitions.max = 65539
-        #constraints.repetitions.step = 1
-        #constraints.repetitions.default = 0
-#
-        ##constraints.event_triggers = ['A', 'B']
-        ##constraints.flags = ['A', 'B', 'C', 'D']
-        ## Device has only one trigger and no flags
-        #constraints.event_triggers = ['ON']
-        #constraints.flags = list()
-#
-        #constraints.sequence_steps.min = 0
-        #constraints.sequence_steps.max = 4096
-        #constraints.sequence_steps.step = 1
-        #constraints.sequence_steps.default = 0
-#
-        #'''
-        #constraints.trigger_in.min = 0
-        #constraints.trigger_in.max = 2
-        #constraints.trigger_in.step = 1
-        #constraints.trigger_in.default = 0
-#
-        #constraints.event_jump_to.min = 0
-        #constraints.event_jump_to.max = 8000
-        #constraints.event_jump_to.step = 1
-        #constraints.event_jump_to.default = 0
-#
-        #constraints.go_to.min = 0
-        #constraints.go_to.max = 8000
-        #constraints.go_to.step = 1
-        #constraints.go_to.default = 0
-        #'''
-        ## the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
-        ## channels. Here all possible channel configurations are stated, where only the generic
-        ## names should be used. The names for the different configurations can be customary chosen.
-        #activation_conf = OrderedDict()
-        #activation_conf['all'] = ['a_ch1', 'a_ch2', 'd_ch1', 'd_ch2', 'd_ch3']
-        #activation_conf['digital_1'] = ['a_ch1', 'a_ch2', 'd_ch1']
-        #activation_conf['digital_2'] = ['a_ch1', 'a_ch2', 'd_ch1', 'd_ch3']
-        #constraints.activation_config = activation_conf
-#
-        #return constraints
-
+        # Example for configuration with default values:
         constraints = PulserConstraints()
 
-        constraints.sample_rate.min = 10.0e6
-        constraints.sample_rate.max = 12.0e9
-        constraints.sample_rate.step = 10.0e6
-        constraints.sample_rate.default = 12.0e9
+        ## The file formats are hardware specific.
+        #constraints.waveform_format = ['npy']
+        #constraints.sequence_format = ['seq']
 
-        constraints.a_ch_amplitude.min = 0.02
-        constraints.a_ch_amplitude.max = 2.0
-        constraints.a_ch_amplitude.step = 0.001
-        constraints.a_ch_amplitude.default = 2.0
+        constraints.sample_rate.min = 50e6
+        constraints.sample_rate.max = 1.25e9
+        constraints.sample_rate.step = 1
+        constraints.sample_rate.default = 1.25e9
 
-        constraints.a_ch_offset.min = -1.0
-        constraints.a_ch_offset.max = 1.0
-        constraints.a_ch_offset.step = 0.001
+        constraints.a_ch_amplitude.min = 0.08*2
+        constraints.a_ch_amplitude.max = 2.0*2
+        constraints.a_ch_amplitude.step = 0.001*2
+        constraints.a_ch_amplitude.default = 2.0*2
+
+        # offset is fixed to 0.0V for Spectrum M4i series
+        constraints.a_ch_offset.min = 0.0
+        constraints.a_ch_offset.max = 0.0
+        constraints.a_ch_offset.step = 0.000
         constraints.a_ch_offset.default = 0.0
 
-        constraints.d_ch_low.min = -1.0
-        constraints.d_ch_low.max = 4.0
-        constraints.d_ch_low.step = 0.01
+        constraints.d_ch_low.min = 0.0
+        constraints.d_ch_low.max = 0.0
+        constraints.d_ch_low.step = 0.00
         constraints.d_ch_low.default = 0.0
 
-        constraints.d_ch_high.min = 0.0
-        constraints.d_ch_high.max = 5.0
-        constraints.d_ch_high.step = 0.01
-        constraints.d_ch_high.default = 5.0
+        constraints.d_ch_high.min = 3.3
+        constraints.d_ch_high.max = 3.3
+        constraints.d_ch_high.step = 0.00
+        constraints.d_ch_high.default = 3.3
 
-        constraints.waveform_length.min = 80
-        constraints.waveform_length.max = 64800000
-        constraints.waveform_length.step = 1
-        constraints.waveform_length.default = 80
+        #onstraints.sampled_file_length.min = 80
+        #constraints.sampled_file_length.max = 64800000
+        #constraints.sampled_file_length.step = 1
+        #constraints.sampled_file_length.default = 80
 
         constraints.waveform_num.min = 1
         constraints.waveform_num.max = 32000
@@ -307,7 +220,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         constraints.waveform_num.default = 1
 
         constraints.sequence_num.min = 1
-        constraints.sequence_num.max = 8000
+        constraints.sequence_num.max = 4096
         constraints.sequence_num.step = 1
         constraints.sequence_num.default = 1
 
@@ -322,13 +235,106 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         constraints.repetitions.step = 1
         constraints.repetitions.default = 0
 
+        ##constraints.event_triggers = ['A', 'B']
+        ##constraints.flags = ['A', 'B', 'C', 'D']
+        ## Device has only one trigger and no flags
+        #constraints.event_triggers = ['ON']
+        #constraints.flags = list()
+
+        constraints.sequence_steps.min = 0
+        constraints.sequence_steps.max = 4096
+        constraints.sequence_steps.step = 1
+        constraints.sequence_steps.default = 0
+
+        '''
+        constraints.trigger_in.min = 0
+        constraints.trigger_in.max = 2
+        constraints.trigger_in.step = 1
+        constraints.trigger_in.default = 0
+
+        constraints.event_jump_to.min = 0
+        constraints.event_jump_to.max = 8000
+        constraints.event_jump_to.step = 1
+        constraints.event_jump_to.default = 0
+
+        constraints.go_to.min = 0
+        constraints.go_to.max = 8000
+        constraints.go_to.step = 1
+        constraints.go_to.default = 0
+        '''
+
+        ## the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
+        ## channels. Here all possible channel configurations are stated, where only the generic
+        ## names should be used. The names for the different configurations can be customary chosen.
+        #activation_conf = OrderedDict()
+        #activation_conf['all'] = ['a_ch1', 'a_ch2', 'd_ch1', 'd_ch2', 'd_ch3']
+        #activation_conf['digital_1'] = ['a_ch1', 'a_ch2', 'd_ch1']
+        #activation_conf['digital_2'] = ['a_ch1', 'a_ch2', 'd_ch1', 'd_ch3']
+        #constraints.activation_config = activation_conf
+#
+        #return constraints
+
+        ## dummy pulser ################
+        #constraints = PulserConstraints()
+#
+        #constraints.sample_rate.min = 10.0e6
+        #constraints.sample_rate.max = 12.0e9
+        #constraints.sample_rate.step = 10.0e6
+        #constraints.sample_rate.default = 12.0e9
+#
+        #constraints.a_ch_amplitude.min = 0.02
+        #constraints.a_ch_amplitude.max = 2.0
+        #constraints.a_ch_amplitude.step = 0.001
+        #constraints.a_ch_amplitude.default = 2.0
+#
+        #constraints.a_ch_offset.min = -1.0
+        #constraints.a_ch_offset.max = 1.0
+        #constraints.a_ch_offset.step = 0.001
+        #constraints.a_ch_offset.default = 0.0
+#
+        #constraints.d_ch_low.min = -1.0
+        #constraints.d_ch_low.max = 4.0
+        #constraints.d_ch_low.step = 0.01
+        #constraints.d_ch_low.default = 0.0
+#
+        #constraints.d_ch_high.min = 0.0
+        #constraints.d_ch_high.max = 5.0
+        #constraints.d_ch_high.step = 0.01
+        #constraints.d_ch_high.default = 5.0
+#
+        #constraints.waveform_length.min = 80
+        #constraints.waveform_length.max = 64800000
+        #constraints.waveform_length.step = 1
+        #constraints.waveform_length.default = 80
+#
+        #constraints.waveform_num.min = 1
+        #constraints.waveform_num.max = 32000
+        #constraints.waveform_num.step = 1
+        #constraints.waveform_num.default = 1
+#
+        #constraints.sequence_num.min = 1
+        #constraints.sequence_num.max = 8000
+        #constraints.sequence_num.step = 1
+        #constraints.sequence_num.default = 1
+#
+        #constraints.subsequence_num.min = 1
+        #constraints.subsequence_num.max = 4000
+        #constraints.subsequence_num.step = 1
+        #constraints.subsequence_num.default = 1
+#
+        ## If sequencer mode is available then these should be specified
+        #constraints.repetitions.min = 0
+        #constraints.repetitions.max = 65539
+        #constraints.repetitions.step = 1
+        #constraints.repetitions.default = 0
+
         constraints.event_triggers = ['A', 'B']
         constraints.flags = ['A', 'B', 'C', 'D']
 
-        constraints.sequence_steps.min = 0
-        constraints.sequence_steps.max = 8000
-        constraints.sequence_steps.step = 1
-        constraints.sequence_steps.default = 0
+        #constraints.sequence_steps.min = 0
+        #constraints.sequence_steps.max = 8000
+        #constraints.sequence_steps.step = 1
+        #constraints.sequence_steps.default = 0
 
         # the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
         # channels. Here all possible channel configurations are stated, where only the generic
@@ -352,7 +358,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # Usage of only the analog channels:
         activation_config['config9'] = {'a_ch2', 'a_ch3'}
         constraints.activation_config = activation_config
+        ###################
 
+        print('get_constraints complete')
         return constraints
 
     def pulser_on(self):
@@ -388,25 +396,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             return -1
         else:
             return 0
-    '''
-    def upload_asset(self, asset_name=None):
-        """ Upload an already hardware conform file to the device mass memory.
-            Also loads these files into the device workspace if present.
-            Does NOT load waveforms/sequences/patterns into channels.
 
-        @param asset_name: string, name of the ensemble/sequence to be uploaded
-
-        @return int: error code (0:OK, -1:error)
-
-        If nothing is passed, method will be skipped.
-
-        This method has no effect when using pulser hardware without own mass memory
-        (i.e. PulseBlaster, FPGA)
-        """
-        #self.log.warning('Uploading assets is not available for the Spectrum M4i AWG series!\n'
-        #                 'Method call will be ignored.')
-        return 0
-    '''
 
     def load_waveform(self, load_dict):
         """ Loads a waveform to the specified channel of the pulsing device.
@@ -440,7 +430,50 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         highly hardware specific and corresponds to a collection of digital and analog channels
         being associated to a SINGLE wavfeorm asset.
         """
-        pass
+
+        print('load_waveform')
+        filepath = os.path.join(self._pulsed_file_dir, 'sampled_hardware_files', asset_name + '.npy')
+
+        read_array = np.load(filepath)
+        # print(read_array.size, read_array.dtype)
+
+        llLoops = int64(0)
+        llMemSamples = int64(read_array.size + (32 - read_array.size % 32))
+        pad_width = (0, llMemSamples.value - read_array.size)
+
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SINGLE)  # continuous
+        spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, llMemSamples)  # replay lenth
+        spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)  # number of repetitions
+
+        self._set_trigger(software_trigger=True)
+        self.set_active_channels({'a_ch1': True, 'a_ch2': True, 'd_ch1': True, 'd_ch2': True, 'd_ch3': True})
+
+        a_ch1_signal = (np.pad(read_array['f0'], pad_width, 'linear_ramp', end_values=(0, read_array['f0'][0]))
+                        * (2 ** 15 - 1)).astype(dtype=np.int16)
+        a_ch2_signal = (np.pad(read_array['f1'], pad_width, 'linear_ramp', end_values=(0, read_array['f1'][0]))
+                        * (2 ** 15 - 1)).astype(dtype=np.int16)
+        d_ch1_signal = (np.pad(read_array['f2'], pad_width, 'constant', constant_values=(0, 0))
+                        ).astype(dtype=np.bool)
+        d_ch2_signal = (np.pad(read_array['f3'], pad_width, 'constant', constant_values=(0, 0))
+                        ).astype(dtype=np.bool)
+        d_ch3_signal = (np.pad(read_array['f4'], pad_width, 'constant', constant_values=(0, 0))
+                        ).astype(dtype=np.bool)
+
+        pvBuffer, qwBufferSize = self._create_combined_buffer_data(llMemSamples,
+                                                                   {'a_ch1': a_ch1_signal, 'a_ch2': a_ch2_signal,
+                                                                    'd_ch1': d_ch1_signal, 'd_ch2': d_ch2_signal,
+                                                                    'd_ch3': d_ch3_signal})
+
+        # we define the buffer for transfer and start the DMA transfer
+        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize)
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
+
+        self._loaded_asset = asset_name
+
+        if self._read_out_error():
+            return -1
+        else:
+            return 0
 
     def load_sequence(self, sequence_name):
         """ Loads a sequence to the channels of the device in order to be ready for playback.
@@ -461,73 +494,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return dict: Dictionary containing the actually loaded waveforms per channel.
         """
         pass
-
-    def load_asset(self, asset_name, load_dict=None):
-        """ Loads a sequence or waveform to the specified channel of the pulsing device.
-        For devices that have a workspace (i.e. AWG) this will load the asset from the device
-        workspace into the channel.
-        For a device without mass memory this will transfer the waveform/sequence/pattern data
-        directly to the device so that it is ready to play.
-
-        @param str asset_name: The name of the asset to be loaded
-
-        @param dict load_dict:  a dictionary with keys being one of the available channel numbers
-                                and items being the name of the already sampled waveform/sequence
-                                files.
-                                Examples:   {1: rabi_Ch1, 2: rabi_Ch2}
-                                            {1: rabi_Ch2, 2: rabi_Ch1}
-                                This parameter is optional. If none is given then the channel
-                                association is invoked from the file name, i.e. the appendix
-                                (_ch1, _ch2 etc.)
-
-        @return int: error code (0:OK, -1:error)
-        """
-
-        # print(self._pulsed_file_dir)
-        filepath = os.path.join(self._pulsed_file_dir, 'sampled_hardware_files', asset_name + '.npy')
-
-        read_array = np.load(filepath)
-        # print(read_array.size, read_array.dtype)
-
-        llLoops = int64(0)
-        llMemSamples = int64(read_array.size + (32 - read_array.size % 32))
-        pad_width = (0, llMemSamples.value - read_array.size)
-
-        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SINGLE)  # continuous
-        spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, llMemSamples)  # replay lenth
-        spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)  # number of repetitions
-
-        self._set_trigger(software_trigger=True)
-        self.set_active_channels({'a_ch1': True, 'a_ch2': True, 'd_ch1': True, 'd_ch2': True, 'd_ch3': True})
-
-        a_ch1_signal = (np.pad(read_array['f0'], pad_width, 'linear_ramp', end_values=(0, read_array['f0'][0]))
-                        * (2**15 - 1)).astype(dtype=np.int16)
-        a_ch2_signal = (np.pad(read_array['f1'], pad_width, 'linear_ramp', end_values=(0, read_array['f1'][0]))
-                        * (2**15 - 1)).astype(dtype=np.int16)
-        d_ch1_signal = (np.pad(read_array['f2'], pad_width, 'constant', constant_values=(0, 0))
-                        ).astype(dtype=np.bool)
-        d_ch2_signal = (np.pad(read_array['f3'], pad_width, 'constant', constant_values=(0, 0))
-                        ).astype(dtype=np.bool)
-        d_ch3_signal = (np.pad(read_array['f4'], pad_width, 'constant', constant_values=(0, 0))
-                        ).astype(dtype=np.bool)
-
-        pvBuffer, qwBufferSize = self._create_combined_buffer_data(llMemSamples,
-                                                                   {'a_ch1': a_ch1_signal, 'a_ch2': a_ch2_signal,
-                                                                    'd_ch1': d_ch1_signal, 'd_ch2': d_ch2_signal,
-                                                                    'd_ch3': d_ch3_signal})
-
-        # we define the buffer for transfer and start the DMA transfer
-        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize)
-        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
-
-
-
-        self._loaded_asset = asset_name
-
-        if self._read_out_error():
-            return -1
-        else:
-            return 0
 
     def get_loaded_assets(self):
         """
@@ -679,7 +645,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         (value high, value low)!
         """
 
-
         if offset is not None:
             self.log.warning('Setting analog offset values is not available for the Spectrum M4i AWG series!\n'
                              'Method call will be ignored.')
@@ -796,6 +761,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         If no parameter (or None) is passed to this method all channel states will be returned.
         """
+        print('get_active_channels')
         # a_ch1 and a_ch2
         a_channel = self._spcm_dwGetParam_i32(SPC_CHENABLE)
 
@@ -976,77 +942,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         """
         pass
 
-    '''
-    def get_uploaded_asset_names(self):
-        """ Retrieve the names of all uploaded assets on the device.
-
-        @return list: List of all uploaded asset name strings in the current device directory.
-                      This is no list of the file names.
-
-        Unused for pulse generators without sequence storage capability (PulseBlaster, FPGA).
-        """
-        #self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
-        #                 'Method call will be ignored.')
-        return []
-
-    def get_saved_asset_names(self):
-        """ Retrieve the names of all sampled and saved assets on the host PC. This is no list of
-            the file names.
-
-        @return list: List of all saved asset name strings in the current
-                      directory of the host PC.
-        """
-        #self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
-        #                 'Method call will be ignored.')
-        return []
-    '''
-
-    '''
-    def delete_asset(self, asset_name):
-        """ Delete all files associated with an asset with the passed asset_name from the device
-            memory (mass storage as well as i.e. awg workspace/channels).
-
-        @param str asset_name: The name of the asset to be deleted
-                               Optionally a list of asset names can be passed.
-
-        @return list: a list with strings of the files which were deleted.
-
-        Unused for pulse generators without sequence storage capability (PulseBlaster, FPGA).
-        """
-        #if asset_name:
-        #    self.log.warning('Asset names are not available for the Spectrum M4i AWG series!\n'
-        #                     'Method call will be ignored.')
-        return []
-    '''
-
-    '''
-    def set_asset_dir_on_device(self, dir_path):
-        """ Change the directory where the assets are stored on the device.
-
-        @param str dir_path: The target directory
-
-        @return int: error code (0:OK, -1:error)
-
-        Unused for pulse generators without changeable file structure (PulseBlaster, FPGA).
-        """
-        if dir_path:
-            self.log.warning('Asset dir paths are not available for the Spectrum M4i AWG series!\n'
-                             'Method call will be ignored.')
-        return 0
-    
-    def get_asset_dir_on_device(self):
-        """ Ask for the directory where the hardware conform files are stored on the device.
-
-        @return str: The current file directory
-
-        Unused for pulse generators without changeable file structure (i.e. PulseBlaster, FPGA).
-        """
-        self.log.warning('Asset dir paths are not available for the Spectrum M4i AWG series!\n'
-                         'Method call will be ignored.')
-        return 
-        
-    '''
-
     def get_interleave(self):
         """ Check whether Interleave is ON or OFF in AWG.
 
@@ -1073,27 +968,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.log.warning('Interleave mode not available for the Spectrum M4i AWG series!\n'
                              'Method call will be ignored.')
         return False
-
-    '''
-    def tell(self, command):
-        """ Sends a command string to the device.
-
-        @param string command: string containing the command
-
-        @return int: error code (0:OK, -1:error)
-        """
-        pass
-
-    def ask(self, question):
-        """ Asks the device a 'question' and receive and return an answer from it.
-a
-        @param string question: string containing the command
-
-        @return string: the answer of the device to the 'question' in a string
-        """
-        pass
-
-    '''
 
     def reset(self):
         """ Reset the device.
@@ -1266,13 +1140,12 @@ a
         else:
             return 0
 
-
-    def _create_combined_buffer_data(self, number_of_samples, channel_data):
+    def _create_combined_buffer_data(self, llMemSamples, channel_data):
         """
         digital channels are encoded in analog samples for synchonous readout
         -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
 
-        @param number_of_samples: number of samples for all channels
+        @param llMemSamples: number of samples for all channels
                channel_data: dictionary with channel keys and channel data
                              e.g. {'a_ch1': np.array([...]), 'd_ch1': np.array([])}
 
@@ -1287,16 +1160,18 @@ a
         # analog channel 2: bit 0-14: a_ch2
         #                   bit   15: d_ch3
 
+        print('_create_combined_buffer_data')
+
         active_channels = self._active_channels
 
         for key in channel_data.keys():
-            if channel_data[key].size != number_of_samples:
+            if channel_data[key].size != llMemSamples.value:
                 self.log.error('Channel data for channel {} has the wrong size!'.format(key))
                 return -1
 
         for key in active_channels.keys():
             if key not in channel_data.keys():
-                channel_data[key] = np.zeros(number_of_samples, dtype=np.dtype(np.int16))
+                channel_data[key] = np.zeros(llMemSamples.value, dtype=np.dtype(np.int16))
 
         if active_channels['d_ch2']:
             a_ch1_data = ((channel_data['a_ch1'].astype(np.uint16) >> 2) |
@@ -1324,12 +1199,12 @@ a
         chcount = self._spcm_dwGetParam_i32(SPC_CHCOUNT)
         lBytesPerSample = self._spcm_dwGetParam_i32(SPC_MIINST_BYTESPERSAMPLE)
 
-        qwBufferSize = uint64(number_of_samples * lBytesPerSample * chcount)
+        qwBufferSize = uint64(llMemSamples.value * lBytesPerSample * chcount)
         pvBuffer = create_string_buffer(qwBufferSize.value)
 
         # calculate the data
         pnBuffer = cast(pvBuffer, ptr16)
-        for i in range(0, number_of_samples * chcount, 1):
+        for i in range(0, llMemSamples.value * chcount, 1):
             pnBuffer[i] = int16(combined_channel_data[i])
 
         return pvBuffer, qwBufferSize

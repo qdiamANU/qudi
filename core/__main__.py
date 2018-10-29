@@ -50,7 +50,6 @@ parser.add_argument('-g', '--no-gui', action='store_true',
 parser.add_argument('-c', '--config', default='', help='configuration file')
 args = parser.parse_args()
 
-
 # install logging facility
 from .logger import initialize_logger
 initialize_logger()

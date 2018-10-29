@@ -515,7 +515,9 @@ class SequenceGeneratorLogic(GenericLogic):
         """
         # Read activation_config from device.
         channel_state = self.pulsegenerator().get_active_channels()
+        print(channel_state)
         current_config = {chnl for chnl in channel_state if channel_state[chnl]}
+        print(current_config)
 
         # Check if the read back config is a valid config in constraints
         avail_configs = self.pulse_generator_constraints.activation_config
@@ -1501,6 +1503,11 @@ class SequenceGeneratorLogic(GenericLogic):
                             # Set first/last chunk flags
                             is_first_chunk = array_write_index == processed_samples
                             is_last_chunk = processed_samples == ensemble_info['number_of_samples']
+                            print('name={}'.format(waveform_name))
+                            print('analog_samples ={}'.format(analog_samples))
+                            print('digital_samples ={},'.format(digital_samples))
+                            print('is_first_chunk={}, is_last_chunk={}'.format(is_first_chunk,is_last_chunk))
+                            print('total_number_of_samples={}'.format(ensemble_info['number_of_samples']))
                             written_samples, wfm_list = self.pulsegenerator().write_waveform(
                                 name=waveform_name,
                                 analog_samples=analog_samples,
@@ -1513,6 +1520,7 @@ class SequenceGeneratorLogic(GenericLogic):
                             written_waveforms.update(wfm_list)
 
                             # check if write process was successful
+                            print('written_samples = {}, array_length = {}'.format(written_samples,array_length))
                             if written_samples != array_length:
                                 self.log.error('Sampling of block "{0}" in ensemble "{1}" failed. '
                                                'Write to device was unsuccessful.\nThe number of '

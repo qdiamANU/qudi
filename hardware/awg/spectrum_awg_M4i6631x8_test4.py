@@ -98,6 +98,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         # prepare the card in a defined state
         self.reset()
+
+
         # FIXME -> initialisation leaves digital output states high
 
         # read type, function and sn and check for A/D card
@@ -282,12 +284,13 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             channel0 = CHANNEL0 * (self._active_channels['a_ch1'] or self._active_channels['d_ch1'] or
                                    self._active_channels['d_ch2'])
             channel1 = CHANNEL1 * (self._active_channels['a_ch2'] or self._active_channels['d_ch3'])
-            if channel0 == 1:
+            #print('pulser_on: channel0={}, channel1={}'.format(channel0, channel1))
+            if channel0 == CHANNEL0:
                 if self._spcm_dwGetParam_i32(SPC_ENABLEOUT0) == 0:
-                    spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 1)  # enable channel 1 output: a_ch1, d_ch1, d_ch2
-            if channel1 == 1:
+                    self._spcm_dwSetParam_i32(SPC_ENABLEOUT0, 1)  # enable channel 1 output: a_ch1, d_ch1, d_ch2
+            if channel1 == CHANNEL1:
                 if self._spcm_dwGetParam_i32(SPC_ENABLEOUT1) == 0:
-                    spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 1)  # enable channel 2 output: a_ch2, d_ch3
+                    self._spcm_dwSetParam_i32(SPC_ENABLEOUT1, 1)  # enable channel 2 output: a_ch2, d_ch3
 
             # start AWG card and enable trigger
             if self._spcm_dwGetParam_i32(SPC_M2STATUS) & M2STAT_CARD_READY:
@@ -338,10 +341,12 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                                      values are 1D numpy arrays of type bool containing the marker
                                      states.
         @param bool is_first_chunk: Flag indicating if it is the first chunk to write.
-                                    If True this method will create a new empty wavveform.
+                                    If True this method will create a new empty waveform.
                                     If False the samples are appended to the existing waveform.
+                                    [Not used for Spectrum AWG]
         @param bool is_last_chunk:  Flag indicating if it is the last chunk to write.
                                     Some devices may need to know when to close the appending wfm.
+                                    [Not used for Spectrum AWG]
         @param int total_number_of_samples: The number of sample points for the entire waveform
                                             (not only the currently written chunk)
 
@@ -360,10 +365,18 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 @return (ptr16,  int64): pointer to buffer data, buffersize in bytes
         """
 
-        # TODO -> change from PulserDummy
-        waveforms = list()
-        number_of_samples = 0
+        # to make Qudi happy (not used by the Spectrum AWG):
+        waveforms = list(name)
+        number_of_samples_writen = total_number_of_samples
 
+        # combine analogue and digital sample dictionaries into single dictionary
+        channel_data = {**analog_samples, **digital_samples}
+
+        # to make the AWG happy:
+        number_of_samples = int64(total_number_of_samples)
+
+        # TODO -> implement sanity checks
+        # check total_number_of_samples and analog_samples, digital_samples lengths match
         '''
         # Sanity checks
         if len(analog_samples) > 0:
@@ -385,26 +398,50 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 self.log.error('Unequal length of sample arrays for different channels in dummy '
                                'pulser.')
                 return -1, waveforms
-
-        # Determine if only digital samples are active. In that case each channel will get a
-        # waveform. Otherwise only the analog channels will have a waveform with digital channel
-        # samples included (as it is the case in Tektronix and Keysight AWGs).
-        # Simulate a 1Gbit/s transfer speed. Assume each analog waveform sample is 5 bytes large
-        # (4 byte float and 1 byte marker bitmask). Assume each digital waveform sample is 1 byte.
-        if len(analog_samples) > 0:
-            for chnl in analog_samples:
-                waveforms.append(name + chnl[1:])
-                time.sleep(number_of_samples * 5 * 8 / 1024 ** 3)
-        else:
-            for chnl in digital_samples:
-                waveforms.append(name + chnl[1:])
-                time.sleep(number_of_samples * 8 / 1024 ** 3)
-
-        self.waveform_set.update(waveforms)
         '''
 
-        self.log.info('Waveforms with nametag "{0}" directly written on dummy pulser.'.format(name))
-        return number_of_samples, waveforms
+        # set up AWG parameters
+        llLoops = int64(1)  # one loop
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SINGLERESTART)  # The programmed memory is repeated once after each single trigger event.
+        spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)  # number of repetitions
+        # memory size in samples per channel. Must be set before transferring data to the card
+        # must be an integer number of kB (1024)
+        padding, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
+        spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, padded_number_of_samples)
+
+
+        # AWG trigger settings:
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_SOFTWARE)
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ANDMASK, 0)
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK0, 0)
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK1, 0)
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK0, 0)
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK1, 0)
+        spcm_dwSetParam_i32(self._hCard, SPC_TRIGGEROUT, 0)
+
+        # create a sample buffer (containing all channels) in a format suitable to upload to the AWG
+        pvBuffer, qwBufferSize = self._create_combined_buffer_data(number_of_samples, channel_data)
+
+        # upload the sample buffer to the AWG
+        self.log.info("Starting waveform transfer to AWG and waiting until data is in board memory\n")
+        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize)
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
+        self.log.info("... data has been transferred to board memory\n")
+
+        ## cycle sample rate to avoid AWG bug that corrupts the output signals
+        #self._cycle_sample_rate()
+
+        # We'll start and wait until the card has finished or until a timeout occurs
+        awg_timeout = 15000  # timeout in ms
+        spcm_dwSetParam_i32(self._hCard, SPC_TIMEOUT, awg_timeout)
+        self.log.info("Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)\n")
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START)
+
+
+        if self._read_out_error():
+            return -1, waveforms
+        else:
+            return number_of_samples_writen, waveforms
 
     def write_sequence(self, name, sequence_parameter_list):
         """
@@ -938,22 +975,14 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         If no parameters are passed to this method all channels will be asked
         for their setting.
         """
-        # TODO -> This works for a12d123 config, but need to check for other settings
 
-        # a_ch1 and a_ch2
+        # analogue channels:
         a_channel = self._spcm_dwGetParam_i32(SPC_CHENABLE)
 
         self._active_channels['a_ch1'] = bool(a_channel & CHANNEL0)
         self._active_channels['a_ch2'] = bool(a_channel & CHANNEL1)
 
-        # digital channels
-        # FIXME -> configfile
-        # current implementation:
-        # analog channel 1: bit 0-13: a_ch1
-        #                   bit   15: d_ch1
-        #                   bit   14: d_ch2
-        # analog channel 2: bit 0-14: a_ch2
-        #                   bit   15: d_ch3
+        # digital channels:
 
         # d_ch1
         x0_mode = self._spcm_dwGetParam_i32(SPCM_X0_MODE)
@@ -1133,8 +1162,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         #self.__init__()
         # FIXME -> reset leaves digital output states high
         self._read_out_error()
-        if spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_RESET):
-            self._read_out_error()
+        reset_outcome = self._spcm_dwSetParam_i64(SPC_M2CMD, M2CMD_CARD_RESET)
+        self._spcm_dwSetParam_i64(SPC_ENABLEOUT0, 0)
+        self._spcm_dwSetParam_i64(SPC_ENABLEOUT1, 0)
+        if reset_outcome == -1:
             self.log.error('AWG reset error')
             return -1
         else:
@@ -1178,7 +1209,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
     def _read_out_error(self):
         """checks the error state and prints it out. Errors must be read out before the AWG
         can accept further commands"""
-        spcm_dwGetParam_i32
+
         errortext = (ctypes.c_char*ERRORTEXTLEN)()
         err = spcm_dwGetErrorInfo_i32(self._hCard, None, None, errortext)
         if err:
@@ -1196,6 +1227,26 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # TODO -> shift all usage to query??
         value = int32(0)
         spcm_dwGetParam_i32(self._hCard, lRegister, byref(value))
+        #if self._read_out_error():
+        #   return -1
+        outcome = self._read_out_error()
+        if outcome:
+            self.log.error('_spcm_dwGetParam_i32 error = {}'.format(outcome))
+            return -1
+        else:
+            return value.value
+
+    def _spcm_dwGetParam_i64(self, lRegister):
+        """
+        Reads an internal register.
+
+        @param lRegister (int): register, that should be read out
+
+        @return int: (-1: error , else parameter value)
+        """
+        # TODO -> shift all usage to query??
+        value = int32(0)
+        spcm_dwGetParam_i64(self._hCard, lRegister, byref(value))
         if self._read_out_error():
            return -1
         else:
@@ -1217,12 +1268,35 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         else:
             return 0
 
-    def _create_combined_buffer_data(self, llMemSamples, channel_data):
+    def _spcm_dwSetParam_i64(self, lRegister, plValue):
+        """
+        Sets an internal register.
+
+        @param lRegister (int): register, that should be set
+               plValue   (int): value of the register
+
+        @return int: (-1: error , else parameter value)
+        """
+        # TODO -> shift all usage to write??
+        spcm_dwSetParam_i64(self._hCard, lRegister, int32(plValue))
+        if self._read_out_error():
+           return -1
+        else:
+            return 0
+
+    def _cycle_sample_rate(self):
+        sample_rate = self.get_sample_rate()
+        self.set_sample_rate(600e6)
+        self.set_sample_rate(sample_rate)
+        self.log.info('AWG sample rate cycled {} MS/s -> {} MS/s -> {} MS/s to fix "corrupted-output-bug"'.format(
+            int(sample_rate / 1e6), int(600), int(sample_rate / 1e6)))
+
+    def _create_combined_buffer_data(self, number_of_samples, channel_data):
         """
         digital channels are encoded in analog samples for synchronous readout
         -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
 
-        @param llMemSamples: number of samples (must be identical?) for all channels
+        @param number_of_samples (int): number of samples (must be identical for all channels)
                channel_data: dictionary with channel keys and channel data
                              e.g. {'a_ch1': np.array([...]), 'd_ch1': np.array([])}
 
@@ -1239,50 +1313,97 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         active_channels = self._active_channels
 
+        # sanity check:
         for key in channel_data.keys():
-            if channel_data[key].size != llMemSamples.value:
+            if channel_data[key].size != number_of_samples.value:
                 self.log.error('Channel data for channel {} has the wrong size!'.format(key))
                 return -1
 
+        # create buffer of zeros for active channels that have not been provided with an output signal
         for key in active_channels.keys():
             if key not in channel_data.keys():
-                channel_data[key] = np.zeros(llMemSamples.value, dtype=np.dtype(np.int16))
+                print('Creating zero buffer for {}').format(key)
+                channel_data[key] = np.zeros(number_of_samples.value, dtype=np.dtype(np.int16))
+
+        # buffer length must be an integer number of kilobytes (i.e. a multiple of 1024)
+        # pad input data to round to next integer kB length:
+        padding, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
+        #padding   = int(np.ceil(number_of_samples.value/1024) - np.floor(number_of_samples.value/1024))
+        #padded_number_of_samples = int64(number_of_samples.value + padding)
+        print('padded_number_of_samples = {}, type {}'.format(padded_number_of_samples, type(padded_number_of_samples)))
+        for key in active_channels.keys():
+            channel_data[key] = np.append(channel_data[key], np.zeros(padding))
+            print('{}, new size = {}, padding = {}, type = {}'.format(key, channel_data[key].size, padding, type(padding)))
 
         if active_channels['d_ch2']:
-            a_ch1_data = ((channel_data['a_ch1'].astype(np.uint16) >> 2) |
-                          (channel_data['d_ch1'].astype(bool) << 15) |
-                          (channel_data['d_ch2'].astype(bool) << 14))
+           #print('Merging d_ch1 + d_ch2 with a_ch1')
+            awg_ch1_data = ((channel_data['a_ch1'].astype(np.uint16) >> 2) |
+                            (channel_data['d_ch1'].astype(bool) << 15) |
+                            (channel_data['d_ch2'].astype(bool) << 14))
         elif active_channels['d_ch1']:
-            a_ch1_data = ((channel_data['a_ch1'].astype(np.unint16) >> 1) |
-                          (channel_data['d_ch1'].astype(bool) << 15))
+            #print('Merging d_ch1 with a_ch1')
+            awg_ch1_data = ((channel_data['a_ch1'].astype(np.unint16) >> 1) |
+                            (channel_data['d_ch1'].astype(bool) << 15))
 
         if active_channels['d_ch3']:
-            a_ch2_data = ((channel_data['a_ch2'].astype(np.uint16) >> 1) |
-                          (channel_data['d_ch3'].astype(np.uint16) << 15))
+            #print('Merging d_ch3 with a_ch2')
+            awg_ch2_data = ((channel_data['a_ch2'].astype(np.uint16) >> 1) |
+                            (channel_data['d_ch3'].astype(np.uint16) << 15))
 
+        # Combine the two channels into a single data transfer buffer.
+        # Samples for the two channels are ordered according to: A0 B0 A1 B1 A2 B2 .... An Bn,
+        # where An is the nth sample for channel 1, and Bn the nth sample for channel 2
         if active_channels['a_ch1'] and active_channels['a_ch2']:
-            combined_channel_data = np.vstack((a_ch1_data, a_ch2_data)).ravel('F').astype(np.int16)
+            combined_channel_data = np.vstack((awg_ch1_data, awg_ch2_data)).ravel('F').astype(np.int16)
         elif active_channels['a_ch1']:
-            combined_channel_data = a_ch1_data.astype(np.int16)
+            combined_channel_data = awg_ch1_data.astype(np.int16)
         elif active_channels['a_ch2']:
-            combined_channel_data = a_ch2_data.astype(np.int16)
+            combined_channel_data = awg_ch2_data.astype(np.int16)
         else:
             self.log.error('No channel activated.')
             return -1
 
-        # setup software buffer
+        chcount1 = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPC_CHCOUNT, byref(chcount1))
+        print('chcount1 = {}'.format(chcount1))
+
+        value = int32(0)
+        spcm_dwGetParam_i32(self._hCard, SPC_CHCOUNT, byref(value))
+        print('chcount2 = {}'.format(value))
+
+        # set up software buffer
         chcount = self._spcm_dwGetParam_i32(SPC_CHCOUNT)
         lBytesPerSample = self._spcm_dwGetParam_i32(SPC_MIINST_BYTESPERSAMPLE)
 
-        qwBufferSize = uint64(llMemSamples.value * lBytesPerSample * chcount)
+        print('padded_number_of_samples.value={}, chcount={}, lBytesPerSample={}'.format(padded_number_of_samples.value,chcount,lBytesPerSample))
+        print('qwBuffer product = {}'.format(padded_number_of_samples.value * lBytesPerSample * chcount))
+        qwBufferSize = uint64(padded_number_of_samples.value * lBytesPerSample * chcount)
+        print('qwBufferSize = {}, type {}'.format(qwBufferSize.value, type(qwBufferSize)))
         pvBuffer = create_string_buffer(qwBufferSize.value)
 
         # calculate the data
         pnBuffer = cast(pvBuffer, ptr16)
-        for i in range(0, llMemSamples.value * chcount, 1):
-            pnBuffer[i] = int16(combined_channel_data[i])
+        # TODO -> replace for loop with single line, e.g.: pnBuffer = combined_channel_data
+        for i in range(0, padded_number_of_samples.value * chcount, 1):
+            pnBuffer[i] = combined_channel_data[i]
 
         return pvBuffer, qwBufferSize
+
+    def _padded_number_of_samples(self,number_of_samples):
+        """
+        Spectrum AWG can only accept sample uploads with a length that is an
+        integer number of kB long. This function takes the sample length and
+
+        @param number_of_samples: desired number of samples input to the AWG
+        @return padded_number_of_samples: input number rounded up to nearest integer kB (1024)
+        @return padding: number of zeros required to pad the input data
+        """
+
+        #padding = int(np.ceil(number_of_samples.value / 1024) - np.floor(number_of_samples.value / 1024))
+        padding = int( (np.ceil(number_of_samples.value / 1024) - number_of_samples.value / 1024) * 1024)
+        padded_number_of_samples = int64(number_of_samples.value + padding)
+        #print('number_of_samples = {}, padding = {}, padded_number_of_samples = {}'.format(number_of_samples, padding, padded_number_of_samples))
+        return padding, padded_number_of_samples
 
     def _set_trigger(self, software_trigger = False):
         """
@@ -1494,7 +1615,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         lStep = 1 # current step is Step  # 1
         llSegment = 1 # associated with memory segment 1
         llLoop = 1 # Pattern will be repeated once before condition is checked
-        llNext = 0; # Next step is Step  # 0
+        llNext = 0 # Next step is Step  # 0
         llCondition = SPCSEQ_ENDLOOPONTRIG # Repeat current step until a trigger has occurred
         llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment))
         spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, llValue)
@@ -1558,3 +1679,34 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             print('\rUploaded segment {:4d} of {:4d}. '.format(i + 1, max_segments) +
                   '|' * round(50 * (i + 1) / max_segments) + '-' * round(50 - 50 * (i + 1) / max_segments), end='')
         print('')
+
+    def _test_waveform_upload(self, frequency_1=100e6, frequency_2=200e6, number_of_samples=int64(KILO_B(64))):
+
+
+        sample_rate = self.get_sample_rate()
+
+        a_ch1_signal = (np.sin(np.arange(number_of_samples.value) * (frequency_1 / sample_rate) * 2 * np.pi) *
+                        (2 ** 15 - 1)).astype(dtype=np.int16)
+
+        a_ch2_signal = (np.sin(np.arange(number_of_samples.value) * (frequency_2 / sample_rate) * 2 * np.pi) *
+                        (2 ** 15 - 1)).astype(dtype=np.int16)
+
+        d_ch1_signal = np.zeros(number_of_samples.value).astype(dtype=np.bool)
+        d_ch2_signal = np.zeros(number_of_samples.value).astype(dtype=np.bool)
+        d_ch3_signal = np.zeros(number_of_samples.value).astype(dtype=np.bool)
+
+        d_ch1_signal[0:10] = True
+
+        analog_samples = {'a_ch1': a_ch1_signal,
+                          'a_ch2': a_ch2_signal}
+
+        digital_samples = {'d_ch1': d_ch1_signal,
+                           'd_ch2': d_ch2_signal,
+                           'd_ch3': d_ch3_signal}
+
+        self.write_waveform('name', analog_samples, digital_samples, True, True, number_of_samples.value)
+
+        # cycle sample rate to avoid AWG bug that corrupts the output signals
+        self._cycle_sample_rate()
+
+        self.pulser_on()

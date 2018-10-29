@@ -56,6 +56,7 @@ while True:
         stdout=sys.stdout,
         stderr=sys.stderr,
         shell=False)
+
     if sys.platform == 'win32':
         # Attach the interrupt event to the Popen objet so it can be used later.
         process.win32_interrupt_event = interrupt_event
