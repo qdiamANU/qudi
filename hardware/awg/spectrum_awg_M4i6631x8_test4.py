@@ -66,6 +66,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.channel_states = {'a_ch1': False, 'a_ch2': False,
                                'd_ch1': False, 'd_ch2': False, 'd_ch3': False}
 #
+        self.wjat = []
         ## for each analog channel one value
         #self.amplitude_dict = {'a_ch1': 4.0, 'a_ch2': 4.0}
         #self.offset_dict = {}
@@ -296,6 +297,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             if self._spcm_dwGetParam_i32(SPC_M2STATUS) & M2STAT_CARD_READY:
                 spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
 
+            self.force_trigger()
+
         if self._read_out_error():
             return -1
         else:
@@ -366,12 +369,19 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         """
 
         # to make Qudi happy (not used by the Spectrum AWG):
-        waveforms = list(name)
+        #Todo: check waveforms list
+        #waveforms = list(name)
+        waveforms = [name]
+        print('waveforms (name) = {}'.format(waveforms))
         number_of_samples_writen = total_number_of_samples
+
+        # adjust analogue amplitude scaling for Spectrum AWG
+        for key in analog_samples:
+            analog_samples[key]=(analog_samples[key]*(2 ** 15 - 1)).astype(dtype=np.int16)
 
         # combine analogue and digital sample dictionaries into single dictionary
         channel_data = {**analog_samples, **digital_samples}
-
+        print(channel_data)
         # to make the AWG happy:
         number_of_samples = int64(total_number_of_samples)
 
@@ -437,7 +447,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.log.info("Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)\n")
         spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START)
 
-
+        self.wjat = [name]
         if self._read_out_error():
             return -1, waveforms
         else:
@@ -478,9 +488,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return list: List of all uploaded waveform name strings in the device workspace.
         """
-
         self.log.warning('Spectrum M4i AWG series has only basic onboard memory: uploaded waveform names not available')
-        return list()
+        return self.wjat
 
     def get_sequence_names(self):
         """ Retrieve the names of all uploaded sequence on the device.
@@ -536,6 +545,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # TODO -> change from PulserDummy
         # probably just needs to be some pre-trigger call
 
+        pass
+        '''
         if isinstance(load_dict, list):
             new_dict = dict()
             for waveform in load_dict:
@@ -569,6 +580,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             new_loaded_assets[channel] = waveform
         self.current_loaded_assets = new_loaded_assets
         return self.get_loaded_assets()
+        '''
 
     def load_sequence(self, sequence_name):
         """ Loads a sequence to the channels of the device in order to be ready for playback.
@@ -694,18 +706,33 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              4h The card has finished its run and is ready.
                              8h Multi/ABA/Gated acquisition of M4i/M4x/M2p only:
                                 the pretrigger area of one segment has been filled.)
+
+                             100h The next data block as defined in the notify size is available.
+                                    It is at least the amount of data available but it also can be more data.
+                             200h The data transfer has completed. This status information will only occur
+                                    if the notify size is set to zero.
+                             400h The data transfer had on overrun (acquisition) or underrun (replay) while doing FIFO transfer.
+                             800h An internal error occurred while doing data transfer
         """
-        # FIXME -> finish this!!
+        # TODO: this isn't as well-implemented as it could be - would ideally derive active/ready status from AWG query
+
         status = self._spcm_dwGetParam_i32(SPC_M2STATUS)
         self.log.info('M4i6631x8 status: {0:x} (see manual for more information)'.format(status))
-        return 0, {0: ''}
-        status_dic = {}
+        error = self._read_out_error()
 
-        status_dic[-1] = 'Failed Request or Communication'
-        status_dic[0] = 'Device has stopped, but can receive commands.'
+        # change current_status if error detected:
+        if error or status >= 800:
+            self.current_status = -1
+
+        # otherwise, leave status unchanged (0 or 1)
+
+        # Define the status dictionary for this AWG:
+        status_dic = {}
         status_dic[1] = 'Device is active and running.'
-        # All the other status messages should have higher integer values
-        # than 1.
+        status_dic[0] = 'Device has stopped, but can receive commands.'
+        status_dic[-1] = 'Device error'
+        # All the other status messages should have higher integer values than 1.
+
         return self.current_status, status_dic
 
     def get_sample_rate(self):
@@ -716,7 +743,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         Do not return a saved sample rate in a class variable, but instead
         retrieve the current sample rate directly from the device.
         """
-        # TODO -> check this works
         sample_rate = self._spcm_dwGetParam_i32(SPC_SAMPLERATE)
         return float(sample_rate)
 
@@ -731,7 +757,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
               for obtaining the actual set value and use that information for
               further processing.
         """
-        # TODO -> check this works
         constraint = self.get_constraints().sample_rate
         if sample_rate > constraint.max:
             self.sample_rate = constraint.max
@@ -1163,6 +1188,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # FIXME -> reset leaves digital output states high
         self._read_out_error()
         reset_outcome = self._spcm_dwSetParam_i64(SPC_M2CMD, M2CMD_CARD_RESET)
+        # self.write_waveform('reset', {'a_ch1': 0, 'a_ch2': 0}, {'d_ch1': 0, 'd_ch2': 0, 'd_ch3': 0}, True, True, 1)
         self._spcm_dwSetParam_i64(SPC_ENABLEOUT0, 0)
         self._spcm_dwSetParam_i64(SPC_ENABLEOUT1, 0)
         if reset_outcome == -1:
@@ -1322,18 +1348,18 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # create buffer of zeros for active channels that have not been provided with an output signal
         for key in active_channels.keys():
             if key not in channel_data.keys():
-                print('Creating zero buffer for {}').format(key)
+                #print('Creating zero buffer for {}').format(key)
                 channel_data[key] = np.zeros(number_of_samples.value, dtype=np.dtype(np.int16))
 
         # buffer length must be an integer number of kilobytes (i.e. a multiple of 1024)
         # pad input data to round to next integer kB length:
         padding, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
-        #padding   = int(np.ceil(number_of_samples.value/1024) - np.floor(number_of_samples.value/1024))
-        #padded_number_of_samples = int64(number_of_samples.value + padding)
-        print('padded_number_of_samples = {}, type {}'.format(padded_number_of_samples, type(padded_number_of_samples)))
+        if padding != 0:
+            self.log.info('padding samples with {} zeros to increase sample number to integer number of kB'.format(padding))
+        #print('padded_number_of_samples = {}, type {}'.format(padded_number_of_samples, type(padded_number_of_samples)))
         for key in active_channels.keys():
             channel_data[key] = np.append(channel_data[key], np.zeros(padding))
-            print('{}, new size = {}, padding = {}, type = {}'.format(key, channel_data[key].size, padding, type(padding)))
+            #print('{}, new size = {}, padding = {}, type = {}'.format(key, channel_data[key].size, padding, type(padding)))
 
         if active_channels['d_ch2']:
            #print('Merging d_ch1 + d_ch2 with a_ch1')
@@ -1363,22 +1389,14 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.log.error('No channel activated.')
             return -1
 
-        chcount1 = int32(0)
-        spcm_dwGetParam_i32(self._hCard, SPC_CHCOUNT, byref(chcount1))
-        print('chcount1 = {}'.format(chcount1))
-
-        value = int32(0)
-        spcm_dwGetParam_i32(self._hCard, SPC_CHCOUNT, byref(value))
-        print('chcount2 = {}'.format(value))
-
         # set up software buffer
         chcount = self._spcm_dwGetParam_i32(SPC_CHCOUNT)
         lBytesPerSample = self._spcm_dwGetParam_i32(SPC_MIINST_BYTESPERSAMPLE)
 
-        print('padded_number_of_samples.value={}, chcount={}, lBytesPerSample={}'.format(padded_number_of_samples.value,chcount,lBytesPerSample))
-        print('qwBuffer product = {}'.format(padded_number_of_samples.value * lBytesPerSample * chcount))
+        #print('padded_number_of_samples.value={}, chcount={}, lBytesPerSample={}'.format(padded_number_of_samples.value,chcount,lBytesPerSample))
+        #print('qwBuffer product = {}'.format(padded_number_of_samples.value * lBytesPerSample * chcount))
         qwBufferSize = uint64(padded_number_of_samples.value * lBytesPerSample * chcount)
-        print('qwBufferSize = {}, type {}'.format(qwBufferSize.value, type(qwBufferSize)))
+        #print('qwBufferSize = {}, type {}'.format(qwBufferSize.value, type(qwBufferSize)))
         pvBuffer = create_string_buffer(qwBufferSize.value)
 
         # calculate the data

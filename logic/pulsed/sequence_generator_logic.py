@@ -433,9 +433,13 @@ class SequenceGeneratorLogic(GenericLogic):
 
         @param str|PulseBlockEnsemble ensemble:
         """
+        print('\nload_ensemble()')
+        print('ensemble1 = {}'.format(ensemble))
+
         # If str has been passed, get the ensemble object from saved ensembles
         if isinstance(ensemble, str):
             ensemble = self.saved_pulse_block_ensembles[ensemble]
+            print('ensemble2 = {}'.format(ensemble))
             if ensemble is None:
                 self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
                 return
@@ -445,8 +449,10 @@ class SequenceGeneratorLogic(GenericLogic):
             self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
             return
 
+        print('self.sampled_waveforms = {}\n'.format(self.sampled_waveforms))
         # Check if the PulseBlockEnsemble has been sampled already.
         if ensemble.sampling_information:
+            print('ensemble.sampling_information[waveforms] = {}'.format(ensemble.sampling_information['waveforms']))
             # Check if the corresponding waveforms are present in the pulse generator memory
             ready_waveforms = self.sampled_waveforms
             for waveform in ensemble.sampling_information['waveforms']:
@@ -1042,6 +1048,7 @@ class SequenceGeneratorLogic(GenericLogic):
         @param PulseBlockEnsemble ensemble: The PulseBlockEnsemble instance to analyze
         @return (float, int, int): length in seconds, length in bins, number of laser/gate pulses
         """
+        print(ensemble)
         # variables to keep track of the current timeframe and number of laser/gate pulses
         ensemble_length_s = 0.0
         ensemble_length_bins = 0
@@ -1316,8 +1323,8 @@ class SequenceGeneratorLogic(GenericLogic):
                            ''.format(ensemble.name, blocks_missing))
         if channel_activation_mismatch:
             self.log.error('Sampling of PulseBlockEnsemble "{0}" failed!\nMismatch of activation '
-                           'config in logic ({1}) and used channels in PulseBlockEnsemble.'
-                           ''.format(ensemble.name, self.__activation_config[1]))
+                           'config in logic ({1}) and used channels in PulseBlockEnsemble ({2}).'
+                           ''.format(ensemble.name, self.__activation_config[1]), block.channel_set)
 
         # Return error code
         return -1 if blocks_missing or channel_activation_mismatch else 0
@@ -1384,6 +1391,8 @@ class SequenceGeneratorLogic(GenericLogic):
         It is a dictionary containing:
         TODO: Add parameters that are stored
         """
+
+        print('sample_pulse_block_ensemble')
         # Get PulseBlockEnsemble from saved ensembles if string has been passed as argument
         if isinstance(ensemble, str):
             ensemble = self.get_ensemble(ensemble)
@@ -1416,6 +1425,7 @@ class SequenceGeneratorLogic(GenericLogic):
         # get important parameters from the ensemble
         ensemble_info = self.analyze_block_ensemble(ensemble)
 
+        # Fixme: not correct for Spectrum AWG?
         # Calculate the byte size per sample.
         # One analog sample per channel is 4 bytes (np.float32) and one digital sample per channel
         # is 1 byte (np.bool).
