@@ -110,7 +110,7 @@ class TimeTaggerSlowCounter(Base, SlowCounterInterface, ODMRCounterInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-
+        # Fixme
         # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
         # set at startup
         #self._tagger.setTestSignal(0, True)
@@ -235,6 +235,7 @@ class TimeTaggerSlowCounter(Base, SlowCounterInterface, ODMRCounterInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        # Fixme
         # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
         # set at startup
         self._tagger.setTestSignal(0, False)

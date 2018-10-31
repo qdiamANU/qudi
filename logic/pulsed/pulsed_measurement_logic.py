@@ -1054,6 +1054,8 @@ class PulsedMeasurementLogic(GenericLogic):
                 self._extract_laser_pulses()
 
                 tmp_signal, tmp_error = self._analyze_laser_pulses()
+                print('tmp_signal = {}'.format(tmp_signal))
+                print('tmp_error = {}'.format(tmp_error))
 
                 # exclude laser pulses to ignore
                 if len(self._laser_ignore_list) > 0:
@@ -1088,6 +1090,7 @@ class PulsedMeasurementLogic(GenericLogic):
     def _extract_laser_pulses(self):
         # Get counter raw data (including recalled raw data from previous measurement)
         self.raw_data = self._get_raw_data()
+        print('raw_data = {}'.format(self.raw_data))
 
         # extract laser pulses from raw data
         return_dict = self._pulseextractor.extract_laser_pulses(self.raw_data)
@@ -1113,6 +1116,9 @@ class PulsedMeasurementLogic(GenericLogic):
         """
         # get raw data from fast counter
         fc_data = netobtain(self.fastcounter().get_data_trace())
+        print('_get_raw_data')
+        print('self.fastcounter().get_data_trace() = {}'.format(self.fastcounter().get_data_trace()))
+        print('fc_data = {}'.format(fc_data))
 
         # add old raw data from previous measurements if necessary
         if self._saved_raw_data.get(self._recalled_raw_data_tag) is not None:

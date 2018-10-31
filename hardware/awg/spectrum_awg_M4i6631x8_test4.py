@@ -66,7 +66,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.channel_states = {'a_ch1': False, 'a_ch2': False,
                                'd_ch1': False, 'd_ch2': False, 'd_ch3': False}
 #
-        self.wjat = []
+        self.waveform_name = []
         ## for each analog channel one value
         #self.amplitude_dict = {'a_ch1': 4.0, 'a_ch2': 4.0}
         #self.offset_dict = {}
@@ -369,7 +369,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         """
 
         # to make Qudi happy (not used by the Spectrum AWG):
-        #Todo: check waveforms list
+        #Todo: this only works if only one waveform name is ever used with this AWG (matching current understanding of AwG and qudi)
         #waveforms = list(name)
         waveforms = [name]
         print('waveforms (name) = {}'.format(waveforms))
@@ -432,6 +432,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # create a sample buffer (containing all channels) in a format suitable to upload to the AWG
         pvBuffer, qwBufferSize = self._create_combined_buffer_data(number_of_samples, channel_data)
 
+        # Todo: output pvBuff, qwBufferSize as [waveform_name] to be stored on PC - possibly even as a separate file
+        # [waveform_name] can then be uploaded to the AWG using load_waveform, or combined with other waveforms to create a sequence
+        # the commands below would need to get moved to load_waveform()
+
         # upload the sample buffer to the AWG
         self.log.info("Starting waveform transfer to AWG and waiting until data is in board memory\n")
         spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize)
@@ -447,7 +451,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.log.info("Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)\n")
         spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START)
 
-        self.wjat = [name]
+        self.waveform_name = [name]
         if self._read_out_error():
             return -1, waveforms
         else:
@@ -489,7 +493,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return list: List of all uploaded waveform name strings in the device workspace.
         """
         self.log.warning('Spectrum M4i AWG series has only basic onboard memory: uploaded waveform names not available')
-        return self.wjat
+        return self.waveform_name
 
     def get_sequence_names(self):
         """ Retrieve the names of all uploaded sequence on the device.
@@ -674,7 +678,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.log.warning('clear all does nothing at the moment')
 
         # upload zeros to all channels
-        total_number_of_samples = 100
+        total_number_of_samples = 32
         analog_samples = {"a_ch1": np.zeros(total_number_of_samples),
                           "a_ch2": np.zeros(total_number_of_samples)}
         digital_samples = {"d_ch1": np.zeros(total_number_of_samples),
@@ -1109,6 +1113,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
     def get_interleave(self):
         """ Check whether Interleave is ON or OFF in AWG.
+        Interleave consists of using two or more AWG channels working at a nominal sample rates to generate a signal
+        as if it were created by a higher sample rate device
 
         @return bool: True: ON, False: OFF
 
@@ -1119,6 +1125,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
     def set_interleave(self, state=False):
         """ Turns the interleave of an AWG on or off.
+        Interleave consists of using two or more AWG channels working at a nominal sample rates to generate a signal
+        as if it were created by a higher sample rate device
 
         @param bool state: The state the interleave should be set to
                            (True: ON, False: OFF)
@@ -1271,7 +1279,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return int: (-1: error , else parameter value)
         """
         # TODO -> shift all usage to query??
-        value = int32(0)
+        value = int64(0)
         spcm_dwGetParam_i64(self._hCard, lRegister, byref(value))
         if self._read_out_error():
            return -1
@@ -1304,7 +1312,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return int: (-1: error , else parameter value)
         """
         # TODO -> shift all usage to write??
-        spcm_dwSetParam_i64(self._hCard, lRegister, int32(plValue))
+        spcm_dwSetParam_i64(self._hCard, lRegister, int64(plValue))
         if self._read_out_error():
            return -1
         else:
@@ -1410,15 +1418,15 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
     def _padded_number_of_samples(self,number_of_samples):
         """
         Spectrum AWG can only accept sample uploads with a length that is an
-        integer number of kB long. This function takes the sample length and
+        integer multiple of [32 samples] long. Need to pad sample buffer to fulfill this requirement
 
         @param number_of_samples: desired number of samples input to the AWG
-        @return padded_number_of_samples: input number rounded up to nearest integer kB (1024)
-        @return padding: number of zeros required to pad the input data
+        @return padded_number_of_samples: input number rounded up to nearest multiple of [32 samples]
+        @return padding: number of samples (e.g. zeros) required to pad the input data
         """
 
-        #padding = int(np.ceil(number_of_samples.value / 1024) - np.floor(number_of_samples.value / 1024))
-        padding = int( (np.ceil(number_of_samples.value / 1024) - number_of_samples.value / 1024) * 1024)
+        min_awg_memory_stepsize = 32
+        padding = int( (np.ceil(number_of_samples.value / min_awg_memory_stepsize) - number_of_samples.value / min_awg_memory_stepsize) * min_awg_memory_stepsize)
         padded_number_of_samples = int64(number_of_samples.value + padding)
         #print('number_of_samples = {}, padding = {}, padded_number_of_samples = {}'.format(number_of_samples, padding, padded_number_of_samples))
         return padding, padded_number_of_samples
