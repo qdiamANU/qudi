@@ -462,7 +462,7 @@ class SequenceGeneratorLogic(GenericLogic):
                                    'PulseBlockEnsemble.'.format(waveform, ensemble.name))
                     self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
                     return
-
+            # fixme: there is no way of resetting after triggering this, other than restarting qudi
             if self.pulsegenerator().get_status()[0] > 0:
                 self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
                 return -1

@@ -663,12 +663,13 @@ class PulsedMeasurementLogic(GenericLogic):
         @param kwargs:
         @return:
         """
+        print('pulsed_measurement_logic.set_measurement_settings')
         # Determine complete settings dictionary
         if not isinstance(settings_dict, dict):
             settings_dict = kwargs
         else:
             settings_dict.update(kwargs)
-
+        print('-- settings_dict={}'.format(settings_dict))
         # Check if invoke_settings flag has changed
         if 'invoke_settings' in settings_dict:
             self._invoke_settings_from_sequence = bool(settings_dict.get('invoke_settings'))

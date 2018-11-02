@@ -4,6 +4,8 @@
 This file contains the Qudi hardware module for the M4i6631x8 series
 AWG from Spectrum Instruments.
 
+Written by Andrew Horsley and Sven Bodenstedt, 2018
+
 The M4i6631x8 has two 16-bit analogue channels. Bit from these analogue
 channels can be sacrificed to create up to 3 digital output channels. The
 assignment of the bits is flexible. We choose:
@@ -12,6 +14,8 @@ analog channel 1: bit 0-13: a_ch1
                   bit   14: d_ch2
 analog channel 2: bit 0-14: a_ch2
                   bit   15: d_ch3
+
+todo: describe the use of waveform_dict
 
 Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -66,7 +70,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.channel_states = {'a_ch1': False, 'a_ch2': False,
                                'd_ch1': False, 'd_ch2': False, 'd_ch3': False}
 #
-        self.waveform_name = []
+
         ## for each analog channel one value
         #self.amplitude_dict = {'a_ch1': 4.0, 'a_ch2': 4.0}
         #self.offset_dict = {}
@@ -77,9 +81,17 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 #
         #self.waveform_set = set()
         #self.sequence_dict = dict()
-#
+
+        self.waveform_names = list()
+        self.waveform_dict = dict()
+        self.sequence_names = list()
+        self.sequence_dict = dict()
+
         self.current_loaded_assets = dict()
+        self.current_loaded_assets_type = ''
 #
+
+        self.blank_stored_waveform = StoredWaveform()
         #self.use_sequencer = True
         ##self.interleave = False
 #
@@ -100,7 +112,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # prepare the card in a defined state
         self.reset()
 
-
         # FIXME -> initialisation leaves digital output states high
 
         # read type, function and sn and check for A/D card
@@ -111,7 +122,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         lFncType = int32(0)
         spcm_dwGetParam_i32(hCard, SPC_FNCTYPE, byref(lFncType))
 
-        spcm_dwSetParam_i32(hCard, SPC_TIMEOUT, 25000)  # timeout 15 s
+        awg_timeout = 25000 # timeout in ms
+        spcm_dwSetParam_i32(hCard, SPC_TIMEOUT, awg_timeout)
 
         self._active_channels = {'a_ch1': True,
                                 'a_ch2': True,
@@ -330,11 +342,16 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
     def write_waveform(self, name, analog_samples, digital_samples, is_first_chunk, is_last_chunk,
                        total_number_of_samples):
         """
-        Write a new waveform or append samples to an already existing waveform on the device memory.
-        The flags is_first_chunk and is_last_chunk can be used as indicator if a new waveform should
-        be created or if the write process to a waveform should be terminated.
+        Write a new waveform to the PC workspace.
 
-        NOTE: All sample arrays in analog_samples and digital_samples must be of equal length!
+        NOTES:
+        -- Unlike many AWGs, with an onboard file system, only the active waveform/sequence
+        is stored on the Spectrum AWG.
+        -- The key output of write_waveform is a StoredWaveform instance, which is stored in
+        the dictionary self.waveform_dict[name] = stored_waveform
+        -- All sample arrays in analog_samples and digital_samples must be of equal length!
+        -- Digital channels are encoded in analog samples for synchronous readout
+                -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
 
         @param str name: the name of the waveform to be created/append to
         @param dict analog_samples: keys are the generic analog channel names (i.e. 'a_ch1') and
@@ -343,13 +360,13 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @param dict digital_samples: keys are the generic digital channel names (i.e. 'd_ch1') and
                                      values are 1D numpy arrays of type bool containing the marker
                                      states.
-        @param bool is_first_chunk: Flag indicating if it is the first chunk to write.
+        @param bool is_first_chunk: [NOT USED FOR SPECTRUM AWG]
+                                    Flag indicating if it is the first chunk to write.
                                     If True this method will create a new empty waveform.
                                     If False the samples are appended to the existing waveform.
-                                    [Not used for Spectrum AWG]
-        @param bool is_last_chunk:  Flag indicating if it is the last chunk to write.
+        @param bool is_last_chunk:  [NOT USED FOR SPECTRUM AWG]
+                                    Flag indicating if it is the last chunk to write.
                                     Some devices may need to know when to close the appending wfm.
-                                    [Not used for Spectrum AWG]
         @param int total_number_of_samples: The number of sample points for the entire waveform
                                             (not only the currently written chunk)
 
@@ -357,27 +374,57 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              created waveform names
         """
 
-        """
-                digital channels are encoded in analog samples for synchronous readout
-                -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
+        # check if waveform name already exists in stored waveforms. If so, delete previous waveform instance
+        # todo: check if previous waveform identical - if so, leave unchanged and return
+        if name in self.waveform_names:
+            self.delete_waveform(name)
+            self.log.info('Overwriting waveform: {}'.format(name))
 
-                @param llMemSamples: number of samples (must be identical?) for all channels
-                       channel_data: dictionary with channel keys and channel data
-                                     e.g. {'a_ch1': np.array([...]), 'd_ch1': np.array([])}
+        # perform sanity check on input name, and update stored waveform names
+        if isinstance(name, str):
+            self.waveform_names.append(name)
+            current_waveform_name = [name]
+        elif isinstance(name, list):  # todo: this check appears unnecessary, as pulsed GUI sends 'name' as a str
+            if len(name) != 1:
+                self.log.error('Cannot write waveform: too many waveform names given')
+            else:
+                self.waveform_names.append(name)
+                current_waveform_name = name
+        else:
+            self.log.error('Cannot write waveform: waveform name is not list or str.')
+        #print('\ncurrent_waveform_name = {}, type = {}'.format(current_waveform_name, type(current_waveform_name)))
+        #print('self.waveform_names = {}, type = {}'.format(self.waveform_names, type(self.waveform_names)))
 
-                @return (ptr16,  int64): pointer to buffer data, buffersize in bytes
-        """
+        # TODO -> implement sanity checks on sample numbers
+        # check total_number_of_samples and analog_samples, digital_samples lengths match
+        '''
+                # Sanity checks
+                if len(analog_samples) > 0:
+                    number_of_samples = len(analog_samples[list(analog_samples)[0]])
+                elif len(digital_samples) > 0:
+                    number_of_samples = len(digital_samples[list(digital_samples)[0]])
+                else:
+                    self.log.error('No analog or digital samples passed to write_waveform method in dummy '
+                                   'pulser.')
+                    return -1, waveforms
 
-        # to make Qudi happy (not used by the Spectrum AWG):
-        #Todo: this only works if only one waveform name is ever used with this AWG (matching current understanding of AwG and qudi)
-        #waveforms = list(name)
-        waveforms = [name]
-        print('waveforms (name) = {}'.format(waveforms))
+                for chnl, samples in analog_samples.items():
+                    if len(samples) != number_of_samples:
+                        self.log.error('Unequal length of sample arrays for different channels in dummy '
+                                       'pulser.')
+                        return -1, waveforms
+                for chnl, samples in digital_samples.items():
+                    if len(samples) != number_of_samples:
+                        self.log.error('Unequal length of sample arrays for different channels in dummy '
+                                       'pulser.')
+                        return -1, waveforms
+        '''
         number_of_samples_writen = total_number_of_samples
 
         # adjust analogue amplitude scaling for Spectrum AWG
+        # fixme: generated amplitudes seem to be a factor of 2 different to those expected from pulsed GUI
         for key in analog_samples:
-            analog_samples[key]=(analog_samples[key]*(2 ** 15 - 1)).astype(dtype=np.int16)
+            analog_samples[key] = (analog_samples[key]*(2 ** 15 - 1)).astype(dtype=np.int16)
 
         # combine analogue and digital sample dictionaries into single dictionary
         channel_data = {**analog_samples, **digital_samples}
@@ -385,81 +432,40 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # to make the AWG happy:
         number_of_samples = int64(total_number_of_samples)
 
-        # TODO -> implement sanity checks
-        # check total_number_of_samples and analog_samples, digital_samples lengths match
-        '''
-        # Sanity checks
-        if len(analog_samples) > 0:
-            number_of_samples = len(analog_samples[list(analog_samples)[0]])
-        elif len(digital_samples) > 0:
-            number_of_samples = len(digital_samples[list(digital_samples)[0]])
-        else:
-            self.log.error('No analog or digital samples passed to write_waveform method in dummy '
-                           'pulser.')
-            return -1, waveforms
-
-        for chnl, samples in analog_samples.items():
-            if len(samples) != number_of_samples:
-                self.log.error('Unequal length of sample arrays for different channels in dummy '
-                               'pulser.')
-                return -1, waveforms
-        for chnl, samples in digital_samples.items():
-            if len(samples) != number_of_samples:
-                self.log.error('Unequal length of sample arrays for different channels in dummy '
-                               'pulser.')
-                return -1, waveforms
-        '''
-
         # set up AWG parameters
         llLoops = int64(1)  # one loop
         spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SINGLERESTART)  # The programmed memory is repeated once after each single trigger event.
         spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)  # number of repetitions
+
+
         # memory size in samples per channel. Must be set before transferring data to the card
         # must be an integer number of kB (1024)
         padding, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
-        spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, padded_number_of_samples)
+        self._spcm_dwSetParam_i64(SPC_MEMSIZE, padded_number_of_samples.value)
 
-
-        # AWG trigger settings:
-        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_SOFTWARE)
-        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ANDMASK, 0)
-        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK0, 0)
-        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ORMASK1, 0)
-        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK0, 0)
-        spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK1, 0)
-        spcm_dwSetParam_i32(self._hCard, SPC_TRIGGEROUT, 0)
+        self._set_trigger(software_trigger=True)  # set AWG to software trigger
 
         # create a sample buffer (containing all channels) in a format suitable to upload to the AWG
         pvBuffer, qwBufferSize = self._create_combined_buffer_data(number_of_samples, channel_data)
 
-        # Todo: output pvBuff, qwBufferSize as [waveform_name] to be stored on PC - possibly even as a separate file
-        # [waveform_name] can then be uploaded to the AWG using load_waveform, or combined with other waveforms to create a sequence
-        # the commands below would need to get moved to load_waveform()
+        # create a stored_waveform object, and add to dictionary of waveforms
+        stored_waveform = StoredWaveform()
+        stored_waveform.name = name
+        stored_waveform.waveform_buffer = pvBuffer
+        stored_waveform.n_samples = padded_number_of_samples.value
+        stored_waveform.buffersize = qwBufferSize
+        self.waveform_dict[name] = stored_waveform
 
-        # upload the sample buffer to the AWG
-        self.log.info("Starting waveform transfer to AWG and waiting until data is in board memory\n")
-        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize)
-        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
-        self.log.info("... data has been transferred to board memory\n")
-
-        ## cycle sample rate to avoid AWG bug that corrupts the output signals
-        #self._cycle_sample_rate()
-
-        # We'll start and wait until the card has finished or until a timeout occurs
-        awg_timeout = 15000  # timeout in ms
-        spcm_dwSetParam_i32(self._hCard, SPC_TIMEOUT, awg_timeout)
-        self.log.info("Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)\n")
-        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START)
-
-        self.waveform_name = [name]
         if self._read_out_error():
-            return -1, waveforms
+            return -1, current_waveform_name
         else:
-            return number_of_samples_writen, waveforms
+            return number_of_samples_writen, current_waveform_name
 
     def write_sequence(self, name, sequence_parameter_list):
         """
-        Write a new sequence on the device memory.
+        Write a new sequence to the PC workspace.
+        NOTE: unlike many AWGs, with an onboard file system, only the active
+        waveform/sequence is stored on the Spectrum AWG.
 
         @param name: str, the name of the waveform to be created/append to
         @param sequence_parameter_list: list, contains the parameters for each sequence step and
@@ -488,34 +494,56 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         return len(sequence_parameter_list)
 
     def get_waveform_names(self):
-        """ Retrieve the names of all uploaded waveforms on the device.
+        """ Retrieve the names of all 'uploaded' waveforms in the PC memory.
+        NOTE: unlike many AWGs, with an onboard file system, only the active
+        waveform/sequence is stored on the Spectrum AWG.
 
         @return list: List of all uploaded waveform name strings in the device workspace.
         """
-        self.log.warning('Spectrum M4i AWG series has only basic onboard memory: uploaded waveform names not available')
-        return self.waveform_name
+
+        # print('get_waveform_names: {}'.format(self.waveform_names))
+        return self.waveform_names
 
     def get_sequence_names(self):
         """ Retrieve the names of all uploaded sequence on the device.
 
         @return list: List of all uploaded sequence name strings in the device workspace.
         """
-        self.log.warning('Spectrum M4i AWG series has only basic onboard memory: uploaded waveform names not available')
-        return list()
+        self.log.warning('Spectrum M4i AWG series has only basic onboard memory: uploaded sequence names not available')
+        return self.sequence_names
 
-    def delete_waveform(self, waveform_name):
-        """ Delete the waveform with name "waveform_name" from the device memory.
+    def delete_waveform(self, waveform_del):
+        """ Delete the waveform with name "waveform_name" from the PC memory.
+        NOTE: unlike many AWGs, with an onboard file system, only the active
+        waveform/sequence is stored on the Spectrum AWG.
 
-        @param str waveform_name: The name of the waveform to be deleted
+        @param str waveform_del: The name of the waveform to be deleted
                                   Optionally a list of waveform names can be passed.
 
         @return list: a list of deleted waveform names.
         """
-        self.log.warning('Spectrum M4i AWG series has only basic onboard memory: \ncannot delete specific waveforms.')
-        return list()
+        #todo: update once waveform name structure is finalised
+
+        # check if input is a string - if so, convert to list
+        if isinstance(waveform_del, str):
+            waveform_del = list([waveform_del])
+
+        # scan through list of waveforms to delete. Remove from both self.waveform_names and self.waveform_dict
+        for ind in range(len(waveform_del)):
+            if waveform_del[ind] not in self.waveform_names:
+                print('[{}] not in waveform_names! Unable to delete.'.format(waveform_del[ind]))
+            else:
+                while waveform_del[ind] in self.waveform_names:
+                    self.waveform_names.remove(waveform_del[ind])
+            while waveform_del[ind] in self.waveform_dict:
+                del self.waveform_dict[waveform_del[ind]]
+
+        return waveform_del
 
     def delete_sequence(self, sequence_name):
-        """ Delete the sequence with name "sequence_name" from the device memory.
+        """ Delete the sequence with name "sequence_name" from the PC memory.
+        NOTE: unlike many AWGs, with an onboard file system, only the active
+        waveform/sequence is stored on the Spectrum AWG.
 
         @param str sequence_name: The name of the sequence to be deleted
                                   Optionally a list of sequence names can be passed.
@@ -533,6 +561,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         For a device without mass memory this will make the waveform/pattern that has been
         previously written with self.write_waveform ready to play.
 
+        # todo: update description of load_dict
         @param load_dict:  dict|list, a dictionary with keys being one of the available channel
                                       index and values being the name of the already written
                                       waveform to load into the channel.
@@ -546,45 +575,25 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              respective asset loaded into the channel, string describing the asset
                              type ('waveform' or 'sequence')
         """
-        # TODO -> change from PulserDummy
-        # probably just needs to be some pre-trigger call
+        #print('\nload_dict = {}, type = {}\n'.format(load_dict, type(load_dict)))
 
-        pass
-        '''
-        if isinstance(load_dict, list):
-            new_dict = dict()
-            for waveform in load_dict:
-                channel = int(waveform.rsplit('_ch', 1)[1])
-                new_dict[channel] = waveform
-            load_dict = new_dict
+        load_key = ''.join(load_dict)
+        waveform = self.waveform_dict[load_key]
 
-        # Determine if the device is purely digital and get all active channels
-        analog_channels = [chnl for chnl in self.activation_config if chnl.startswith('a')]
-        digital_channels = [chnl for chnl in self.activation_config if chnl.startswith('d')]
-        pure_digital = len(analog_channels) == 0
+        # upload the sample buffer to the AWG
+        self.log.info("Starting waveform transfer to AWG and waiting until data is in AWG memory")
+        spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, waveform.waveform_buffer, 0, waveform.buffersize)
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
+        self.log.info("... data has been transferred to AWG memory")
 
-        # Check if waveforms are present in virtual dummy device memory and specified channels are
-        # active. Create new load dict.
-        new_loaded_assets = dict()
-        for channel, waveform in load_dict.items():
-            if waveform not in self.waveform_set:
-                self.log.error('Loading failed. Waveform "{0}" not found on device memory.'
-                               ''.format(waveform))
-                return self.current_loaded_assets
-            if pure_digital:
-                if 'd_ch{0:d}'.format(channel) not in digital_channels:
-                    self.log.error('Loading failed. Digital channel {0:d} not active.'
-                                   ''.format(channel))
-                    return self.current_loaded_assets
-            else:
-                if 'a_ch{0:d}'.format(channel) not in analog_channels:
-                    self.log.error('Loading failed. Analog channel {0:d} not active.'
-                                   ''.format(channel))
-                    return self.current_loaded_assets
-            new_loaded_assets[channel] = waveform
-        self.current_loaded_assets = new_loaded_assets
-        return self.get_loaded_assets()
-        '''
+        self.log.info(
+            "Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)")
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START)
+
+        self.current_loaded_assets_type = 'waveform'
+        self.current_loaded_assets['AWG'] = load_key
+
+        return  # todo: include return dictionary
 
     def load_sequence(self, sequence_name):
         """ Loads a sequence to the channels of the device in order to be ready for playback.
@@ -597,6 +606,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              respective asset loaded into the channel, string describing the asset
                              type ('waveform' or 'sequence')
         """
+
         # TODO -> change from PulserDummy
         if sequence_name not in self.sequence_dict:
             self.log.error('Sequence loading failed. No sequence with name "{0}" found on device '
@@ -629,7 +639,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 chnl_num = int(chnl.split('ch')[1])
                 new_loaded_assets[chnl_num] = '{0}_{1:d}'.format(sequence_name, track_index)
 
-        self.current_loaded_assets = new_loaded_assets
+        #self.current_loaded_assets = new_loaded_assets
+
+        self.current_loaded_assets['AWG'] = sequence_name
+        self.current_loaded_assets_type = 'sequence'
         return self.get_loaded_assets()
 
     def get_loaded_assets(self):
@@ -644,21 +657,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              respective asset loaded into the channel,
                              string describing the asset type ('waveform' or 'sequence')
         """
-        # TODO -> change from PulserDummy
-        # Determine if it's a waveform or a sequence
-        asset_type = None
-        for asset_name in self.current_loaded_assets.values():
-            if 'ch' in asset_name.rsplit('_', 1)[1]:
-                current_type = 'waveform'
-            else:
-                current_type = 'sequence'
 
-            if asset_type is None or asset_type == current_type:
-                asset_type = current_type
-            else:
-                self.log.error('Unable to determine loaded asset type. Mixed naming convention '
-                               'assets loaded (waveform and sequence tracks).')
-                return dict(), ''
+        print('get_loaded_assets: {}'.format(self.current_loaded_assets))
+
+        asset_type = self.current_loaded_assets_type
 
         return self.current_loaded_assets, asset_type
 
@@ -1409,7 +1411,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         # calculate the data
         pnBuffer = cast(pvBuffer, ptr16)
-        # TODO -> replace for loop with single line, e.g.: pnBuffer = combined_channel_data
+        # TODO: replace for loop with single line, e.g.: pnBuffer = combined_channel_data
         for i in range(0, padded_number_of_samples.value * chcount, 1):
             pnBuffer[i] = combined_channel_data[i]
 
@@ -1431,6 +1433,31 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         #print('number_of_samples = {}, padding = {}, padded_number_of_samples = {}'.format(number_of_samples, padding, padded_number_of_samples))
         return padding, padded_number_of_samples
 
+    def prepare_in_sequence_mode(self, n_segments):
+        """ Prepares AWG in sequence mode and divides memory into segments
+
+        @param int n_segments: number of desired memory segments (e.g. number of ODMR frequency steps)
+
+        @return int n_actual_segments: number of actual memory segments, which must be a power of 2
+        """
+
+        # AWG memory must be divided into 2^n segments
+        n_actual_segments = int(pow(2, np.ceil(np.log2(n_segments))))
+
+        # todo: check against AWG limits
+
+        # Set up the card in sequence mode
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SEQUENCE)
+
+        # break the memory up into segments
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_MAXSEGMENTS, n_actual_segments)
+
+        if self._read_out_error():
+            self.log.error('prepare_in_sequence_mode error')
+            return -1
+        else:
+            return n_actual_segments
+
     def _set_trigger(self, software_trigger = False):
         """
         Sets up the trigger setting for the awg.
@@ -1439,6 +1466,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+
+        # Send stop command: prevents crash when changing trigger whilst card running, ignored if already stopped
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
+
         # Setting up the trigger
         if software_trigger:
             spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_SOFTWARE)
@@ -1736,3 +1767,11 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self._cycle_sample_rate()
 
         self.pulser_on()
+
+class StoredWaveform:
+
+    def __init__(self):
+        self.name = ''
+        self.waveform_buffer = ()
+        self.n_samples = ()
+        self.buffersize = ()

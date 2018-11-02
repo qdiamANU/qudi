@@ -139,6 +139,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         # Need to lower the trigger level on this channel, to e.g. 0.9 V
         self._tagger.setTriggerLevel(self._channel_detect, 0.9)
         #print('TriggerLevel ch{} = {} V'.format(self._channel_detect, self._tagger.getTriggerLevel(self._channel_detect)))
+        #number_of_gates = 50
 
         print('tt configure')
         print('tagger={}, click_channel={}, start/next_channel={}'.format(

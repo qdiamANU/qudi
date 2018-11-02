@@ -445,6 +445,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         spcm_dwSetParam_i64(self._hCard, SPC_MEMSIZE, llMemSamples)  # replay lenth
         spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)  # number of repetitions
 
+
         self._set_trigger(software_trigger=True)
         self.set_active_channels({'a_ch1': True, 'a_ch2': True, 'd_ch1': True, 'd_ch2': True, 'd_ch3': True})
 
