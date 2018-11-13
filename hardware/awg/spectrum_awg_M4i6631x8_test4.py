@@ -424,19 +424,22 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # adjust analogue amplitude scaling for Spectrum AWG
         # fixme: generated amplitudes seem to be a factor of 2 different to those expected from pulsed GUI
         for key in analog_samples:
+            #print('write_waveform: rescaling analogue data')
             analog_samples[key] = (analog_samples[key]*(2 ** 15 - 1)).astype(dtype=np.int16)
 
         # combine analogue and digital sample dictionaries into single dictionary
         channel_data = {**analog_samples, **digital_samples}
         print(channel_data)
-        # to make the AWG happy:
+
         number_of_samples = int64(total_number_of_samples)
+        _, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
 
+        '''
         # set up AWG parameters
-        llLoops = int64(1)  # one loop
-        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SINGLERESTART)  # The programmed memory is repeated once after each single trigger event.
-        spcm_dwSetParam_i64(self._hCard, SPC_LOOPS, llLoops)  # number of repetitions
-
+        llLoops = 1  # one loop
+        self._spcm_dwSetParam_i32(SPC_CARDMODE, SPC_REP_STD_SINGLERESTART)  # The programmed memory is repeated once after each single trigger event.
+        self._spcm_dwSetParam_i32(SPC_LOOPS, llLoops)  # number of repetitions
+        
 
         # memory size in samples per channel. Must be set before transferring data to the card
         # must be an integer number of kB (1024)
@@ -444,7 +447,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self._spcm_dwSetParam_i64(SPC_MEMSIZE, padded_number_of_samples.value)
 
         self._set_trigger(software_trigger=True)  # set AWG to software trigger
-
+        '''
         # create a sample buffer (containing all channels) in a format suitable to upload to the AWG
         pvBuffer, qwBufferSize = self._create_combined_buffer_data(number_of_samples, channel_data)
 
@@ -471,6 +474,16 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @param sequence_parameter_list: list, contains the parameters for each sequence step and
                                         the according waveform names.
 
+        sequence_parameter_list = list( segment_1, segment_2, ...)
+        segment_1 = list( ('name',), parameters_dict )
+        parameters_dict: 'repetitions': 2
+                        'go_to': -1
+                        'event_jump_to': -1
+                        'event_trigger': 'ON' / 'OFF'
+                        'wait_for': 'ON' / 'OFF'
+                        'flag_trigger': 'ON' / 'OFF'
+                        'flag_high': 'ON' / 'OFF'
+
         @return: int, number of sequence steps written (-1 indicates failed process)
         """
         # TODO -> change from PulserDummy
@@ -490,7 +503,60 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.sequence_dict[name] = len(sequence_parameter_list[0][0])
         time.sleep(1)
         '''
-        self.log.info('Sequence with name "{0}" directly written on dummy pulser.'.format(name))
+
+        print('write_sequence: name = {}, type = {}'.format(name, type(name)))
+        print('sequence_parameter_list = {}, \ntype = {}'.format(sequence_parameter_list, type(sequence_parameter_list)))
+
+        #### Set up the card in sequence mode ####
+
+        spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SEQUENCE)
+
+        # AWG memory can only be divided into 2^n segments
+        n_segments = len(sequence_parameter_list)
+        n_actual_segments = int(pow(2, np.ceil(np.log2(n_segments))))
+
+        # break the memory up into segments
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_MAXSEGMENTS, n_actual_segments)
+        # Set step #0 as the first step replayed after card start
+        spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_STARTSTEP, 0)
+
+
+        for i in range(n_segments):
+            print('\n segments number ={}'.format(i))
+
+            name_temp = list(sequence_parameter_list[i][0])
+            name = str(name_temp[0])
+            print(name)
+            waveform = self.waveform_dict[name]
+
+            # set memory segment to write to
+            spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_WRITESEGMENT, i)  # set current configuration switch to segment i
+            # SPC_SEQMODE_SEGMENTSIZE needs an int input
+            spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_SEGMENTSIZE, waveform.n_samples)  # define size of current segment i
+
+            # upload segment data
+            spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, waveform.waveform_buffer, 0,
+                                   waveform.buffersize)
+
+            spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
+            self._cycle_sample_rate()
+
+            # Setting up the sequence memory
+            lStep = i  # current step is Step  # i
+            llSegment = i  # associated with memory segment #i
+            llLoop = 1  # Pattern will be repeated 1 times
+            if i == n_segments - 1:
+                print('uploading end segment of sequence')
+                llNext = 0
+                llCondition = SPCSEQ_END  # End of sequence
+            else:
+                llNext = i + 1  # Next step is Step  # i+1
+                llCondition = SPCSEQ_ENDLOOPALWAYS  # Unconditionally leave current step
+            llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment))
+            spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, llValue)
+
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
+
         return len(sequence_parameter_list)
 
     def get_waveform_names(self):
@@ -580,6 +646,13 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         load_key = ''.join(load_dict)
         waveform = self.waveform_dict[load_key]
 
+        # set up AWG parameters
+        llLoops = 1  # one loop
+        self._spcm_dwSetParam_i32(SPC_CARDMODE, SPC_REP_STD_SINGLERESTART)  # The programmed memory is repeated once after each single trigger event.
+        self._spcm_dwSetParam_i32(SPC_LOOPS, llLoops)  # number of repetitions
+        self._spcm_dwSetParam_i64(SPC_MEMSIZE, waveform.n_samples)  # number of samples per channel
+        self._set_trigger(software_trigger=True)  # set AWG to software trigger
+
         # upload the sample buffer to the AWG
         self.log.info("Starting waveform transfer to AWG and waiting until data is in AWG memory")
         spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, waveform.waveform_buffer, 0, waveform.buffersize)
@@ -607,7 +680,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              type ('waveform' or 'sequence')
         """
 
-        # TODO -> change from PulserDummy
+        '''
         if sequence_name not in self.sequence_dict:
             self.log.error('Sequence loading failed. No sequence with name "{0}" found on device '
                            'memory.'.format(sequence_name))
@@ -640,6 +713,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 new_loaded_assets[chnl_num] = '{0}_{1:d}'.format(sequence_name, track_index)
 
         #self.current_loaded_assets = new_loaded_assets
+        '''
 
         self.current_loaded_assets['AWG'] = sequence_name
         self.current_loaded_assets_type = 'sequence'
@@ -893,7 +967,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             if (amplitude['a_ch1'] >= constraints.a_ch_amplitude.min) and\
                     (amplitude['a_ch1'] <= constraints.a_ch_amplitude.max):
                 # channel0 amplitude in mV
-                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(amplitude['a_ch1']*1000/2)))
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(amplitude['a_ch1']*1000/2))) #todo: why the factor of 2?
             else:
                 self.log.warning('Amplitude voltage level for the analog output channel 1 is out of constraints for the'
                                  'Spectrum M4i AWG series!\nMethod call will be ignored.')
@@ -1332,7 +1406,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         digital channels are encoded in analog samples for synchronous readout
         -> analog channel's resolution is reduced by 1 bit per digital channel (max 3 bits)
 
-        @param number_of_samples (int): number of samples (must be identical for all channels)
+        @param number_of_samples (int64): number of samples (must be identical for all channels)
                channel_data: dictionary with channel keys and channel data
                              e.g. {'a_ch1': np.array([...]), 'd_ch1': np.array([])}
 
@@ -1367,8 +1441,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         if padding != 0:
             self.log.info('padding samples with {} zeros to increase sample number to integer number of kB'.format(padding))
         #print('padded_number_of_samples = {}, type {}'.format(padded_number_of_samples, type(padded_number_of_samples)))
-        for key in active_channels.keys():
-            channel_data[key] = np.append(channel_data[key], np.zeros(padding))
+            for key in active_channels.keys():
+                channel_data[key] = np.append(channel_data[key], np.zeros(padding))
             #print('{}, new size = {}, padding = {}, type = {}'.format(key, channel_data[key].size, padding, type(padding)))
 
         if active_channels['d_ch2']:
@@ -1378,13 +1452,17 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                             (channel_data['d_ch2'].astype(bool) << 14))
         elif active_channels['d_ch1']:
             #print('Merging d_ch1 with a_ch1')
-            awg_ch1_data = ((channel_data['a_ch1'].astype(np.unint16) >> 1) |
+            awg_ch1_data = ((channel_data['a_ch1'].astype(np.uint16) >> 1) |
                             (channel_data['d_ch1'].astype(bool) << 15))
+        else:
+            awg_ch1_data = channel_data['a_ch1'].astype(np.uint16)
 
         if active_channels['d_ch3']:
             #print('Merging d_ch3 with a_ch2')
             awg_ch2_data = ((channel_data['a_ch2'].astype(np.uint16) >> 1) |
                             (channel_data['d_ch3'].astype(np.uint16) << 15))
+        else:
+            awg_ch2_data = channel_data['a_ch2'].astype(np.uint16)
 
         # Combine the two channels into a single data transfer buffer.
         # Samples for the two channels are ordered according to: A0 B0 A1 B1 A2 B2 .... An Bn,
