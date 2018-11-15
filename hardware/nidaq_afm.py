@@ -1015,6 +1015,10 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
         return retval
 
+    def scanner_to_afm_transfer(self, x=None, y=None, z=None):
+
+        pass
+
     def scanner_set_position(self, x=None, y=None, z=None, a=None):
         """Move stage to x, y, z, a (where a is the fourth voltage channel).
 
@@ -1067,6 +1071,60 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             return -1
         return 0
 
+
+    def afm_set_position(self, x=None, y=None, z=None, a=None):
+        """Move stage to x, y, z, a (where a is the fourth voltage channel).
+
+        #FIXME: No volts
+        @param float x: postion in x-direction (volts)
+        @param float y: postion in y-direction (volts)
+        @param float z: postion in z-direction (volts)
+        @param float a: postion in a-direction (volts)
+
+        @return int: error code (0:OK, -1:error)
+        """
+
+        if self.module_state() == 'locked':
+            self.log.error('Another scan_line is already running, close this one first.')
+            return -1
+
+        if x is not None:
+            if not(self._afm_position_ranges[0][0] <= x <= self._afm_position_ranges[0][1]):
+                self.log.error('You want to set x out of range: {0:f}.'.format(x))
+                return -1
+            self._afm_current_position[0] = np.float(x)
+
+        if y is not None:
+            if not(self._afm_position_ranges[1][0] <= y <= self._afm_position_ranges[1][1]):
+                self.log.error('You want to set y out of range: {0:f}.'.format(y))
+                return -1
+            self._afm_current_position[1] = np.float(y)
+
+        if z is not None:
+            if not(self._afm_position_ranges[2][0] <= z <= self._afm_position_ranges[2][1]):
+                self.log.error('You want to set z out of range: {0:f}.'.format(z))
+                return -1
+            self._afm_current_position[2] = np.float(z)
+
+        if a is not None:
+            if not(self._afm_position_ranges[3][0] <= a <= self._afm_position_ranges[3][1]):
+                self.log.error('You want to set a out of range: {0:f}.'.format(a))
+                return -1
+            self._afm_current_position[3] = np.float(a)
+
+        # the position has to be a vstack
+        my_position = np.vstack(self._afm_current_position)
+
+        # then directly write the position to the hardware
+        try:
+            self._write_afm_ao(
+                voltages=self._afm_position_to_volt(my_position),
+                start=True)
+        except:
+            return -1
+        return 0
+
+
     def _write_scanner_ao(self, voltages, length=1, start=False):
         """Writes a set of voltages to the analog outputs.
 
@@ -1101,6 +1159,75 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             # Reserved for future use. Pass NULL(here None) to this parameter
             None)
         return self._AONwritten.value
+
+    def _write_afm_ao(self, voltages, length=1, start=False):
+        """Writes a set of voltages to the analog outputs.
+
+        @param float[][n] voltages: array of n-part tuples defining the voltage
+                                    points
+        @param int length: number of tuples to write
+        @param bool start: write imediately (True)
+                           or wait for start of task (False)
+
+        n depends on how many channels are configured for analog output
+        """
+        # Number of samples which were actually written, will be stored here.
+        # The error code of this variable can be asked with .value to check
+        # whether all channels have been written successfully.
+        self._AONwritten = daq.int32()
+        # write the voltage instructions for the analog output to the hardware
+        daq.DAQmxWriteAnalogF64(
+            # write to this task
+            self._afm_ao_task,
+            # length of the command (points)
+            length,
+            # start task immediately (True), or wait for software start (False)
+            start,
+            # maximal timeout in seconds for# the write process
+            self._RWTimeout,
+            # Specify how the samples are arranged: each pixel is grouped by channel number
+            daq.DAQmx_Val_GroupByChannel,
+            # the voltages to be written
+            voltages,
+            # The actual number of samples per channel successfully written to the buffer
+            daq.byref(self._AONwritten),
+            # Reserved for future use. Pass NULL(here None) to this parameter
+            None)
+        return self._AONwritten.value
+
+    def _afm_position_to_volt(self, positions=None):
+        """ Converts a set of position pixels to acutal voltages.
+
+        @param float[][n] positions: array of n-part tuples defining the pixels
+
+        @return float[][n]: array of n-part tuples of corresponing voltages
+
+        The positions is typically a matrix like
+            [[x_values], [y_values], [z_values], [a_values]]
+            but x, xy, xyz and xyza are allowed formats.
+        """
+
+        if not isinstance(positions, (frozenset, list, set, tuple, np.ndarray, )):
+            self.log.error('Given position list is no array type.')
+            return np.array([np.NaN])
+
+        vlist = []
+        for i, position in enumerate(positions):
+            vlist.append(
+                (self._afm_voltage_ranges[i][1] - self._afm_voltage_ranges[i][0])
+                / (self._afm_position_ranges[i][1] - self._afm_position_ranges[i][0])
+                * (position - self._afm_position_ranges[i][0])
+                + self._afm_voltage_ranges[i][0]
+            )
+        volts = np.vstack(vlist)
+
+        for i, v in enumerate(volts):
+            if v.min() < self._afm_voltage_ranges[i][0] or v.max() > self._afm_voltage_ranges[i][1]:
+                self.log.error(
+                    'Voltages ({0}, {1}) exceed the limit, the positions have to '
+                    'be adjusted to stay in the given range.'.format(v.min(), v.max()))
+                return np.array([np.NaN])
+        return volts
 
     def _scanner_position_to_volt(self, positions=None):
         """ Converts a set of position pixels to acutal voltages.
@@ -1142,6 +1269,13 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         @return float[]: current position in (x, y, z, a).
         """
         return self._current_position.tolist()
+
+    def get_afm_position(self):
+        """ Get the current position of the scanner hardware.
+
+        @return float[]: current position in (x, y, z, a).
+        """
+        return self._afm_current_position.tolist()
 
     def _set_up_line(self, length=100):
         """ Sets up the analog output for scanning a line.
