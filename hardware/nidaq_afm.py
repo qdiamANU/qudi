@@ -62,6 +62,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
     _pixel_clock_channel = ConfigOption('pixel_clock_channel', None)
     _scanner_ao_channels = ConfigOption('scanner_ao_channels', missing='error')
     _afm_ao_channels = ConfigOption('afm_ao_channels', missing='error')
+    _afm_clock_in_channel = ConfigOption('afm_clock_in_channel', missing='error')
     _scanner_ai_channels = ConfigOption('scanner_ai_channels', [], missing='info')
     _scanner_counter_channels = ConfigOption('scanner_counter_channels', [], missing='warn')
     _scanner_voltage_ranges = ConfigOption('scanner_voltage_ranges', missing='error')
@@ -71,6 +72,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
     # odmr
     _odmr_trigger_channel = ConfigOption('odmr_trigger_channel', missing='error')
+    _scanner_clock_out_channel = ConfigOption('scanner_clock_out_channel', missing='error')
 
     _gate_in_channel = ConfigOption('gate_in_channel', missing='error')
     # number of readout samples, mainly used for gated counter
@@ -96,6 +98,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         self._odmr_length = None
         self._gated_counter_daq_task = None
         self._scanner_analog_daq_task = None
+        self._do_afm_scan = True
 
         # handle all the parameters given by the config
         self._current_position = np.zeros(len(self._scanner_ao_channels))
@@ -887,7 +890,8 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                        counter_channels=None,
                        sources=None,
                        clock_channel=None,
-                       scanner_ao_channels=None):
+                       scanner_ao_channels=None,
+                       afm_ao_channels=None):
         """ Configures the actual scanner with a given clock.
 
         The scanner works pretty much like the counter. Here you connect a
@@ -924,6 +928,16 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
         if scanner_ao_channels is not None:
             self._scanner_ao_channels = scanner_ao_channels
+            setscan1 = True
+        else:
+            setscan1 = False
+        if afm_ao_channels is not None:
+            self._scanner_ao_channels = afm_ao_channels
+            setscan2 = True
+        else:
+            setscan2 = False
+
+        if setscan1 or setscan2:
             retval = self._start_analog_output()
 
         if len(my_photon_sources) < len(my_counter_channels):
@@ -979,6 +993,8 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                     # assign a Terminal Name
                     self._my_scanner_clock_channel + 'InternalOutput')
 
+
+
                 # Set a CounterInput Control Timebase Source.
                 # Specify the terminal of the timebase which is used for the counter:
                 # Define the source of ticks for the counter as self._photon_source for
@@ -1009,15 +1025,29 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                     ''
                 )
                 self._scanner_analog_daq_task = atask
+
+            # output of scanner clock to AFM analog out clock input terminal
+           #daq.DAQmxConnectTerms(self._scanner_clock_channel + 'InternalOutput',
+            #                      self._scanner_clock_out_channel,
+            #                      daq.DAQmx_Val_DoNotInvertPolarity)
+
         except:
             self.log.exception('Error while setting up scanner.')
             retval = -1
 
         return retval
 
-    def scanner_to_afm_transfer(self, x=None, y=None, z=None):
+    def scanner_to_afm_transformation(self, Vx, Vy, Xoffset=0., Yoffset=0., Xconv = 1., Yconv=1.):
 
-        pass
+        # Map voltages on the confocal scale to the AFM scale - not sure what these values are yet
+        Vx *= Xconv
+        Vy *= Yconv
+        Vx += Xoffset
+        Vy += Yoffset
+
+        return Vx, Vy
+
+
 
     def scanner_set_position(self, x=None, y=None, z=None, a=None):
         """Move stage to x, y, z, a (where a is the fourth voltage channel).
@@ -1139,7 +1169,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         # Number of samples which were actually written, will be stored here.
         # The error code of this variable can be asked with .value to check
         # whether all channels have been written successfully.
-        self._AONwritten = daq.int32()
+        self._AOscannerNwritten = daq.int32()
         # write the voltage instructions for the analog output to the hardware
         daq.DAQmxWriteAnalogF64(
             # write to this task
@@ -1155,10 +1185,10 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             # the voltages to be written
             voltages,
             # The actual number of samples per channel successfully written to the buffer
-            daq.byref(self._AONwritten),
+            daq.byref(self._AOscannerNwritten),
             # Reserved for future use. Pass NULL(here None) to this parameter
             None)
-        return self._AONwritten.value
+        return self._AOscannerNwritten.value
 
     def _write_afm_ao(self, voltages, length=1, start=False):
         """Writes a set of voltages to the analog outputs.
@@ -1174,7 +1204,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         # Number of samples which were actually written, will be stored here.
         # The error code of this variable can be asked with .value to check
         # whether all channels have been written successfully.
-        self._AONwritten = daq.int32()
+        self._AOafmNwritten = daq.int32()
         # write the voltage instructions for the analog output to the hardware
         daq.DAQmxWriteAnalogF64(
             # write to this task
@@ -1190,10 +1220,10 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             # the voltages to be written
             voltages,
             # The actual number of samples per channel successfully written to the buffer
-            daq.byref(self._AONwritten),
+            daq.byref(self._AOafmNwritten),
             # Reserved for future use. Pass NULL(here None) to this parameter
             None)
-        return self._AONwritten.value
+        return self._AOafmNwritten.value
 
     def _afm_position_to_volt(self, positions=None):
         """ Converts a set of position pixels to acutal voltages.
@@ -1320,6 +1350,20 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                     # number of samples to generate
                     self._line_length)
 
+                daq.DAQmxCfgSampClkTiming(
+                    # add to this task
+                    self._afm_ao_task,
+                    # use this channel as clock
+                    self._afm_clock_in_channel,
+                    # Maximum expected clock frequency
+                    self._scanner_clock_frequency,
+                    # Generate sample on falling edge
+                    daq.DAQmx_Val_Rising,
+                    # generate finite number of samples
+                    daq.DAQmx_Val_FiniteSamps,
+                    # number of samples to generate
+                    self._line_length)
+
             # Configure Implicit Timing for the clock.
             # Set timing for scanner clock task to the number of pixel.
             daq.DAQmxCfgImplicitTiming(
@@ -1415,16 +1459,27 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             # specify how the Data of the selected task is collected, i.e. set it
             # now to be sampled by a hardware (clock) signal.
             daq.DAQmxSetSampTimingType(self._scanner_ao_task, daq.DAQmx_Val_SampClk)
+            if self._do_afm_scan:
+                daq.DAQmxSetSampTimingType(self._afm_ao_task, daq.DAQmx_Val_SampClk)
             self._set_up_line(np.shape(line_path)[1])
-            line_volts = self._scanner_position_to_volt(line_path)
+            line_volts_confocal = self._scanner_position_to_volt(line_path)
+            if self._do_afm_scan:
+                line_volts_afm = self._afm_position_to_volt(line_path)
             # write the positions to the analog output
-            written_voltages = self._write_scanner_ao(
-                voltages=line_volts,
+            written_voltages_confocal = self._write_scanner_ao(
+                voltages=line_volts_confocal,
                 length=self._line_length,
                 start=False)
+            if self._do_afm_scan:
+                written_voltages_afm = self._write_afm_ao(
+                    voltages=line_volts_afm,
+                    length=self._line_length,
+                    start=False)
 
             # start the timed analog output task
             daq.DAQmxStartTask(self._scanner_ao_task)
+            if self._do_afm_scan:
+                daq.DAQmxStartTask(self._afm_ao_task)
 
             for i, task in enumerate(self._scanner_counter_daq_tasks):
                 daq.DAQmxStopTask(task)
