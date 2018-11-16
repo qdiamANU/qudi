@@ -1027,9 +1027,9 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                 self._scanner_analog_daq_task = atask
 
             # output of scanner clock to AFM analog out clock input terminal
-           #daq.DAQmxConnectTerms(self._scanner_clock_channel + 'InternalOutput',
-            #                      self._scanner_clock_out_channel,
-            #                      daq.DAQmx_Val_DoNotInvertPolarity)
+            daq.DAQmxConnectTerms(self._scanner_clock_channel + 'InternalOutput',
+                                  self._scanner_clock_out_channel,
+                                  daq.DAQmx_Val_DoNotInvertPolarity)
 
         except:
             self.log.exception('Error while setting up scanner.')
