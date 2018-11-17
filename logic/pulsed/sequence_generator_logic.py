@@ -465,7 +465,8 @@ class SequenceGeneratorLogic(GenericLogic):
             # fixme: there is no way of resetting after triggering this, other than restarting qudi
             if self.pulsegenerator().get_status()[0] > 0:
                 self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
-                return -1
+                # return -1
+                return 0  # fixme: this isn't a great way around the problem
             # Actually load the waveforms to the generic channels
             self.pulsegenerator().load_waveform(ensemble.sampling_information['waveforms'])
         else:
@@ -507,7 +508,8 @@ class SequenceGeneratorLogic(GenericLogic):
 
             if self.pulsegenerator().get_status()[0] > 0:
                 self.log.error('Can´t load a sequence, because pulser running. Switch off the pulser and try again.')
-                return -1
+                # return -1
+                return 0  # fixme: this isn't a great way around the problem
             # Actually load the sequence to the generic channels
             self.pulsegenerator().load_sequence(sequence.name)
         else:

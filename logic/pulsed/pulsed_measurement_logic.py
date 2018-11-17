@@ -148,6 +148,9 @@ class PulsedMeasurementLogic(GenericLogic):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
+
+        print('pulsed measurement logic activated')
+
         # Create an instance of PulseExtractor
         self._pulseextractor = PulseExtractor(pulsedmeasurementlogic=self)
         self._pulseanalyzer = PulseAnalyzer(pulsedmeasurementlogic=self)
@@ -721,6 +724,8 @@ class PulsedMeasurementLogic(GenericLogic):
     @QtCore.Slot(str)
     def start_pulsed_measurement(self, stashed_raw_data_tag=''):
         """Start the analysis loop."""
+        print("Start Pulsed Measurement! Woo")
+        print(self._number_of_lasers)
         self.sigMeasurementStatusUpdated.emit(True, False)
 
         # Check if measurement settings need to be invoked
