@@ -1,4 +1,4 @@
- # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 This file contains the Qudi logic which controls all pulsed measurements.
 
@@ -77,6 +77,7 @@ class PulsedMeasurementLogic(GenericLogic):
     _alternating = StatusVar(default=False)
     _laser_ignore_list = StatusVar(default=list())
     _data_units = StatusVar(default=('s', ''))
+    _data_labels = StatusVar(default=('Tau', 'Signal'))
 
     # PulseExtractor settings
     extraction_parameters = StatusVar(default=None)
@@ -143,14 +144,15 @@ class PulsedMeasurementLogic(GenericLogic):
         # for fit:
         self.fc = None  # Fit container
         self.signal_fit_data = np.empty((2, 0), dtype=float)  # The x,y data of the fit result
+
+        # Set readout values for qdyne extraction
+        self.read_lines = 0
+        self.time_trace = []
         return
 
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-
-        print('pulsed measurement logic activated')
-
         # Create an instance of PulseExtractor
         self._pulseextractor = PulseExtractor(pulsedmeasurementlogic=self)
         self._pulseanalyzer = PulseAnalyzer(pulsedmeasurementlogic=self)
@@ -510,6 +512,7 @@ class PulsedMeasurementLogic(GenericLogic):
         settings_dict['laser_ignore_list'] = list(self._laser_ignore_list).copy()
         settings_dict['alternating'] = bool(self._alternating)
         settings_dict['units'] = self._data_units
+        settings_dict['labels'] = self._data_labels
         return settings_dict
 
     @measurement_settings.setter
@@ -622,6 +625,11 @@ class PulsedMeasurementLogic(GenericLogic):
         else:
             settings_dict.update(kwargs)
 
+        for key in settings_dict:
+            if key in ['signal_start', 'signal_end', 'norm_start', 'norm_end']:
+                num_bins_fast = round(settings_dict[key]/self.fast_counter_settings['bin_width'])
+                settings_dict[key] = num_bins_fast * self.fast_counter_settings['bin_width']
+
         # Use threadlock to update settings during a running measurement
         with self._threadlock:
             self._pulseanalyzer.analysis_settings = settings_dict
@@ -666,13 +674,12 @@ class PulsedMeasurementLogic(GenericLogic):
         @param kwargs:
         @return:
         """
-        print('pulsed_measurement_logic.set_measurement_settings')
         # Determine complete settings dictionary
         if not isinstance(settings_dict, dict):
             settings_dict = kwargs
         else:
             settings_dict.update(kwargs)
-        print('-- settings_dict={}'.format(settings_dict))
+
         # Check if invoke_settings flag has changed
         if 'invoke_settings' in settings_dict:
             self._invoke_settings_from_sequence = bool(settings_dict.get('invoke_settings'))
@@ -686,6 +693,9 @@ class PulsedMeasurementLogic(GenericLogic):
             with self._threadlock:
                 if 'units' in settings_dict:
                     self._data_units = settings_dict.get('units')
+                    self.fc.set_units(self._data_units)
+                if 'labels' in settings_dict:
+                    self._data_labels = list(settings_dict.get('labels'))
 
             if self.module_state() == 'idle':
                 # Get all other parameters if present
@@ -724,8 +734,6 @@ class PulsedMeasurementLogic(GenericLogic):
     @QtCore.Slot(str)
     def start_pulsed_measurement(self, stashed_raw_data_tag=''):
         """Start the analysis loop."""
-        print("Start Pulsed Measurement! Woo")
-        print(self._number_of_lasers)
         self.sigMeasurementStatusUpdated.emit(True, False)
 
         # Check if measurement settings need to be invoked
@@ -783,6 +791,75 @@ class PulsedMeasurementLogic(GenericLogic):
                 self.__is_paused = False
             else:
                 self.log.warning('Unable to start pulsed measurement. Measurement already running.')
+        return
+
+    @QtCore.Slot(str)
+    def start_simple_pulsed_measurement(self, stashed_raw_data_tag=''):
+        """Start the analysis loop."""
+        self.sigMeasurementStatusUpdated.emit(True, False)
+
+        with self._threadlock:
+            if self.module_state() == 'idle':
+                # Lock module state
+                self.module_state.lock()
+
+                # Clear previous fits
+                self.fc.clear_result()
+
+                # recall stashed raw data
+                if stashed_raw_data_tag in self._saved_raw_data:
+                    self._recalled_raw_data_tag = stashed_raw_data_tag
+                    # self.log.info('Starting pulsed measurement with stashed raw data "{0}".'
+                    #              ''.format(stashed_raw_data_tag))
+                else:
+                    self._recalled_raw_data_tag = None
+
+                # start microwave source
+                if self.__use_ext_microwave:
+                    self.microwave_on()
+
+                # start fast counter
+                self.fast_counter_on()
+                # start pulse generator
+                self.pulse_generator_on()
+
+                # Set measurement paused flag
+                self.__is_paused = False
+            else:
+                self.log.warning('Unable to start pulsed measurement. Measurement already running.')
+        return
+
+    @QtCore.Slot(str)
+    def stop_simple_pulsed_measurement(self, stash_raw_data_tag=''):
+        """
+        Stop the measurement
+        """
+
+        with self._threadlock:
+            if self.module_state() == 'locked':
+                # stopping the timer
+                self.sigStopTimer.emit()
+                # Turn off fast counter
+                self.fast_counter_off()
+                # Turn off pulse generator
+                self.pulse_generator_off()
+                self.pulse_generator_off()
+                # Turn off microwave source
+                if self.__use_ext_microwave:
+                    self.microwave_off()
+
+                # stash raw data if requested
+                if stash_raw_data_tag:
+                    # self.log.info('Raw data saved with tag "{0}" to continue measurement at a '
+                    #              'later point.'.format(stash_raw_data_tag))
+                    self._saved_raw_data[stash_raw_data_tag] = self.raw_data.copy()
+                self._recalled_raw_data_tag = None
+
+                # Set measurement paused flag
+                self.__is_paused = False
+
+                self.module_state.unlock()
+                self.sigMeasurementStatusUpdated.emit(False, False)
         return
 
     @QtCore.Slot(str)
@@ -921,6 +998,8 @@ class PulsedMeasurementLogic(GenericLogic):
                 self.log.error('Can not set "Delta" as alternative data calculation if measurement is '
                                'not alternating.\n'
                                'Setting to previous type "{0}".'.format(self.alternative_data_type))
+            elif alt_data_type == 'None':
+                self._alternative_data_type = None
             else:
                 self._alternative_data_type = alt_data_type
 
@@ -980,6 +1059,10 @@ class PulsedMeasurementLogic(GenericLogic):
         if 'units' in self._measurement_information:
             with self._threadlock:
                 self._data_units = self._measurement_information.get('units')
+                self.fc.set_units(self._data_units)
+        if 'labels' in self._measurement_information:
+            with self._threadlock:
+                self._data_labels = list(self._measurement_information.get('labels'))
 
         # Check if a measurement is running and apply following settings if this is not the case
         if self.module_state() == 'locked':
@@ -1060,8 +1143,6 @@ class PulsedMeasurementLogic(GenericLogic):
                 self._extract_laser_pulses()
 
                 tmp_signal, tmp_error = self._analyze_laser_pulses()
-                print('tmp_signal = {}'.format(tmp_signal))
-                print('tmp_error = {}'.format(tmp_error))
 
                 # exclude laser pulses to ignore
                 if len(self._laser_ignore_list) > 0:
@@ -1096,7 +1177,6 @@ class PulsedMeasurementLogic(GenericLogic):
     def _extract_laser_pulses(self):
         # Get counter raw data (including recalled raw data from previous measurement)
         self.raw_data = self._get_raw_data()
-        print('raw_data = {}'.format(self.raw_data))
 
         # extract laser pulses from raw data
         return_dict = self._pulseextractor.extract_laser_pulses(self.raw_data)
@@ -1122,20 +1202,17 @@ class PulsedMeasurementLogic(GenericLogic):
         """
         # get raw data from fast counter
         fc_data = netobtain(self.fastcounter().get_data_trace())
-        print('_get_raw_data')
-        print('self.fastcounter().get_data_trace() = {}'.format(self.fastcounter().get_data_trace()))
-        print('fc_data = {}'.format(fc_data))
 
         # add old raw data from previous measurements if necessary
         if self._saved_raw_data.get(self._recalled_raw_data_tag) is not None:
-            self.log.info('Found old saved raw data with tag "{0}".'
-                          ''.format(self._recalled_raw_data_tag))
+            #self.log.info('Found old saved raw data with tag "{0}".'
+                   #       ''.format(self._recalled_raw_data_tag))
             if not fc_data.any():
-                self.log.warning('Only zeros received from fast counter!\n'
-                                 'Using recalled raw data only.')
+                #self.log.warning('Only zeros received from fast counter!\n'
+                 #                'Using recalled raw data only.')
                 fc_data = self._saved_raw_data[self._recalled_raw_data_tag]
             elif self._saved_raw_data[self._recalled_raw_data_tag].shape == fc_data.shape:
-                self.log.debug('Recalled raw data has the same shape as current data.')
+                #self.log.debug('Recalled raw data has the same shape as current data.')
                 fc_data = self._saved_raw_data[self._recalled_raw_data_tag] + fc_data
             else:
                 self.log.warning('Recalled raw data has not the same shape as current data.'
@@ -1192,7 +1269,7 @@ class PulsedMeasurementLogic(GenericLogic):
         #####################################################################
         ####                Save extracted laser pulses                  ####
         #####################################################################
-        if tag is not None and len(tag) > 0:
+        if tag:
             filelabel = tag + '_laser_pulses'
         else:
             filelabel = 'laser_pulses'
@@ -1200,7 +1277,7 @@ class PulsedMeasurementLogic(GenericLogic):
         # prepare the data in a dict or in an OrderedDict:
         data = OrderedDict()
         laser_trace = self.laser_data
-        data['Signal (counts)'.format()] = laser_trace.transpose()
+        data['Signal (counts)'] = laser_trace.transpose()
 
         # write the parameters:
         parameters = OrderedDict()
@@ -1221,22 +1298,33 @@ class PulsedMeasurementLogic(GenericLogic):
         #####################################################################
         ####                Save measurement data                        ####
         #####################################################################
-        if tag is not None and len(tag) > 0:
+        if tag:
             filelabel = tag + '_pulsed_measurement'
         else:
             filelabel = 'pulsed_measurement'
 
         # prepare the data in a dict or in an OrderedDict:
-        header_str = 'Controlled variable({0})\tSignal({1})\t'.format(*self._data_units)
+        header_str = 'Controlled variable'
+        if self._data_units[0]:
+            header_str += '({0})'.format(self._data_units[0])
+        header_str += '\tSignal'
+        if self._data_units[1]:
+            header_str += '({0})'.format(self._data_units[1])
         if self._alternating:
-            header_str += 'Signal2({0})'.format(self._data_units[1])
+            header_str += '\tSignal2'
+            if self._data_units[1]:
+                header_str += '({0})'.format(self._data_units[1])
         if with_error:
-            header_str += 'Error({0})'.format(self._data_units[1])
+            header_str += '\tError'
+            if self._data_units[1]:
+                header_str += '({0})'.format(self._data_units[1])
             if self._alternating:
-                header_str += 'Error2({0})'.format(self._data_units[1])
+                header_str += '\tError2'
+                if self._data_units[1]:
+                    header_str += '({0})'.format(self._data_units[1])
         data = OrderedDict()
         if with_error:
-            data[header_str] = np.vstack((self.signal_data, self.measurement_error)).transpose()
+            data[header_str] = np.vstack((self.signal_data, self.measurement_error[1:])).transpose()
         else:
             data[header_str] = self.signal_data.transpose()
 
@@ -1355,7 +1443,7 @@ class PulsedMeasurementLogic(GenericLogic):
                 is_first_column = False
 
         # handle the save of the alternative data plot
-        if self._alternative_data_type:
+        if self._alternative_data_type and self._alternative_data_type != 'None':
 
             # scale the x_axis for plotting
             max_val = np.max(self.signal_alt_data[0])
@@ -1371,17 +1459,29 @@ class PulsedMeasurementLogic(GenericLogic):
                     inverse_cont_var = 's'
                 else:
                     inverse_cont_var = '(1/{0})'.format(self._data_units[0])
-                x_axis_ft_label = 'Fourier Transformed controlled variable (' + x_axis_prefix + inverse_cont_var + ')'
-                y_axis_ft_label = 'Fourier amplitude (arb. u.)'
+                x_axis_ft_label = 'FT {0} ({1}{2})'.format(
+                    self._data_labels[0], x_axis_prefix, inverse_cont_var)
+                y_axis_ft_label = 'FT({0}) (arb. u.)'.format(self._data_labels[1])
                 ft_label = 'FT of data trace 1'
             else:
-                x_axis_ft_label = 'controlled variable (' + self._data_units[0] + ')'
-                y_axis_ft_label = 'norm. sig (arb. u.)'
+                if self._data_units[0]:
+                    x_axis_ft_label = '{0} ({1})'.format(self._data_labels[0], self._data_units[0])
+                else:
+                    x_axis_ft_label = '{0}'.format(self._data_labels[0])
+                if self._data_units[1]:
+                    y_axis_ft_label = '{0} ({1})'.format(self._data_labels[1], self._data_units[1])
+                else:
+                    y_axis_ft_label = '{0}'.format(self._data_labels[1])
+
                 ft_label = ''
 
             ax2.plot(x_axis_ft_scaled, self.signal_alt_data[1], '-o',
                      linestyle=':', linewidth=0.5, color=colors[0],
                      label=ft_label)
+            if self._alternating and len(self.signal_alt_data) > 2:
+                ax2.plot(x_axis_ft_scaled, self.signal_alt_data[2], '-D',
+                         linestyle=':', linewidth=0.5, color=colors[3],
+                         label=ft_label.replace('1', '2'))
 
             ax2.set_xlabel(x_axis_ft_label)
             ax2.set_ylabel(y_axis_ft_label)
@@ -1389,8 +1489,12 @@ class PulsedMeasurementLogic(GenericLogic):
                        mode="expand", borderaxespad=0.)
 
         #FIXME: no fit plot for the alternating graph, use for that graph colors[5]
-        ax1.set_xlabel('controlled variable (' + counts_prefix + self._data_units[0] + ')')
-        ax1.set_ylabel('signal (' + self._data_units[1] + ')')
+        ax1.set_xlabel(
+            '{0} ({1}{2})'.format(self._data_labels[0], counts_prefix, self._data_units[0]))
+        if self._data_units[1]:
+            ax1.set_ylabel('{0} ({1})'.format(self._data_labels[1], self._data_units[1]))
+        else:
+            ax1.set_ylabel('{0}'.format(self._data_labels[1]))
 
         fig.tight_layout()
         ax1.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=2,

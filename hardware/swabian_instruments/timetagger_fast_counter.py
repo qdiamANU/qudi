@@ -53,7 +53,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
             self._channel_apd = self._channel_combined.getChannel()
         else:
             self._channel_apd = self._channel_apd_0
-2
+
         self.log.info('TimeTagger (fast counter) configured to use  channel {0}'
                       .format(self._channel_apd))
 
