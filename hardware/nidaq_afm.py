@@ -99,6 +99,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         self._gated_counter_daq_task = None
         self._scanner_analog_daq_task = None
         self._do_afm_scan = True
+        self._afm_voltage_offset = (0.,0.)
 
         # handle all the parameters given by the config
         self._current_position = np.zeros(len(self._scanner_ao_channels))
@@ -1037,16 +1038,17 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
         return retval
 
-    def scanner_to_afm_transformation(self, Vx, Vy, Xoffset=0., Yoffset=0., Xconv = 1., Yconv=1.):
+    def scanner_to_afm_transformation(self, volts, Xconv = 10./12., Yconv=-10./12., ):
 
-        # Map voltages on the confocal scale to the AFM scale - not sure what these values are yet
-        Vx *= Xconv
-        Vy *= Yconv
-        Vx += Xoffset
-        Vy += Yoffset
+        # Map voltages on the confocal scale to the AFM scale -> +1 V = 10 um on confocal and -12 um on AFM
+        Xoffset, Yoffset = self._afm_voltage_offset
+        for i, position in enumerate(volts):
+            volts[i][0] += Xoffset
+            volts[i][1] += Yoffset
+            volts[i][0] *= Xconv
+            volts[i][1] *= Yconv
 
-        return Vx, Vy
-
+        return volts
 
 
     def scanner_set_position(self, x=None, y=None, z=None, a=None):
@@ -1257,7 +1259,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                     'Voltages ({0}, {1}) exceed the limit, the positions have to '
                     'be adjusted to stay in the given range.'.format(v.min(), v.max()))
                 return np.array([np.NaN])
-        return volts
+        return self.scanner_to_afm_transformation(volts)
 
     def _scanner_position_to_volt(self, positions=None):
         """ Converts a set of position pixels to acutal voltages.
@@ -1428,7 +1430,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             return -1
         return 0
 
-    def scan_line(self, line_path=None, pixel_clock=False):
+    def scan_line(self, line_path=None, pixel_clock=False, afm_offsets=None):
         """ Scans a line and return the counts on that line.
 
         @param float[c][m] line_path: array of c-tuples defining the voltage points
