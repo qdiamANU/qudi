@@ -22,11 +22,7 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-import time
-from core.util.modules import get_main_dir
-import ctypes
-import os
-import matplotlib.pyplot as plt
+
 import numpy as np
 from core.module import Connector, StatusVar
 from core.module import Base, ConfigOption

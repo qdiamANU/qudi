@@ -76,6 +76,7 @@ setup['ext_microwave_frequency'] = 1
 
 def do_experiment(experiment, qm_dict, meas_type, meas_info, generate_new=True, save_tag='',
                                 load_tag='', sleep_time = 0.2):
+
     # add information necessary for measurement type
     qm_dict = meas_info(experiment, qm_dict)
     # perform sanity checks
@@ -239,7 +240,6 @@ def load_into_channel(name, sequence_mode):
 def set_parameters(qm_dict):
 
     if not qm_dict['sequence_mode']:
-
         qm_dict['params'] = pulsedmasterlogic.saved_pulse_block_ensembles.get(qm_dict['name']).measurement_information
     else:
         qm_dict['params'] = pulsedmasterlogic.saved_pulse_sequences.get(qm_dict['name']).measurement_information
@@ -326,6 +326,7 @@ def control_measurement(qm_dict, analysis_method=None):
     freq_optimize_real_time = start_time
     real_update_time = start_time
 
+    print('control_measurement')
     while True:
         time.sleep(2)
         if qm_dict['measurement_time'] is not None:
@@ -338,10 +339,15 @@ def control_measurement(qm_dict, analysis_method=None):
         ##################### optimize position #######################
         if qm_dict['optimize_time'] is not None:
             if time.time() - optimize_real_time > qm_dict['optimize_time']:
+                pulsedmeasurementlogic.pause_pulsed_measurement()
+                print('paused measurement time = {}'.format(time.time()))
+                # release pulser from 'running'
                 additional_time = optimize_position()
                 start_time = start_time + additional_time
+                #fixme: need to reload sequence data
+                pulsedmeasurementlogic.continue_pulsed_measurement()
                 optimize_real_time = time.time()
-
+                print('continuing measurement time = {}'.format(time.time()))
         ####################### optimize frequency ####################
         if qm_dict['freq_optimize_time'] is not None:
             if time.time() - freq_optimize_real_time > qm_dict['freq_optimize_time']:
@@ -499,13 +505,14 @@ def optimize_position():
     nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
     # pulsedmeasurementlogic.fast_counter_continue()
     time_stop_optimize = time.time()
-    additional_time = (time_stop_optimize - time_start_optimize)
     laser_off()
+    additional_time = (time_stop_optimize - time_start_optimize)
     return additional_time
 
 
 def optimize_poi(poi):
     # FIXME: Add the option to pause pulsed measurement during position optimization
+    print(poi)
     time_start_optimize = time.time()
     #pulsedmeasurementlogic.fast_counter_pause()
     nicard.digital_channel_switch(setup['optimize_channel'], mode=True)

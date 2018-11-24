@@ -239,3 +239,12 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         """ Returns the width of a single timebin in the timetrace in seconds. """
         width_in_seconds = self._bin_width * 1e-9
         return width_in_seconds
+
+################################### Methods for SSR interface ####################################
+
+    def configure_ssr_counter(self, counts_per_readout=None, countlength=None):
+
+        """
+        necessary for some fast counters. Does not appear necessary for TimeTagger
+        """
+        pass

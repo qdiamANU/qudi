@@ -466,7 +466,7 @@ class SequenceGeneratorLogic(GenericLogic):
             if self.pulsegenerator().get_status()[0] > 0:
                 self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
                 # return -1
-                return 0  # fixme: this isn't a great way around the problem
+                return 0  # fixme: setting return to 0 instead of -1 isn't a great way around the problem
             # Actually load the waveforms to the generic channels
             self.pulsegenerator().load_waveform(ensemble.sampling_information['waveforms'])
         else:
