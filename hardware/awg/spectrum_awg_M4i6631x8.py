@@ -369,7 +369,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         if self._spcm_dwGetParam_i32(SPC_M2STATUS) & M2STAT_CARD_READY:
             spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -384,7 +384,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 0)  # enable analog output 1
         spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 0)  # enable analog output 1
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -524,7 +524,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         self._loaded_asset = asset_name
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -597,7 +597,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
               further processing.
         """
         spcm_dwSetParam_i32(self._hCard, SPC_SAMPLERATE, int32(int(sample_rate)))
-        self._read_out_error()
+        self.read_out_error()
         return self.get_sample_rate()
 
     def get_analog_level(self, amplitude=None, offset=None):
@@ -647,7 +647,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         else:
             offset_dict = {'a_ch1': 0.0, 'a_ch2': 0.0}
 
-        self._read_out_error()
+        self.read_out_error()
         return ampl_dict, offset_dict
 
     def set_analog_level(self, amplitude=None, offset=None):
@@ -702,7 +702,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 self.log.warning('Amplitude voltage level for the analog output channel 2 is out of constraints for the'
                                  'Spectrum M4i AWG series!\nMethod call will be ignored.')
 
-        self._read_out_error()
+        self.read_out_error()
         return self.get_analog_level()
 
     def get_digital_level(self, low=None, high=None):
@@ -899,7 +899,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         self._active_channels = self.get_active_channels()
 
-        self._read_out_error()
+        self.read_out_error()
         return self._active_channels
 
     def write_waveform(self, name, analog_samples, digital_samples, is_first_chunk, is_last_chunk,
@@ -1101,9 +1101,9 @@ a
         @return int: error code (0:OK, -1:error)
         """
 
-        self._read_out_error()
+        self.read_out_error()
         if spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_RESET):
-            self._read_out_error()
+            self.read_out_error()
             return -1
         else:
             return 0
@@ -1116,7 +1116,7 @@ a
 
         availableModes = int32(0)
         spcm_dwSetParam_i32(self._hCard, SPC_AVAILCARDMODES, byref(availableModes))
-        self._read_out_error()
+        self.read_out_error()
         if availableModes.value & SPC_REP_STD_SEQUENCE:
             return True
         else:
@@ -1201,7 +1201,7 @@ a
             llValue_test = int64(0)
             spcm_dwGetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, byref(llValue_test))
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -1221,12 +1221,12 @@ a
         else:
             spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_FORCETRIGGER)
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
 
-    def _read_out_error(self):
+    def read_out_error(self):
         """checks the error state and prints it out. Errors must be read out before the AWG
         can accept further commands"""
         spcm_dwGetParam_i32
@@ -1246,7 +1246,7 @@ a
         """
         value = int32(0)
         spcm_dwGetParam_i32(self._hCard, lRegister, byref(value))
-        if self._read_out_error():
+        if self.read_out_error():
            return -1
         else:
             return value.value
@@ -1261,7 +1261,7 @@ a
         @return int: (-1: error , else parameter value)
         """
         spcm_dwSetParam_i32(self._hCard, lRegister, int32(plValue))
-        if self._read_out_error():
+        if self.read_out_error():
            return -1
         else:
             return 0
@@ -1355,7 +1355,7 @@ a
         spcm_dwSetParam_i32(self._hCard, SPC_TRIG_CH_ANDMASK1, SPC_TMASK_NONE)
         spcm_dwSetParam_i32(self._hCard, SPC_TRIGGEROUT, SPC_TMASK_NONE)
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -1376,7 +1376,7 @@ a
             spcm_dwSetParam_i32(self._hCard, SPCM_X2_MODE, SPCM_XMODE_ASYNCOUT)
 
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -1392,7 +1392,7 @@ a
 
 
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -1471,7 +1471,7 @@ a
         #spcm_dwGetParam_i32(self._hCard, SPC_MIINST_BYTESPERSAMPLE, byref(lBytesPerSample));
 
         # setup the trigger mode -> no trigger
-        self._read_out_error()
+        self.read_out_error()
         spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_NONE);
         # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ORMASK, SPC_TMASK_SOFTWARE) # (SW trigger, no output)
         # spcm_dwSetParam_i32(self._hCard, SPC_TRIG_ANDMASK, 0)
@@ -1492,7 +1492,7 @@ a
         spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_SEGMENTSIZE, llMemSamples); # define size of current segment 0
 
         sample_rate = self.get_sample_rate()
-        self._read_out_error()
+        self.read_out_error()
 
         a_ch1_signal = (np.sin(np.arange(llMemSamples.value) * (frequency_1/sample_rate) * 2 * np.pi) * (2 ** 15 - 1)).astype(
             dtype=np.int16)

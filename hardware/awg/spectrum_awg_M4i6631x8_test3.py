@@ -972,9 +972,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             """
             self.connected = True
             self.log.info('Reset operation: AWG error readout')
-            self._read_out_error()
+            self.read_out_error()
             if spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_RESET):
-                self._read_out_error()
+                self.read_out_error()
                 return -1
             else:
                 return 0
@@ -987,7 +987,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             return True
 
 
-        def _read_out_error(self):
+        def read_out_error(self):
             """checks the error state and prints it out. Errors must be read out before the AWG
             can accept further commands"""
             spcm_dwGetParam_i32
@@ -1007,7 +1007,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             """
             value = int32(0)
             spcm_dwGetParam_i32(self._hCard, lRegister, byref(value))
-            if self._read_out_error():
+            if self.read_out_error():
                return -1
             else:
                 return value.value
@@ -1022,7 +1022,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             @return int: (-1: error , else parameter value)
             """
             spcm_dwSetParam_i32(self._hCard, lRegister, int32(plValue))
-            if self._read_out_error():
+            if self.read_out_error():
                return -1
             else:
                 return 0

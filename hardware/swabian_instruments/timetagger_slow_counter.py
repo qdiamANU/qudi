@@ -24,7 +24,6 @@ import thirdparty.swabian_instruments.timetagger.TimeTagger as tt
 import time
 import numpy as np
 
-
 from core.module import Base, ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
@@ -113,7 +112,7 @@ class TimeTaggerSlowCounter(Base, SlowCounterInterface, ODMRCounterInterface):
         # Fixme
         # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
         # set at startup
-        #self._tagger.setTestSignal(0, True)
+        # self._tagger.setTestSignal(0, True)
         #self._tagger.setTestSignal(1, True)
         if self._mode == 1:
             channel_combined = tt.Combiner(self._tagger, channels = [self._channel_apd_0, self._channel_apd_1])

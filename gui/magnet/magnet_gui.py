@@ -465,7 +465,7 @@ class MagnetGui(GUIBase):
 
 
         # for single shot alignment of a nuclear spin:
-        self._mw.align_2d_nuclear_rabi_periode_DSpinBox.setValue(self._magnet_logic.nuclear_2d_rabi_periode)
+        self._mw.align_2d_nuclear_rabi_periode_DSpinBox.setValue(self._magnet_logic.nuclear_2d_rabi_period)
         self._mw.align_2d_nuclear_mw_freq_DSpinBox.setValue(self._magnet_logic.nuclear_2d_mw_freq)
         self._mw.align_2d_nuclear_mw_channel_SpinBox.setValue(self._magnet_logic.nuclear_2d_mw_channel)
         self._mw.align_2d_nuclear_mw_power_DSpinBox.setValue(self._magnet_logic.nuclear_2d_mw_power)
@@ -1299,7 +1299,7 @@ class MagnetGui(GUIBase):
             self._magnet_logic.odmr_2d_single_trans = self._mw.odmr_2d_single_trans_CheckBox.isChecked()
 
             # nuclear ops:
-            self._magnet_logic.nuclear_2d_rabi_periode = self._mw.align_2d_nuclear_rabi_periode_DSpinBox.value()*1e-9
+            self._magnet_logic.nuclear_2d_rabi_period = self._mw.align_2d_nuclear_rabi_periode_DSpinBox.value()*1e-9
             self._magnet_logic.nuclear_2d_mw_freq = self._mw.align_2d_nuclear_mw_freq_DSpinBox.value()*1e6
             self._magnet_logic.nuclear_2d_mw_channel = self._mw.align_2d_nuclear_mw_channel_SpinBox.value()
             self._magnet_logic.nuclear_2d_mw_power = self._mw.align_2d_nuclear_mw_power_DSpinBox.value()

@@ -1279,21 +1279,23 @@ class PulseObjectGenerator(PredefinedGeneratorBase):
 
         # import path for generator modules from default dir (logic.predefined_generate_methods)
         path_list = [os.path.join(get_main_dir(), 'logic', 'pulsed', 'predefined_generate_methods')]
+        #print('PulseObjectGenerator path_list = {}'.format(path_list))
         # import path for generator modules from non-default directory if a path has been given
         if isinstance(sequencegeneratorlogic.additional_methods_dir, str):
             path_list.append(sequencegeneratorlogic.additional_methods_dir)
-
+            #print('PulseObjectGenerator appended path_list = {}'.format(path_list))
         # Import predefined generator modules and get a list of generator classes
         generator_classes = self.__import_external_generators(paths=path_list)
 
         # create an instance of each class and put them in a temporary list
         generator_instances = [cls(sequencegeneratorlogic) for cls in generator_classes]
-
+        #print('generator_instances = {}'.format(generator_instances))
         # add references to all generate methods in each instance to a dict
         self.__populate_method_dict(instance_list=generator_instances)
 
         # populate parameters dictionary from generate method signatures
         self.__populate_parameter_dict()
+        #print('_generate_method_parameters = {}'.format(self._generate_method_parameters))
 
     @property
     def predefined_generate_methods(self):
@@ -1323,6 +1325,7 @@ class PulseObjectGenerator(PredefinedGeneratorBase):
             # which contain only generator classes!
             module_list = [name[:-3] for name in os.listdir(path) if
                            os.path.isfile(os.path.join(path, name)) and name.endswith('.py')]
+            #print('module_list = {}'.format(module_list))
 
             # append import path to sys.path
             if path not in sys.path:
@@ -1337,6 +1340,7 @@ class PulseObjectGenerator(PredefinedGeneratorBase):
                 tmp_list = [m[1] for m in inspect.getmembers(mod, self.is_generator_class)]
                 # append to class_list
                 class_list.extend(tmp_list)
+        #print('class_list = {}'.format(class_list))
         return class_list
 
     def __populate_method_dict(self, instance_list):
@@ -1351,6 +1355,7 @@ class PulseObjectGenerator(PredefinedGeneratorBase):
             for method_name, method_ref in inspect.getmembers(instance, inspect.ismethod):
                 if method_name.startswith('generate_'):
                     self._generate_methods[method_name[9:]] = method_ref
+        #print('generate_methods = {}'.format(self._generate_methods))
         return
 
     def __populate_parameter_dict(self):
@@ -1377,8 +1382,8 @@ class PulseObjectGenerator(PredefinedGeneratorBase):
         @return bool: True if obj is a valid generator class, False otherwise
         """
         if inspect.isclass(obj):
-            return PredefinedGeneratorBase in obj.__bases__ and len(obj.__bases__) == 1
+            #return PredefinedGeneratorBase in obj.__bases__ and len(obj.__bases__) == 1
+            return PredefinedGeneratorBase in inspect.getmro(obj)  # and len(obj.__bases__) == 1
         return False
-
 
 

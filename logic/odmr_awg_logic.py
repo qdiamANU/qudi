@@ -47,24 +47,29 @@ class ODMRLogic(GenericLogic):
     microwave1 = Connector(interface='mwsourceinterface')
     savelogic = Connector(interface='SaveLogic')
     taskrunner = Connector(interface='TaskRunner')
+    pulsegenerator = Connector(interface='PulserInterface')
 
     # config option
     mw_scanmode = ConfigOption(
                     'scanmode',
-                    'LIST',
+                    'SWEEP',
                     missing='warn',
                     converter=lambda x: MicrowaveMode[x.upper()])
+    print('init {}'.format(mw_scanmode))
 
     clock_frequency = StatusVar('clock_frequency', 200)
     cw_mw_frequency = StatusVar('cw_mw_frequency', 2870e6)
     cw_mw_power = StatusVar('cw_mw_power', -30)
     sweep_mw_power = StatusVar('sweep_mw_power', -30)
-    mw_start = StatusVar('mw_start', 2800e6)
-    mw_stop = StatusVar('mw_stop', 2950e6)
+    mw_start = StatusVar('mw_start', 2800e3)
+    mw_stop = StatusVar('mw_stop', 2950e4)
     mw_step = StatusVar('mw_step', 2e6)
     run_time = StatusVar('run_time', 60)
     number_of_lines = StatusVar('number_of_lines', 50)
     fc = StatusVar('fits', None)
+    use_awg_sweep = StatusVar('use_awg_sweep', True)
+    awg_microwave_amplitude = StatusVar('awg_microwave_amplitude', 4.0)
+    ext_microwave_frequency = StatusVar('ext_microwave_frequency', 2.6e9)
 
     # Internal signals
     sigNextLine = QtCore.Signal()
@@ -86,6 +91,7 @@ class ODMRLogic(GenericLogic):
         """
         # Get connectors
         self._mw_device = self.microwave1()
+        self._awg_device = self.pulsegenerator()
         self._fit_logic = self.fitlogic()
         self._odmr_counter = self.odmrcounter()
         self._save_logic = self.savelogic()
@@ -132,6 +138,8 @@ class ODMRLogic(GenericLogic):
 
         # Connect signals
         self.sigNextLine.connect(self._scan_odmr_line, QtCore.Qt.QueuedConnection)
+
+        print(self.mw_scanmode)
         return
 
     def on_deactivate(self):
@@ -151,6 +159,7 @@ class ODMRLogic(GenericLogic):
                 break
         # Switch off microwave source for sure (also if CW mode is active or module is still locked)
         self._mw_device.off()
+        # NOTE: could turn off AWG output here, but this could kill a measurement being run with pulsed logic
         # Disconnect signals
         self.sigNextLine.disconnect()
 
@@ -198,9 +207,13 @@ class ODMRLogic(GenericLogic):
 
     def _initialize_odmr_plots(self):
         """ Initializing the ODMR plots (line and matrix). """
-        self.odmr_plot_x = np.arange(self.mw_start, self.mw_stop + self.mw_step, self.mw_step)
+        if self.use_awg_sweep:
+            self.odmr_plot_x = np.arange(self.mw_start, self.mw_stop + self.mw_step, self.mw_step) + self.ext_microwave_frequency
+            self.odmr_fit_x = np.arange(self.mw_start, self.mw_stop + self.mw_step, self.mw_step) + self.ext_microwave_frequency
+        else:
+            self.odmr_plot_x = np.arange(self.mw_start, self.mw_stop + self.mw_step, self.mw_step)
+            self.odmr_fit_x = np.arange(self.mw_start, self.mw_stop + self.mw_step, self.mw_step)
         self.odmr_plot_y = np.zeros([len(self.get_odmr_channels()), self.odmr_plot_x.size])
-        self.odmr_fit_x = np.arange(self.mw_start, self.mw_stop + self.mw_step, self.mw_step)
         self.odmr_fit_y = np.zeros(self.odmr_fit_x.size)
         self.odmr_plot_xy = np.zeros(
             [self.number_of_lines, len(self.get_odmr_channels()), self.odmr_plot_x.size])
@@ -218,9 +231,9 @@ class ODMRLogic(GenericLogic):
 
         @return object: actually set trigger polarity returned from hardware
         """
-        print('set_trigger')
         if self.module_state() != 'locked':
             self.mw_trigger_pol, triggertime = self._mw_device.set_ext_trigger(trigger_pol, 1/frequency)
+            # todo: not critical, but would ideally also call the AWG here
         else:
             self.log.warning('set_trigger failed. Logic is locked.')
 
@@ -236,7 +249,6 @@ class ODMRLogic(GenericLogic):
 
         @return int: actually set clock frequency
         """
-        print('set_clock_frequency')
         # checks if scanner is still running
         if self.module_state() != 'locked' and isinstance(clock_frequency, (int, float)):
             self.clock_frequency = int(clock_frequency)
@@ -256,7 +268,6 @@ class ODMRLogic(GenericLogic):
 
         @return int: actually set number of matrix lines
         """
-        print('set_matrix_line_number')
         if isinstance(number_of_lines, int):
             self.number_of_lines = number_of_lines
         else:
@@ -275,7 +286,6 @@ class ODMRLogic(GenericLogic):
 
         @return float: actually set runtime in seconds
         """
-        print('set_runtime')
         if isinstance(runtime, (int, float)):
             self.run_time = runtime
         else:
@@ -319,6 +329,7 @@ class ODMRLogic(GenericLogic):
                                             current freq_step, current power
         """
         print('set_sweep_parameters')
+        print(self.mw_scanmode)
         limits = self.get_hw_constraints()
         if self.module_state() != 'locked':
             if isinstance(start, (int, float)):
@@ -373,7 +384,13 @@ class ODMRLogic(GenericLogic):
         @return str, bool: active mode ['cw', 'list', 'sweep'], is_running
         """
         print('mw_sweep_on')
+        print(self.mw_scanmode)
         limits = self.get_hw_constraints()
+
+        if self.use_awg_sweep:
+            limits.list_maxentries = self._awg_device.max_sequence_steps
+            print(limits.list_maxentries)
+
         if self.mw_scanmode == MicrowaveMode.LIST:
             if np.abs(self.mw_stop - self.mw_start) / self.mw_step >= limits.list_maxentries:
                 self.log.warning('Number of frequency steps too large for microwave device. '
@@ -387,41 +404,90 @@ class ODMRLogic(GenericLogic):
                 self.mw_step = np.abs(self.mw_stop - self.mw_start) / (limits.list_maxentries - 1)
                 self.sigParameterUpdated.emit({'mw_step': self.mw_step})
 
-        if self.mw_scanmode == MicrowaveMode.SWEEP:
+        if self.use_awg_sweep:
+            limits.list_maxentries = self._awg_device.max_sequence_steps
 
-            sweep_return = self._mw_device.set_sweep(
-                self.mw_start, self.mw_stop, self.mw_step, self.sweep_mw_power)
-            self.mw_start, self.mw_stop, self.mw_step, self.sweep_mw_power, mode = sweep_return
+            if self.mw_scanmode == MicrowaveMode.SWEEP:
+                mode = 'sweep'
+                # write and load sweep sequence to AWG
+                sequence_name = 'odmr_cw_sweep'
+                self._awg_device.write_triggered_cw_odmr_sweep_sequence(
+                    self.mw_start, self.mw_stop, self.mw_step, sequence_name)
+                self._awg_device.load_sequence(sequence_name)
+                # set microwave device as local oscillator:
+                self._mw_device.set_cw(self.ext_microwave_frequency, self.sweep_mw_power)
 
-            param_dict = {'mw_start': self.mw_start, 'mw_stop': self.mw_stop,
-                          'mw_step': self.mw_step, 'sweep_mw_power': self.sweep_mw_power}
+                param_dict = {'mw_start': self.mw_start, 'mw_stop': self.mw_stop,
+                              'mw_step': self.mw_step, 'sweep_mw_power': self.sweep_mw_power}
+            else:
+                # todo: implement AWG for list mode as well
+                # adjust the end frequency in order to have an integer multiple of step size
+                # The master module (i.e. GUI) will be notified about the changed end frequency
+                num_steps = int(np.rint((self.mw_stop - self.mw_start) / self.mw_step))
+                end_freq = self.mw_start + num_steps * self.mw_step
+                freq_list = np.linspace(self.mw_start, end_freq, num_steps + 1)
+                freq_list, self.sweep_mw_power, mode = self._mw_device.set_list(freq_list,
+                                                                                self.sweep_mw_power)
+                self.mw_start = freq_list[0]
+                self.mw_stop = freq_list[-1]
+                self.mw_step = (self.mw_stop - self.mw_start) / (len(freq_list) - 1)
+                param_dict = {'mw_start': self.mw_start, 'mw_stop': self.mw_stop,
+                              'mw_step': self.mw_step, 'sweep_mw_power': self.sweep_mw_power}
+            self.sigParameterUpdated.emit(param_dict)
+
+            if mode != 'list' and mode != 'sweep':
+                self.log.error('Switching to list/sweep microwave output mode failed.')
+            elif self.mw_scanmode == MicrowaveMode.SWEEP:
+                # turn on awg output
+                err_code1 = self._awg_device.pulser_on()
+                # turn on microwave local oscillator:
+                err_code2 = self._mw_device.cw_on()
+                if err_code1 < 0:
+                    self.log.error('Activation of AWG output failed.')
+                if err_code2 < 0:
+                    self.log.error('Activation of microwave output failed.')
+            else:
+                # todo: implement for AWG list
+                err_code = self._mw_device.list_on()
+                if err_code < 0:
+                    self.log.error('Activation of microwave output failed.')
         else:
-            # adjust the end frequency in order to have an integer multiple of step size
-            # The master module (i.e. GUI) will be notified about the changed end frequency
-            num_steps = int(np.rint((self.mw_stop - self.mw_start) / self.mw_step))
-            end_freq = self.mw_start + num_steps * self.mw_step
-            freq_list = np.linspace(self.mw_start, end_freq, num_steps + 1)
-            freq_list, self.sweep_mw_power, mode = self._mw_device.set_list(freq_list,
-                                                                            self.sweep_mw_power)
-            self.mw_start = freq_list[0]
-            self.mw_stop = freq_list[-1]
-            self.mw_step = (self.mw_stop - self.mw_start) / (len(freq_list) - 1)
-            param_dict = {'mw_start': self.mw_start, 'mw_stop': self.mw_stop,
-                          'mw_step': self.mw_step, 'sweep_mw_power': self.sweep_mw_power}
-        self.sigParameterUpdated.emit(param_dict)
+            if self.mw_scanmode == MicrowaveMode.SWEEP:
 
-        if mode != 'list' and mode != 'sweep':
-            self.log.error('Switching to list/sweep microwave output mode failed.')
-        elif self.mw_scanmode == MicrowaveMode.SWEEP:
-            err_code = self._mw_device.sweep_on()
-            if err_code < 0:
-                self.log.error('Activation of microwave output failed.')
-        else:
-            err_code = self._mw_device.list_on()
-            if err_code < 0:
-                self.log.error('Activation of microwave output failed.')
+                sweep_return = self._mw_device.set_sweep(
+                    self.mw_start, self.mw_stop, self.mw_step, self.sweep_mw_power)
+                self.mw_start, self.mw_stop, self.mw_step, self.sweep_mw_power, mode = sweep_return
+
+                param_dict = {'mw_start': self.mw_start, 'mw_stop': self.mw_stop,
+                              'mw_step': self.mw_step, 'sweep_mw_power': self.sweep_mw_power}
+            else:
+                # adjust the end frequency in order to have an integer multiple of step size
+                # The master module (i.e. GUI) will be notified about the changed end frequency
+                num_steps = int(np.rint((self.mw_stop - self.mw_start) / self.mw_step))
+                end_freq = self.mw_start + num_steps * self.mw_step
+                freq_list = np.linspace(self.mw_start, end_freq, num_steps + 1)
+                freq_list, self.sweep_mw_power, mode = self._mw_device.set_list(freq_list,
+                                                                                self.sweep_mw_power)
+                self.mw_start = freq_list[0]
+                self.mw_stop = freq_list[-1]
+                self.mw_step = (self.mw_stop - self.mw_start) / (len(freq_list) - 1)
+                param_dict = {'mw_start': self.mw_start, 'mw_stop': self.mw_stop,
+                              'mw_step': self.mw_step, 'sweep_mw_power': self.sweep_mw_power}
+            self.sigParameterUpdated.emit(param_dict)
+
+            if mode != 'list' and mode != 'sweep':
+                self.log.error('Switching to list/sweep microwave output mode failed.')
+            elif self.mw_scanmode == MicrowaveMode.SWEEP:
+                err_code = self._mw_device.sweep_on()
+                if err_code < 0:
+                    self.log.error('Activation of microwave output failed.')
+            else:
+                err_code = self._mw_device.list_on()
+                if err_code < 0:
+                    self.log.error('Activation of microwave output failed.')
 
         mode, is_running = self._mw_device.get_status()
+        print(mode, is_running)
         self.sigOutputStateUpdated.emit(mode, is_running)
         return mode, is_running
 
@@ -430,6 +496,7 @@ class ODMRLogic(GenericLogic):
         Resets the list/sweep mode of the microwave source to the first frequency step.
         """
         #print('reset_sweep')
+        # todo: AWG reset sweep
         if self.mw_scanmode == MicrowaveMode.SWEEP:
             self._mw_device.reset_sweeppos()
         elif self.mw_scanmode == MicrowaveMode.LIST:
@@ -442,8 +509,10 @@ class ODMRLogic(GenericLogic):
         @return str, bool: active mode ['cw', 'list', 'sweep'], is_running
         """
         print('mw_off')
-        error_code = self._mw_device.off()
-        if error_code < 0:
+        return_val_1 = self._mw_device.off()
+        return_val_2 = self._awg_device.pulser_off()
+
+        if (return_val_1 != 0) or (return_val_2 != 0):
             self.log.error('Switching off microwave source failed.')
 
         mode, is_running = self._mw_device.get_status()
@@ -456,7 +525,7 @@ class ODMRLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('start_odmr_counter')
+
         clock_status = self._odmr_counter.set_up_odmr_clock(clock_frequency=self.clock_frequency)
         if clock_status < 0:
             return -1
@@ -474,7 +543,7 @@ class ODMRLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('stop_odmr_counter')
+
         ret_val1 = self._odmr_counter.close_odmr()
         if ret_val1 != 0:
             self.log.error('ODMR counter could not be stopped!')
@@ -487,8 +556,6 @@ class ODMRLogic(GenericLogic):
 
     def start_odmr_scan(self):
         """ Starting an ODMR scan.
-
-        This is the function called by the CW ODMR GUI to run an ODMR measurement
 
         @return int: error code (0:OK, -1:error)
         """
@@ -511,7 +578,6 @@ class ODMRLogic(GenericLogic):
             self.sigOdmrElapsedTimeUpdated.emit(self.elapsed_time, self.elapsed_sweeps)
 
             odmr_status = self._start_odmr_counter()
-            print('odmr_status = {}'.format(odmr_status))
             if odmr_status < 0:
                 mode, is_running = self._mw_device.get_status()
                 self.sigOutputStateUpdated.emit(mode, is_running)
@@ -545,7 +611,6 @@ class ODMRLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('continue_odmr_scan')
         with self.threadlock:
             if self.module_state() == 'locked':
                 self.log.error('Can not start ODMR scan. Logic is already locked.')
@@ -581,7 +646,6 @@ class ODMRLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('stop_odmr_scan')
         with self.threadlock:
             if self.module_state() == 'locked':
                 self.stopRequested = True
@@ -602,7 +666,6 @@ class ODMRLogic(GenericLogic):
 
         (from mw_start to mw_stop in steps of mw_step)
         """
-        #print('_scan_odmr_line')
         with self.threadlock:
             # If the odmr measurement is not running do nothing
             if self.module_state() != 'locked':
@@ -914,7 +977,6 @@ class ODMRLogic(GenericLogic):
 
         @return
         """
-        print('perform_odmr_measurement')
         timeout = 30
         start_time = time.time()
         while self.module_state() != 'idle':
@@ -926,10 +988,9 @@ class ODMRLogic(GenericLogic):
                 return {}
 
         # set all relevant parameter:
-        # FIXME: These dont work, change to match odmr_logic
-        #self.set_power(power)
-        #self.set_sweep_frequencies(freq_start, freq_stop, freq_step)
-        #self.set_runtime(runtime)
+        self.set_power(power)
+        self.set_sweep_frequencies(freq_start, freq_stop, freq_step)
+        self.set_runtime(runtime)
 
         # start the scan
         self.start_odmr_scan()
@@ -951,5 +1012,63 @@ class ODMRLogic(GenericLogic):
         # Save data if requested
         if save_after_meas:
             self.save_odmr_data(tag=name_tag)
-        print(fit_params)
+
         return self.odmr_plot_x, self.odmr_plot_y, fit_params
+
+
+############################################################################
+    # Pulse generator control methods and properties
+    ############################################################################
+    @property
+    def ext_pulsegenerator_settings(self):
+        settings_dict = dict()
+        settings_dict['amplitude'] = float(self.__pulsegenerator_amplitude)
+        settings_dict['use_ext_pulsegenerator'] = bool(self.__use_ext_pulsegenerator)
+        return settings_dict
+
+    @ext_pulsegenerator_settings.setter
+    def ext_pulsegenerator_settings(self, settings_dict):
+        if isinstance(settings_dict, dict):
+            self.set_pulsegenerator_settings(settings_dict)
+        return
+
+    @property
+    def pulse_generator_constraints(self):
+        return self.pulsegenerator().get_constraints()
+
+    def pulse_generator_on(self):
+        """Switching on the pulse generator. """
+        err = self.pulsegenerator().pulser_on()
+        if err < 0:
+            self.log.error('Failed to turn on pulse generator output.')
+            self.sigPulserRunningUpdated.emit(False)
+        else:
+            self.sigPulserRunningUpdated.emit(True)
+        return err
+
+    def pulse_generator_off(self):
+        """Switching off the pulse generator. """
+        err = self.pulsegenerator().pulser_off()
+        if err < 0:
+            self.log.error('Failed to turn off pulse generator output.')
+            self.sigPulserRunningUpdated.emit(True)
+        else:
+            self.sigPulserRunningUpdated.emit(False)
+        return err
+
+    @QtCore.Slot(bool)
+    def toggle_pulse_generator(self, switch_on):
+        """
+        Switch the pulse generator on or off.
+
+        :param switch_on: bool, turn the pulse generator on (True) or off (False)
+        :return int: error code (0: OK, -1: error)
+        """
+        if not isinstance(switch_on, bool):
+            return -1
+
+        if switch_on:
+            err = self.pulse_generator_on()
+        else:
+            err = self.pulse_generator_off()
+        return err

@@ -436,10 +436,13 @@ class ODMRGui(GUIBase):
         @param str mw_mode: is the microwave output active?
         @param bool is_running: is the microwave output active?
         """
+        print('odmr gui: update_status')
+        print('mw_mode = {}; is_running = {}'.format(mw_mode,is_running))
         # Block signals from firing
         self._mw.action_run_stop.blockSignals(True)
         self._mw.action_resume_odmr.blockSignals(True)
         self._mw.action_toggle_cw.blockSignals(True)
+        print('signals blocked')
 
         # Update measurement status (activate/deactivate widgets/actions)
         if is_running:
@@ -493,6 +496,7 @@ class ODMRGui(GUIBase):
         self._mw.action_run_stop.blockSignals(False)
         self._mw.action_resume_odmr.blockSignals(False)
         self._mw.action_toggle_cw.blockSignals(False)
+        print('signals unblocked')
         return
 
     def clear_odmr_data(self):

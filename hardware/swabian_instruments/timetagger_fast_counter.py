@@ -46,7 +46,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         self._bin_width = 1
         self._record_length = int(4000)
 
-
+        # self._tagger.setTestSignal(0, True)
 
         if self._sum_channels == True:
             self._channel_combined = tt.Combiner(self._tagger, channels=[self._channel_apd_0, self._channel_apd_1])
@@ -131,6 +131,8 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
                     gate_length_s: the actual set gate length in seconds
                     number_of_gates: the number of gated, which are accepted
         """
+
+
         self._number_of_gates = number_of_gates
         self._bin_width = bin_width_s * 1e9
         self._record_length = 1 + int(record_length_s / bin_width_s)

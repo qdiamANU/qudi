@@ -117,7 +117,7 @@ class MagnetLogic(GenericLogic):
     odmr_2d_peak_axis0_move_ratio = StatusVar('odmr_2d_peak_axis0_move_ratio', 0)
     odmr_2d_peak_axis1_move_ratio = StatusVar('odmr_2d_peak_axis1_move_ratio', 0)
 
-    nuclear_2d_rabi_periode = StatusVar('nuclear_2d_rabi_periode', 1000e-9)
+    nuclear_2d_rabi_period = StatusVar('nuclear_2d_rabi_period', 1000e-9)
     nuclear_2d_mw_freq = StatusVar('nuclear_2d_mw_freq', 100e6)
     nuclear_2d_mw_channel = StatusVar('nuclear_2d_mw_channel', -1)
     nuclear_2d_mw_power = StatusVar('nuclear_2d_mw_power', -30)
@@ -1046,8 +1046,9 @@ class MagnetLogic(GenericLogic):
         # get axis names
         axes = [i for i in self._magnet_device.get_constraints()]
         state = self._magnet_device.get_status()
-
-        return (state[axes[0]] or state[axes[1]] or state[axes[2]]) is (1 or -1)
+        # LOCALFIX Prithvi: Please fix later Impourthant
+        return False
+        # return (state[axes[0]] or state[axes[1]] or state[axes[2]]) is (1 or -1)
 
 
     def _set_meas_point(self, meas_val, add_meas_val, pathway_index, back_map):
@@ -1206,12 +1207,16 @@ class MagnetLogic(GenericLogic):
 
         # optimize at first the position:
         self._do_optimize_pos()
-
+        # LOCALFIX Prithvi: What axes do we want to scan over, currently hardcoded to x,y
+        self._axis0_name = 'x'
+        self._axis1_name = 'y'
 
         # correct the ODMR alignment the shift of the ODMR lines due to movement
         # in axis0 and axis1, therefore find out how much you will move in each
         # distance:
         if self._pathway_index == 0:
+            print(self._saved_pos_before_align)
+            print(self._backmap)
             axis0_pos_start = self._saved_pos_before_align[self._axis0_name]
             axis0_pos_stop = self._backmap[self._pathway_index][self._axis0_name]
 
@@ -1318,12 +1323,27 @@ class MagnetLogic(GenericLogic):
                                                           name_tag)
 
         # restructure the output parameters:
-        for entry in param:
-            store_dict['low_freq_'+str(entry)] = param[entry]
+        # LOCALFIX Prithvi: See if storedict does anything
+        # for entry in param:
+        #     print(param, entry)
+        #     store_dict['low_freq_'+str(entry)] = param[entry]
 
         # extract the frequency meausure:
-        if param.get('Frequency') is not None:
-            odmr_low_freq_meas = param['Frequency']['value']*1e6
+        # if param.get('Frequency') is not None:
+        #     odmr_low_freq_meas = param['Frequency']['value']*1e6
+        # elif param.get('Freq. 1') is not None:
+        #     odmr_low_freq_meas = param['Freq. 1']['value']*1e6
+        # else:
+        #     # a default value for testing and debugging:
+        #     odmr_low_freq_meas = 1000e6
+
+        '''
+        Parameters([('l0_amplitude', <Parameter 'l0_amplitude', value=-174.4390631423205 +/- 92.3, bounds=[-inf:-0.01]>), ('l0_center', <Parameter 'l0_center', value=2844633505.765279 +/- 9.24e+05, bounds=[2648000000.0:3102000000.0]>), ('l0_sigma', <Parameter 'l0_sigma', value=1987755.825366898 +/- 1.57e+06, bounds=[1000000.0:600000000.0]>), ('offset', <Parameter 'offset', value=4623.459673549417 +/- 11.2, bounds=[-inf:inf]>), ('l1_amplitude', <Parameter 'l1_amplitude', value=-96.0619460984067 +/- 50.9, bounds=[-inf:-0.01]>), ('l1_center', <Parameter 'l1_center', value=2882203716.5875316 +/- 2.68e+06, bounds=[2648000000.0:3102000000.0]>), ('l1_sigma', <Parameter 'l1_sigma', value=5052781.024949543 +/- 4.24e+06, bounds=[1000000.0:600000000.0]>), ('l0_fwhm', <Parameter 'l0_fwhm', value=3975511.650733796 +/- 3.15e+06, bounds=[-inf:inf], expr='2*l0_sigma'>), ('l0_contrast', <Parameter 'l0_contrast', value=-3.7729119633134833 +/- 2, bounds=[-inf:inf], expr='(l0_amplitude/offset)*100'>), ('l1_fwhm', <Parameter 'l1_fwhm', value=10105562.049899086 +/- 8.48e+06, bounds=[-inf:inf], expr='2*l1_sigma'>), ('l1_contrast', <Parameter 'l1_contrast', value=-2.0777070177117 +/- 1.1, bounds=[-inf:inf], expr='(l1_amplitude/offset)*100'>)])
+
+        
+        '''
+        if param.get('frequency') is not None:
+            odmr_low_freq_meas = param['frequency']['value']*1e6
         elif param.get('Freq. 1') is not None:
             odmr_low_freq_meas = param['Freq. 1']['value']*1e6
         else:
@@ -1520,7 +1540,7 @@ class MagnetLogic(GenericLogic):
         """ Make a single shot alignment. """
 
         # possible parameters for the nuclear measurement:
-        # self.nuclear_2d_rabi_periode
+        # self.nuclear_2d_rabi_period
         # self.nuclear_2d_mw_freq
         # self.nuclear_2d_mw_channel
         # self.nuclear_2d_mw_power
@@ -1619,7 +1639,7 @@ class MagnetLogic(GenericLogic):
 
         # run the lifetime calculatiion:
         #        In order to calculate the T1 time one needs the length of one SingleShot readout
-        dt = (self.nuclear_2d_rabi_periode/2 + self.nuclear_2d_laser_time + self.nuclear_2d_idle_time) * self.nuclear_2d_reps_within_ssr
+        dt = (self.nuclear_2d_rabi_period/2 + self.nuclear_2d_laser_time + self.nuclear_2d_idle_time) * self.nuclear_2d_reps_within_ssr
         # param_lifetime = self._ta_logic.analyze_lifetime(self._gc_logic.countdata, dt, self.nuclear_2d_estimated_lifetime)
         # param.update(param_lifetime)
 
