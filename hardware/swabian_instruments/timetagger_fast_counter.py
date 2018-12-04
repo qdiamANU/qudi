@@ -250,3 +250,9 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         necessary for some fast counters. Does not appear necessary for TimeTagger
         """
         pass
+
+    def change_sweep_mode(self, gated=True):
+        """
+                necessary for some fast counters. Does not appear necessary for TimeTagger
+        """
+        pass

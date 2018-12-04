@@ -32,6 +32,7 @@ from interface.microwave_interface import MicrowaveLimits
 from interface.microwave_interface import MicrowaveMode
 from interface.microwave_interface import TriggerEdge
 
+
 class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
     """This is the Interface class to define the controls for the simple
     microwave hardware.
@@ -96,7 +97,7 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
 
         @return str, bool: mode ['cw', 'list', 'sweep'], is_running [True, False]
         """
-
+        print('get status called')
         mode, mw_is_running = self._microwave_device.get_status()
 
         if mode == 'cw':
@@ -112,6 +113,8 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
         #     return mode, -1
         # else:
         #     return mode, mw_is_running
+
+        print('got status from mw device')
         return mode, mw_is_running
 
     def get_power(self):
@@ -185,6 +188,7 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
         else:
             self._mode = MicrowaveMode.LIST
             self.output_active = True
+            print('list on - success')
             return 0
 
 
@@ -229,11 +233,9 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
 
         name = 'odmr_cw_list'
         self._awg_device.write_triggered_cw_odmr_list_sequence(frequency, name)
+
         self._awg_device.load_sequence(name)
-
         err = self._awg_device.read_out_error()
-
-        self._awg_device.pulser_on()
 
         if err:
             self.log.error('Could not set AWG in list mode. Returning to CW microwave mode.')

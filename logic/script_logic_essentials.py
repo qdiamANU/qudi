@@ -36,10 +36,10 @@ setup['laser_safety'] = 200e-9
 
 if setup['gated']:
     setup['sync_channel'] = ''
-    setup['gate_channel'] = 'd_ch1'
+    setup['gate_channel'] = 'd_ch3'
 else:
-    setup['sync_channel'] = 'd_ch1'
-    setup['gate_channel'] = ''
+    setup['sync_channel'] = ''
+    setup['gate_channel'] = 'd_ch3'
 
 setup['laser_channel'] = 'd_ch1'
 
@@ -513,6 +513,7 @@ def optimize_position():
 def optimize_poi(poi):
     # FIXME: Add the option to pause pulsed measurement during position optimization
     print(poi)
+    laser_on()
     time_start_optimize = time.time()
     #pulsedmeasurementlogic.fast_counter_pause()
     nicard.digital_channel_switch(setup['optimize_channel'], mode=True)
@@ -529,8 +530,8 @@ def optimize_poi(poi):
     nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
     # pulsedmeasurementlogic.fast_counter_continue()
     time_stop_optimize = time.time()
+    laser_off()
     additional_time = (time_stop_optimize - time_start_optimize)
-
     return additional_time
 
 
@@ -705,9 +706,12 @@ def do_automized_measurements(qm_dict, autoexp):
     # loop over all the pois
     for poi in qm_dict['list_pois']:
         if pulsedmasterlogic.break_variable == True: break
+
+        #todo: save waveform name
         # move to current poi and optimize position
         poimanagerlogic.go_to_poi(poi)
         optimize_poi(poi)
+        #todo: reload waveform
 
         # perform all experiments
         for experiment in autoexp:

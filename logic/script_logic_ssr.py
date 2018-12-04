@@ -30,7 +30,8 @@ def just_ssr_measurement(qm_dict):
 
 
 def set_up_ssr_measurement(qm_dict):
-    pulsedmeasurementlogic.fastcounter().change_sweep_mode(True)
+    # fixme: commented out change_sweep_mode
+    #pulsedmeasurementlogic.fastcounter().change_sweep_mode(True)
     singleshotlogic.set_parameters(qm_dict)
     pulsedmasterlogic.set_extraction_settings({'method': 'conv_deriv'})
     pulsedmasterlogic.set_analysis_settings({'method': 'sum', 'signal_start': 0.0,
@@ -53,8 +54,8 @@ def set_up_ssr_measurement(qm_dict):
                                                      'number_of_gates': qm_dict['countlength']})
 
     time.sleep(1)
-    pulsedmeasurementlogic.fastcounter().set_delay_start(qm_dict['delay_length'])
-    pulsedmeasurementlogic.fastcounter().change_save_mode(0)
+    #pulsedmeasurementlogic.fastcounter().set_delay_start(qm_dict['delay_length'])
+    #pulsedmeasurementlogic.fastcounter().change_save_mode(0)
     return
 
 

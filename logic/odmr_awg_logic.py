@@ -483,12 +483,15 @@ class ODMRLogic(GenericLogic):
                     self.log.error('Activation of microwave output failed.')
             else:
                 err_code = self._mw_device.list_on()
+                print('list on exited')
                 if err_code < 0:
                     self.log.error('Activation of microwave output failed.')
-
+        print('about to get status')
         mode, is_running = self._mw_device.get_status()
-        print(mode, is_running)
+        print('get status successful')
+        print(mode, is_running, 'calling sigOutputStateUpdated.emit')
         self.sigOutputStateUpdated.emit(mode, is_running)
+        print('sigOutputStateUpdated.emit success')
         return mode, is_running
 
     def reset_sweep(self):

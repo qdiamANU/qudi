@@ -330,7 +330,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             return 0
 
     def write_waveform(self, name, analog_samples, digital_samples, is_first_chunk, is_last_chunk,
-                       total_number_of_samples):
+                       total_number_of_samples, turn_off_pulser = True):
         """
         Write a new waveform to the PC workspace.
 
@@ -360,19 +360,23 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @param int total_number_of_samples: The number of sample points for the entire waveform
                                             (not only the currently written chunk)
 
+        @param int turn_off_pulser, default = True: run self.pulser_off() before loading waveform
+
         @return (int, list): Number of samples written (-1 indicates failed process) and list of
                              created waveform names
         """
+        number_of_samples_writen = total_number_of_samples
+        # time.sleep(0.2)
 
-        self.pulser_off()
+        if turn_off_pulser:
+            self.pulser_off()
 
-        #print('\nWrite Waveform\n')
         # check if waveform name already exists in stored waveforms. If so, delete previous waveform instance
         # todo: check if previous waveform identical - if so, leave unchanged and return
         if name in self.waveform_names:
             self.delete_waveform(name)
             # del self.waveform_dict[name]
-            self.log.info('Overwriting waveform: {}'.format(name))
+            # self.log.info('Overwriting waveform: {}'.format(name))
 
         # fixme: current waveform name should really only be defined after load_waveform()
         # need to check whether qudi requires it to be defined already though
@@ -391,6 +395,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 current_waveform_name = name
         else:
             self.log.error('Cannot write waveform: waveform name is not list or str.')
+
+        # self.waveform_names.append(name)
+        # current_waveform_name = [name]
+        # return number_of_samples_writen, [name]
         #print('\ncurrent_waveform_name = {}, type = {}'.format(current_waveform_name, type(current_waveform_name)))
         #print('self.waveform_names = {}, type = {}'.format(self.waveform_names, type(self.waveform_names)))
 
@@ -415,7 +423,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         # digital channel sanity check
         for key in digital_samples:
-
             # perform sanity check on number of samples: should match total_number_of_samples
             len_samples = len(digital_samples[key])
             if len_samples != total_number_of_samples:
@@ -423,13 +430,11 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                                format(key, len_samples, total_number_of_samples))
                 return -1, current_waveform_name
 
-        number_of_samples_writen = total_number_of_samples
 
         ############# end sanity checks #####################################################
 
         # combine analogue and digital sample dictionaries into single dictionary
         channel_data = {**analog_samples, **digital_samples}
-        #print(channel_data)
 
         number_of_samples = int64(total_number_of_samples)
         _, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
@@ -526,8 +531,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                                        waveform.buffersize)
                 spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
 
-                # cycle sample rate, to avoid a bug in AWG that can corrupt the output data
-                self._cycle_sample_rate()
+                # # cycle sample rate, to avoid a bug in AWG that can corrupt the output data
+                # self._cycle_sample_rate()
 
                 # Define how the segment is replayed in the sequence
                 lStep = i  # current step is Step  # i
@@ -555,13 +560,16 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         counter = i
         end_time = time.time()
 
+        # cycle sample rate, to avoid a bug in AWG that can corrupt the output data
+        self._cycle_sample_rate()
+
         if self.read_out_error() | counter != len(sequence_parameter_list):
             self.log.error('Failed to upload sequence correctly')
             return -1
         else:
             if print_time:
-                self.log.info('finished writing sequence, write time = {} s'.format(end_time-start_time))
-            print('finished writing sequence, write time = {} s'.format(end_time-start_time))
+                # self.log.info('finished writing sequence, write time = {} s'.format(end_time-start_time))
+                print('finished writing sequence, write time = {} s'.format(end_time-start_time))
             return len(sequence_parameter_list)
 
     def get_waveform_names(self):
@@ -700,8 +708,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                            'which should be prepared currently on AWG')
             return self.get_loaded_assets()
 
-        self.log.info(
-            "Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)")
+        # self.log.info(
+        #     "Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)")
         #spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
 
         self.current_loaded_assets['AWG'] = sequence_name
@@ -1498,6 +1506,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
          """
 
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
+
         self._frequency_list = list(np.arange(freq_start, freq_stop, freq_step))
         n_freq_steps = len(self._frequency_list)
 
@@ -1580,6 +1590,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         llMemSamples = int64(n_samples)
 
         ##### Generate Data and Write Waveforms ########################
+        print('writing waveforms')
         sample_rate = self.get_sample_rate()
         for i in range(n_freq_steps):
             # print('\ni={}'.format(i))
@@ -1601,7 +1612,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
             # save waveform in awg.waveform_dict[name]:
             name = 'odmr_freqstep{}'.format(i)
-            self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples)
+            self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples, turn_off_pulser=False)
 
         # write blank waveform for end of sequence:
         a_ch1_signal = np.zeros(n_samples)
@@ -1620,8 +1631,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         # save waveform in awg.waveform_dict[name]:
         name = 'odmr_freqstep{}'.format(n_freq_steps)
-        self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples)
-
+        self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples, turn_off_pulser=False)
         ##### Write Sequence ########################
 
         sequence_parameter_list = list()
@@ -1716,7 +1726,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
             # save waveform in awg.waveform_dict[name]:
             name = 'odmr_freqstep{}'.format(i)
-            self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples)
+            self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples, turn_off_pulser=False)
 
         ##### Write Sequence ########################
 
