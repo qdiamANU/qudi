@@ -1007,6 +1007,7 @@ class PredefinedGeneratorBase:
         digital_high = {chnl: False for chnl in self.digital_channels}
 
         # Determine analogue or digital trigger channel and set channels accordingly.
+        print(channels)
         for channel in channels:
             if channel.startswith('d'):
                 digital_high[channel] = True

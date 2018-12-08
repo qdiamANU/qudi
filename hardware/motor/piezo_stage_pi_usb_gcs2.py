@@ -145,7 +145,6 @@ class PiezoStagePI(Base, MotorInterface):
         axis0['pos_min'] = config['x']['constraints']['pos_min']
         axis0['pos_max'] = config['x']['constraints']['pos_max']
         axis0['unit'] = 'm'
-        axis0['pos_step'] = 0.0
         axis0['pos_step'] = 10e-6
         axis0['vel_min'] = 0.0
         axis0['vel_max'] = 100.0
@@ -319,10 +318,10 @@ class PiezoStagePI(Base, MotorInterface):
             param_list = [x.lower() for x in param_list]  # make all param_list elements lower case
             for axis in list(set(param_dict.keys()) - set(param_list)):  # axes not in param_list
                 del param_dict[axis]
-                print(param_dict)
+                # print(param_dict)
             return param_dict
         else:
-            print(param_dict)
+            # print(param_dict)
             return param_dict
 
     def get_status(self, param_list=None):

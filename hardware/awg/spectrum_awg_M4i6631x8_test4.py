@@ -437,6 +437,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         channel_data = {**analog_samples, **digital_samples}
 
         number_of_samples = int64(total_number_of_samples)
+        # todo: eliminate need for this call, e.g. by adding to return from _create_combined_buffer_data
         _, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
 
         # create a sample buffer (containing all channels) in a format suitable to upload to the AWG
@@ -484,7 +485,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return: int, number of sequence steps written (-1 indicates failed process)
         """
         start_time = time.time()
-        print('write_sequence: name = {}'.format(name))
+        print('write_sequence: name = {}, steps = {}'.format(name, len(sequence_parameter_list)))
         #print('sequence_parameter_list = {}, \ntype = {}'.format(sequence_parameter_list, type(sequence_parameter_list)))
 
         # Check if all waveforms are present in PC memory
@@ -518,7 +519,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         for waveform_tuple, param_dict in sequence_parameter_list:
             for waveform_name in waveform_tuple:
 
-                print('writing segment {}/{}, {}'.format(i+1, total_segments, waveform_name))
+                #print('writing segment {}/{}, {}'.format(i+1, total_segments, waveform_name))
 
                 waveform = self.waveform_dict[waveform_name]
 
@@ -669,7 +670,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self._spcm_dwSetParam_i32(SPC_CARDMODE, SPC_REP_STD_SINGLERESTART)  # The programmed memory is repeated once after each single trigger event.
         self._spcm_dwSetParam_i32(SPC_LOOPS, llLoops)  # number of repetitions
         self._spcm_dwSetParam_i64(SPC_MEMSIZE, waveform.n_samples)  # number of samples per channel
-        self.set_software_trigger(software_trigger=True)  # set AWG to software trigger
+        self.set_trigger('software')  # set AWG to software trigger
 
         # upload the sample buffer to the AWG
         self.log.info("Starting waveform transfer to AWG and waiting until data is in AWG memory")
@@ -677,10 +678,6 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
         end_time = time.time()
         self.log.info('finished loading waveform, load time = {} s'.format(end_time - start_time))
-
-        self.log.info(
-            "Starting the card and waiting for ready interrupt\n(continuous and single restart will have timeout)")
-        #spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START)
 
         self.current_loaded_assets_type = 'waveform'
         self.current_loaded_assets['AWG'] = load_key
@@ -1410,50 +1407,60 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # fixme: laser is off for ca. 25.6 ns at end of every n_samples
         # with n_samples = 32*10000, the waveform length is ca. 256 us, so the 'off' duty cycle is 1e-4
 
-        if self.get_status()[0] > 0:
-            self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
-
-            return 0
-
-        else:
-            # create waveforms, assuming laser channel is d_ch1
-            n_samples = 32 * 10000
-            a_ch1_signal = np.zeros(n_samples)
-            a_ch2_signal = np.zeros(n_samples)
-            if laser_channel == 'd_ch1':
-                d_ch1_signal = np.ones(n_samples).astype(dtype=np.bool)
-                d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
-                d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
-            elif laser_channel == 'd_ch2':
-                d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
-                d_ch2_signal = np.ones(n_samples).astype(dtype=np.bool)
-                d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
-            elif laser_channel == 'd_ch3':
-                d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
-                d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
-                d_ch3_signal = np.ones(n_samples).astype(dtype=np.bool)
-            else:
-                self.log.error('Invalid laser channel!')
-                return -1
-
-            # combine analogue and digital sample dictionaries into two dictionaries
-            analog_samples = {'a_ch1': a_ch1_signal,
-                              'a_ch2': a_ch2_signal}
-            digital_samples = {'d_ch1': d_ch1_signal,
-                               'd_ch2': d_ch2_signal,
-                               'd_ch3': d_ch3_signal}
-
-            # save waveform in awg.waveform_dict[name]:
-            name = 'laser_on'
-            self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples)
-
-            # upload the data to the AWG
-            self.load_waveform(name, print_time=False)
-
-            # turn on pulser
-            self.pulser_on()
-
+        # check if laser is already on.
+        current_status = self.get_status()[0]
+        if self.current_loaded_assets == dict():
+            pass
+        elif self.current_loaded_assets['AWG'] == 'laser_on' and current_status == 1:
             return
+        elif self.current_loaded_assets['AWG'] == 'laser_on' and current_status != 1:
+            self.pulser_on()
+            return
+
+        # check if AWG already running. If so, turn off output first
+        if current_status > 0:
+            # self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
+            # return 0
+            self.pulser_off()
+
+        # create waveform
+        n_samples = 32 * 10000
+        a_ch1_signal = np.zeros(n_samples)
+        a_ch2_signal = np.zeros(n_samples)
+        if laser_channel == 'd_ch1':
+            d_ch1_signal = np.ones(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        elif laser_channel == 'd_ch2':
+            d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.ones(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        elif laser_channel == 'd_ch3':
+            d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.ones(n_samples).astype(dtype=np.bool)
+        else:
+            self.log.error('Invalid laser channel!')
+            return -1
+
+        # combine analogue and digital sample dictionaries into two dictionaries
+        analog_samples = {'a_ch1': a_ch1_signal,
+                          'a_ch2': a_ch2_signal}
+        digital_samples = {'d_ch1': d_ch1_signal,
+                           'd_ch2': d_ch2_signal,
+                           'd_ch3': d_ch3_signal}
+
+        # save waveform in awg.waveform_dict[name]:
+        name = 'laser_on'
+        self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples, turn_off_pulser=False)
+
+        # upload the data to the AWG
+        self.load_waveform(name, print_time=False)
+
+        # turn on pulser
+        self.pulser_on()
+
+        return
 
     def laser_off(self):
         """ Turns off laser_on() """
@@ -2290,7 +2297,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             return -1
 
         # set trigger settings
-        self.set_software_trigger()
+        self.set_trigger('software')
 
         # Setting up the card mode
         spcm_dwSetParam_i32(self._hCard, SPC_CARDMODE, SPC_REP_STD_SEQUENCE)  # enable sequence mode

@@ -209,6 +209,7 @@ class MagnetLogic(GenericLogic):
         #self._odmr_logic = self.odmrlogic()
 
         self._seq_gen_logic = self.sequencegeneratorlogic()
+        self._awg = self._seq_gen_logic.pulsegenerator()
 
         # EXPERIMENTAL:
         # connect now directly signals to the interface methods, so that
@@ -707,7 +708,7 @@ class MagnetLogic(GenericLogic):
         # index position:
         self._sigInitializeMeasPos.emit(stepwise_meas)
 
-    def start_2d_alignment(self,stepwise_meas=True, continue_meas=False):
+    def start_2d_alignment(self, stepwise_meas=True, continue_meas=False):
 
         # before starting the measurement you should convince yourself that the
         # passed traveling range is possible. Otherwise the measurement will be
@@ -854,10 +855,13 @@ class MagnetLogic(GenericLogic):
         @return:
         The loop body goes through the 1D array
         """
+        print('_stepwise_loop_body')
 
         if self._stop_measure:
             self._end_alignment_procedure()
             return
+
+        self._awg.laser_on()
 
         self._do_premeasurement_proc()
         pos = self._magnet_device.get_pos()
@@ -1153,7 +1157,7 @@ class MagnetLogic(GenericLogic):
                                     additional parameters are saved in a
                                     dictionary form.
         """
-
+        print('_do_alignment_measurement')
         # perform here one of the selected alignment measurements and return to
         # the loop body the measured values.
 
@@ -1182,9 +1186,13 @@ class MagnetLogic(GenericLogic):
 
 
     def _perform_fluorescence_measure(self):
-
+        print('_perform_fluorescence_measure')
         #FIXME: that should be run through the TaskRunner! Implement the call
         #       by not using this connection!
+
+        # LOCALFIX: axis names aren't currently updated by the GUI
+        self._axis0_name = 'x'
+        self._axis1_name = 'y'
 
         if self._counter_logic.get_counting_mode() != CountingMode.CONTINUOUS:
             self._counter_logic.set_counting_mode(mode=CountingMode.CONTINUOUS)
@@ -1194,7 +1202,7 @@ class MagnetLogic(GenericLogic):
         data_array, parameters = self._counter_logic.save_data(to_file=False)
 
         data_array = np.array(data_array)[:, 1]
-
+        # self._awg.laser_off()
         return data_array.mean(), parameters
 
     def _perform_odmr_measure(self):
@@ -2064,18 +2072,21 @@ class MagnetLogic(GenericLogic):
 
     def set_align_2d_axis0_name(self,axisname):
         '''Set the specified value '''
+        print('set_align_2d_axis0_name')
         self.align_2d_axis0_name=axisname
         self.sig2DAxis0NameChanged.emit(axisname)
         return axisname
 
     def set_align_2d_axis0_range(self,range):
         '''Set the specified value '''
+        print('set_align_2d_axis0_range')
         self.align_2d_axis0_range=range
         self.sig2DAxis0RangeChanged.emit(range)
         return range
 
     def set_align_2d_axis0_step(self,step):
         '''Set the specified value '''
+        print('set_align_2d_axis0_step')
         self.align_2d_axis0_step=step
         self.sig2DAxis0StepChanged.emit(step)
         return step

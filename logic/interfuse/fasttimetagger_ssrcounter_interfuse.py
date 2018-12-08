@@ -181,15 +181,18 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
 
         if not self.charge_state_selection:
             if normalized:
+                print('normalised')
                 # FIXME: here it is important that one laser pulse is on one side respectively
                 data_width = self.raw_data.shape[1]
                 raw_data1 = self.raw_data[:, :int(data_width / 2)]
                 raw_data2 = self.raw_data[:, int(data_width / 2):]
                 return_dict1 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data1)
                 laser1 = return_dict1['laser_counts_arr']
+                print('laser1 = ' + laser1)
                 return_dict2 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data2)
                 laser2 = return_dict2['laser_counts_arr']
                 self.laser_data = [laser1, laser2]
+                print('laser data = ' + self.laser_data)
                 if laser1.any() and laser2.any():
                     tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
                     tmp_signal2, tmp_error2 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser2)
@@ -197,12 +200,15 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
                 else:
                     tmp_signal = np.zeros(self.laser_data.shape[0])
             else:
+                print('not normalised')
                 return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(self.raw_data)
                 self.laser_data = return_dict['laser_counts_arr']
+                print('laser data = ' + str(self.laser_data))
                 # analyze pulses and get data points for signal array.
                 if self.laser_data.any():
                     tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
                         self.laser_data)
+                    print(tmp_signal)
                     if self.subtract_mean:
                         tmp_signal = tmp_signal  - np.mean(tmp_signal)
                     else:
@@ -221,6 +227,7 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             # find all the entries which are below the threshold
             incorrect_charge = np.where(charge_signal < self.charge_threshold)[0]
             if normalized:
+                print('normalised')
                 # FIXME: here it is important that one laser pulse is on one side respectively
                 data_width = ssr_raw.shape[1]
                 raw_data1 = ssr_raw[:, :int(data_width / 2)]
@@ -252,6 +259,7 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             # remove all the data points with the wrong charge state
             tmp_signal = np.delete(tmp_signal, incorrect_charge[:-1], 0)
             # get rid of the last point since it is measured with less redouts
+        print(tmp_signal)
         return tmp_signal[:-1]
 
 

@@ -1,14 +1,21 @@
 import numpy as np
 from collections import OrderedDict
 
+try:
+    singleshotlogic
+except NameError:
+    manager.startModule('logic', 'singleshotlogic')
+
 ####################################### just a SSR readout, no real experiment ###########################
 
 def add_just_ssr_info(experiment, qm_dict):
     qm_dict['experiment'] = experiment
     qm_dict['gated'] = True
     qm_dict['sequence_mode'] = False
-    for key in ssr:
-        if key not in qm_dict:
+    # for key in ssr:
+    for key in ssr.keys():
+        if key not in qm_dict.keys():
+            # qm_dict[key] = ssr[key]
             qm_dict[key] = ssr[key]
     return qm_dict
 

@@ -1100,6 +1100,7 @@ class MagnetGui(GUIBase):
 
         @return float: Passed range
         """
+        print('align_2d_axis0_range_changed')
         range = self._mw.align_2d_axis0_range_DSpinBox.value()
         self._magnet_logic.set_align_2d_axis0_range(range)
         return range
@@ -1374,20 +1375,20 @@ class MagnetGui(GUIBase):
         """ Whenever a new axis name was chosen in axis0 config, the limits of the
             viewboxes will be adjusted.
         """
-
+        print('_update_limits_axis0')
         constraints = self._magnet_logic.get_hardware_constraints()
         axis0_name = self._mw.align_2d_axis0_name_ComboBox.currentText()
 
         # set the range constraints:
         self._mw.align_2d_axis0_range_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis0_range_DSpinBox.setMaximum(constraints[axis0_name]['pos_max'])
+        self._mw.align_2d_axis0_range_DSpinBox.setMaximum(constraints[axis0_name]['pos_max']-constraints[axis0_name]['pos_min'])
         self._mw.align_2d_axis0_range_DSpinBox.setSingleStep(constraints[axis0_name]['pos_step'],
                                                              dynamic_stepping=False)
         self._mw.align_2d_axis0_range_DSpinBox.setSuffix(constraints[axis0_name]['unit'])
 
         # set the step constraints:
         self._mw.align_2d_axis0_step_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis0_step_DSpinBox.setMaximum(constraints[axis0_name]['pos_max'])
+        self._mw.align_2d_axis0_step_DSpinBox.setMaximum(constraints[axis0_name]['pos_max']-constraints[axis0_name]['pos_min'])
         self._mw.align_2d_axis0_step_DSpinBox.setSingleStep(constraints[axis0_name]['pos_step'],
                                                             dynamic_stepping=False)
         self._mw.align_2d_axis0_step_DSpinBox.setSuffix(constraints[axis0_name]['unit'])
@@ -1408,13 +1409,13 @@ class MagnetGui(GUIBase):
         axis1_name = self._mw.align_2d_axis1_name_ComboBox.currentText()
 
         self._mw.align_2d_axis1_range_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis1_range_DSpinBox.setMaximum(constraints[axis1_name]['pos_max'])
+        self._mw.align_2d_axis1_range_DSpinBox.setMaximum(constraints[axis1_name]['pos_max']-constraints[axis1_name]['pos_min'])
         self._mw.align_2d_axis1_range_DSpinBox.setSingleStep(constraints[axis1_name]['pos_step'],
                                                              dynamic_stepping=False)
         self._mw.align_2d_axis1_range_DSpinBox.setSuffix(constraints[axis1_name]['unit'])
 
         self._mw.align_2d_axis1_step_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis1_step_DSpinBox.setMaximum(constraints[axis1_name]['pos_max'])
+        self._mw.align_2d_axis1_step_DSpinBox.setMaximum(constraints[axis1_name]['pos_max']-constraints[axis1_name]['pos_min'])
         self._mw.align_2d_axis1_step_DSpinBox.setSingleStep(constraints[axis1_name]['pos_step'],
                                                             dynamic_stepping=False)
         self._mw.align_2d_axis1_step_DSpinBox.setSuffix(constraints[axis1_name]['unit'])
@@ -1637,6 +1638,7 @@ class MagnetGui(GUIBase):
         User changed scan range and therefore the rectangular should be adjusted
         @return:
         """
+        print('update_roi_from_range')
         # first get the size of axis0 and axis1 range
         x_range = self._mw.align_2d_axis0_range_DSpinBox.value()
         y_range = self._mw.align_2d_axis0_range_DSpinBox.value()
@@ -1663,6 +1665,7 @@ class MagnetGui(GUIBase):
 
         @return float: Range to update
          """
+        print('')
         self._mw.align_2d_axis0_range_DSpinBox.blockSignals(True)
         self._mw.align_2d_axis0_range_DSpinBox.setValue(range)
         self._mw.align_2d_axis0_range_DSpinBox.blockSignals(False)

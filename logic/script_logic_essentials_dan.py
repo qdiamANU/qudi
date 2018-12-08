@@ -174,7 +174,6 @@ def generate_sample_upload(experiment, qm_dict):
         time.sleep(0.2)
         # sample the ensemble
         while pulsedmasterlogic.status_dict['predefined_generation_busy']: time.sleep(0.2)
-        print(qm_dict['name'])
         if qm_dict['name'] not in pulsedmasterlogic.saved_pulse_block_ensembles: cause_an_error
         pulsedmasterlogic.sample_ensemble(qm_dict['name'], True)
     else:
@@ -337,23 +336,38 @@ def control_measurement(qm_dict, analysis_method=None):
             user_terminated = True
             break
         ##################### optimize position #######################
+
+
+        #added write/load waveform into this if statement:
         if qm_dict['optimize_time'] is not None:
             if time.time() - optimize_real_time > qm_dict['optimize_time']:
+                measurement_waveform_name = pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().current_loaded_assets['AWG'] #writing the waveform
                 pulsedmeasurementlogic.pause_pulsed_measurement()
                 print('paused measurement time = {}'.format(time.time()))
                 # release pulser from 'running'
                 additional_time = optimize_position()
                 start_time = start_time + additional_time
-                #fixme: need to reload sequence data
+                additional_time = _reload_measurement_waveform(measurement_waveform_name)
+                start_time = start_time + additional_time
                 pulsedmeasurementlogic.continue_pulsed_measurement()
                 optimize_real_time = time.time()
                 print('continuing measurement time = {}'.format(time.time()))
+
+
         ####################### optimize frequency ####################
         if qm_dict['freq_optimize_time'] is not None:
             if time.time() - freq_optimize_real_time > qm_dict['freq_optimize_time']:
-                additional_time = optimize_frequency_during_experiment(opt_dict=optimize_freq_dict, qm_dict=qm_dict)
+                measurement_waveform_name = pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().current_loaded_assets['AWG']
+                pulsedmeasurementlogic.pause_pulsed_measurement()
+                print('paused measurement time = {}'.format(time.time()))
+                additional_time = optimize_frequency_during_experiment(opt_dict=optimize_freq_dict, qm_dict=qm_dict) #RESUME HERE
                 start_time = start_time + additional_time
+                additional_time = _reload_measurement_waveform(measurement_waveform_name)
+                start_time = start_time + additional_time
+                pulsedmeasurementlogic.continue_pulsed_measurement()
                 freq_optimize_real_time = time.time()
+                print('continuing measurement time = {}'.format(time.time()))
+
 
         ####################### analyze data ######################
         if (analysis_method and qm_dict['update_time']) is not None:
@@ -446,6 +460,40 @@ def save_parameters(save_tag='', save_dict=None):
                         delimiter='\t', plotfig=None)
     return
 
+# Plotting and fitting
+
+def sine_expdecay_fit(func, x, y, p0):
+    popt, pcov = curve_fit(func, x, y, p0)
+    def fit(j):
+        return Rabi(j, popt[0], popt[1], popt[2], popt[3])
+    fitList = []
+    xList = []
+    for i in np.arange(np.min(x), np.max(x), (np.max(x) - np.min(x)) / 1000):
+        fitList.append(fit(i))
+        xList.append(i)
+    return popt, pcov
+
+# initial guess and plot of data to gauge whether scipy.optimize will converge
+
+def initial_guess(data, b1, Omega, b0, TRabi):
+    x = data[:, 0] * 10e5
+    y = data[:, 1]
+    # define initial guesses for the fit
+    p0 = [b0, b1, Omega, TRabi]
+    # define fitting function
+    def Rabi(t, b0, b1, Omega, TRabi):
+        return 0.5 * (b0 + b1 * np.cos(Omega * t) * np.exp(-t / TRabi))
+    plt.plot(x, y, '.')
+    plt.plot(x, Rabi(x, p0[0], p0[1], p0[2], p0[3]))
+    plt.show()
+
+# load data function
+
+def load_data(filename):
+    if __name__ == '__main__':
+        laser_trace = pulsedmasterlogic.pulsedmeasurementlogic().laser_data
+        signal_counts = laser_trace.transpose()
+
 
 # def save_qdyne_measurement(save_tag):
 #
@@ -509,6 +557,34 @@ def optimize_position():
     additional_time = (time_stop_optimize - time_start_optimize)
     return additional_time
 
+def optimize_frequency_during_experiment(opt_dict, qm_dict):
+    time_start_optimize = time.time()
+    if 'freq_optimization_method' not in opt_dict:
+        pulsedmasterlogic.log.error('Not frequency optimization method specified.')
+        return -1
+    # stop pulsed measurement and stash raw data
+    pulsedmasterlogic.toggle_pulsed_measurement(False, qm_dict['name'])
+    #pulsedmasterlogic.toggle_pulsed_measurement(False)
+    while pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
+    # set the frequency optimization interval to None
+    opt_dict['freq_optimize_time'] = None
+    # generate sequence, upload it, set the parameters and run optimization experiment
+    do_experiment(experiment=opt_dict['freq_optimization_method'], qm_dict=opt_dict, meas_generate_new=opt_dict['generate_new'], save_tag = opt_dict['save_tag'])
+    # perform a final fit
+    fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['optimize_fit_method'])
+    # update the specified parameters
+    for key in opt_dict['parameters2update']:
+        qm_dict[opt_dict['parameters2update'][key]] = fit_result.best_values[key]
+    # generate, sample and upload the new sequence
+    prepare_qm(experiment=qm_dict['experiment'], qm_dict=qm_dict, generate_new=True)
+    pulsedmasterlogic.do_fit('No Fit')
+    # restart experiment and use stashed data
+    pulsedmasterlogic.toggle_pulsed_measurement(True, qm_dict['name'])
+    #pulsedmeasurementlogic.toggle_pulsed_measurement(True, qm_dict['name'])
+    #pulsedmasterlogic.toggle_pulsed_measurement(True)
+    while not pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
+    return time.time()-time_start_optimize
+
 
 def optimize_poi(poi):
     # FIXME: Add the option to pause pulsed measurement during position optimization
@@ -550,6 +626,17 @@ def laser_off(pulser_on=False):
     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_off()
     return
 
+
+def _reload_measurement_waveform(name):
+    """
+    :param name:
+    :return:
+    """
+    time_start_load = time.time()
+    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_waveform(name)
+    time_stop_load = time.time()
+    additional_time = (time_stop_load - time_start_load)
+    return additional_time
 
 ######################################## Microwave frequency optimize functions #########################################
 
