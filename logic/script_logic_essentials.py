@@ -18,7 +18,10 @@ try:
     optimizerlogic
 except NameError:
     manager.startModule('logic', 'optimizerlogic')
-
+try:
+    odmrlogic_highfield
+except NameError:
+    manager.startModule('logic', 'odmrlogic_highfield')
 
 # LOCALFIX Prithvi: just putting static value for cause_an_error
 # cause_an_error = -1
@@ -339,12 +342,16 @@ def control_measurement(qm_dict, analysis_method=None):
         ##################### optimize position #######################
         if qm_dict['optimize_time'] is not None:
             if time.time() - optimize_real_time > qm_dict['optimize_time']:
+                # get name of current measurement waveform on AWG, before overwriting for optimisation measurement
+                measurement_waveform_name = \
+                pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().current_loaded_assets['AWG']
                 pulsedmeasurementlogic.pause_pulsed_measurement()
                 print('paused measurement time = {}'.format(time.time()))
                 # release pulser from 'running'
                 additional_time = optimize_position()
                 start_time = start_time + additional_time
-                #fixme: need to reload sequence data
+                additional_time = _reload_measurement_waveform(measurement_waveform_name)
+                start_time = start_time + additional_time
                 pulsedmeasurementlogic.continue_pulsed_measurement()
                 optimize_real_time = time.time()
                 print('continuing measurement time = {}'.format(time.time()))
@@ -550,62 +557,72 @@ def laser_off(pulser_on=False):
     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_off()
     return
 
+def _reload_measurement_waveform(name):
+    """
+    @param str name: name of AWG waveform to reload
+    @return float additional_time: time taken
+    """
+    time_start_load = time.time()
+    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_waveform(name)
+    time_stop_load = time.time()
+    additional_time = (time_stop_load - time_start_load)
+    return additional_time
 
 ######################################## Microwave frequency optimize functions #########################################
 
 # LOCALFIX Prithvi: I dint think this is any good. Lets ignore it for now
 
-# def optimize_frequency_during_experiment(opt_dict, qm_dict):
-#     # FIXME: Add the moment only working for conventional measurements
-#     time_start_optimize = time.time()
-#
-#     if 'freq_optimization_method' not in opt_dict:
-#         pulsedmasterlogic.log.error('Not frequency optimization method specified. Cannot run optimization')
-#         return -1
-#
-#     # stop pulsed measurement and stash raw data
-#     pulsedmasterlogic.toggle_pulsed_measurement(False, qm_dict['name'])
-#     #pulsedmasterlogic.toggle_pulsed_measurement(False)
-#     while pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
-#     # set the frequency optimization interval to None
-#     opt_dict['freq_optimize_time'] = None
-#     # generate sequence, upload it, set the parameters and run optimization experiment
-#     do_experiment(experiment=opt_dict['freq_optimization_method'], qm_dict=opt_dict, meas_type=conventional_measurement,
-#                   generate_new=opt_dict['generate_new'], save_tag = opt_dict['save_tag'])
-#     # perform a final fit
-#     fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['optimize_fit_method'])
-#     # update the specified parameters
-#     for key in opt_dict['parameters2update']:
-#         qm_dict[opt_dict['parameters2update'][key]] = fit_result.best_values[key]
-#     # generate, sample and upload the new sequence
-#     prepare_qm(experiment=qm_dict['experiment'], qm_dict=qm_dict, generate_new=True)
-#     pulsedmasterlogic.do_fit('No Fit')
-#     # restart experiment and use stashed data
-#     pulsedmasterlogic.toggle_pulsed_measurement(True, qm_dict['name'])
-#     #pulsedmeasurementlogic.toggle_pulsed_measurement(True, qm_dict['name'])
-#     #pulsedmasterlogic.toggle_pulsed_measurement(True)
-#     while not pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
-#     return time.time()-time_start_optimize
-#
-#
-# def optimize_frequency(opt_dict):
-#     # Generate a new dictionary with the measurement parameters
-#     if 'mw_optimization_method' not in opt_dict:
-#         pulsedmasterlogic.log.error('Not frequency optimization method specified. Cannot run optimization')
-#         return -1
-#
-#     # generate sequence, upload it, set the parameters and run optimization experiment
-#     # LOCALFIX Prithvi: Fixing do_experiment to have the correct number of calls
-#     do_experiment(experiment=opt_dict['mw_optimization_method'], qm_dict=opt_dict, meas_type=opt_dict['meas_type'],
-#                   meas_info=opt_dict['meas_info'], generate_new=opt_dict['optimize_generate_new'],
-#                   save_tag = opt_dict['save_tag'])
-#     #do_experiment(experiment=opt_dict['mw_optimization_method'], meas_type=opt_dict['meas_type'],
-#     #              generate_new=opt_dict['optimize_generate_new'], save_tag = opt_dict['save_tag'])
-#     # perform a final fit
-#     fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['optimize_fit_method'])
-#     # FIXME:
-#     # generate, sample and upload the new sequence
-#     return fit_result
+def optimize_frequency_during_experiment(opt_dict, qm_dict):
+    # FIXME: Add the moment only working for conventional measurements
+    time_start_optimize = time.time()
+
+    if 'freq_optimization_method' not in opt_dict:
+        pulsedmasterlogic.log.error('Not frequency optimization method specified. Cannot run optimization')
+        return -1
+
+    # stop pulsed measurement and stash raw data
+    pulsedmasterlogic.toggle_pulsed_measurement(False, qm_dict['name'])
+    #pulsedmasterlogic.toggle_pulsed_measurement(False)
+    while pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
+    # set the frequency optimization interval to None
+    opt_dict['freq_optimize_time'] = None
+    # generate sequence, upload it, set the parameters and run optimization experiment
+    do_experiment(experiment=opt_dict['freq_optimization_method'], qm_dict=opt_dict, meas_type=conventional_measurement,
+                  generate_new=opt_dict['generate_new'], save_tag = opt_dict['save_tag'])
+    # perform a final fit
+    fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['optimize_fit_method'])
+    # update the specified parameters
+    for key in opt_dict['parameters2update']:
+        qm_dict[opt_dict['parameters2update'][key]] = fit_result.best_values[key]
+    # generate, sample and upload the new sequence
+    prepare_qm(experiment=qm_dict['experiment'], qm_dict=qm_dict, generate_new=True)
+    pulsedmasterlogic.do_fit('No Fit')
+    # restart experiment and use stashed data
+    pulsedmasterlogic.toggle_pulsed_measurement(True, qm_dict['name'])
+    #pulsedmeasurementlogic.toggle_pulsed_measurement(True, qm_dict['name'])
+    #pulsedmasterlogic.toggle_pulsed_measurement(True)
+    while not pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
+    return time.time()-time_start_optimize
+
+
+def optimize_frequency(opt_dict):
+    # Generate a new dictionary with the measurement parameters
+    if 'mw_optimization_method' not in opt_dict:
+        pulsedmasterlogic.log.error('Not frequency optimization method specified. Cannot run optimization')
+        return -1
+
+    # generate sequence, upload it, set the parameters and run optimization experiment
+    # LOCALFIX Prithvi: Fixing do_experiment to have the correct number of calls
+    do_experiment(experiment=opt_dict['mw_optimization_method'], qm_dict=opt_dict, meas_type=opt_dict['meas_type'],
+                  meas_info=opt_dict['meas_info'], generate_new=opt_dict['optimize_generate_new'],
+                  save_tag = opt_dict['save_tag'])
+    #do_experiment(experiment=opt_dict['mw_optimization_method'], meas_type=opt_dict['meas_type'],
+    #              generate_new=opt_dict['optimize_generate_new'], save_tag = opt_dict['save_tag'])
+    # perform a final fit
+    fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['optimize_fit_method'])
+    # FIXME:
+    # generate, sample and upload the new sequence
+    return fit_result
 
 
 ########################################## Qdyne Analysis functions #########################################################

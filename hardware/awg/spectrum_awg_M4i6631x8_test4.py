@@ -365,6 +365,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @return (int, list): Number of samples written (-1 indicates failed process) and list of
                              created waveform names
         """
+        print('write waveform: name={}'.format(name))
+
         number_of_samples_writen = total_number_of_samples
         # time.sleep(0.2)
 
@@ -439,6 +441,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         number_of_samples = int64(total_number_of_samples)
         # todo: eliminate need for this call, e.g. by adding to return from _create_combined_buffer_data
         _, padded_number_of_samples = self._padded_number_of_samples(number_of_samples)
+        # print('padding waveform with {} samples of zeros, length = {} ns'.
+        #       format(padded_number_of_samples.value-number_of_samples.value, (padded_number_of_samples.value-number_of_samples.value)/1.25))
 
         # create a sample buffer (containing all channels) in a format suitable to upload to the AWG
         pvBuffer, qwBufferSize = self._create_combined_buffer_data(number_of_samples, channel_data)
@@ -471,15 +475,19 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         @param sequence_parameter_list: list, contains the parameters for each sequence step and
                                         the according waveform names.
 
+
+        Here is an overview of the inputs as currently implemented for the Spectrum AWG
+        For a general overview, see the PulseSequence class in logic.pulsed.pulse_objects.py
+
         sequence_parameter_list = list( segment_1, segment_2, ...)
         segment_1 = list( ('name',), parameters_dict )
-        parameters_dict: 'repetitions': 2               # Number of times to repeat segment
-                        'go_to': -1                     # unused
-                        'event_jump_to': -1             # Next segment to play after this one
-                        'event_trigger': 'ON' / 'OFF'   # unused
-                        'wait_for': 'ON' / 'OFF'        # unused
-                        'flag_trigger': 'ON' / 'OFF'    # unused
-                        'flag_high': 'ON' / 'OFF'       # unused
+        parameters_dict: 'repetitions': 2               # Number of times to repeat segment. reps=2 -> segment played 3 times
+                        'go_to': -1                     # Next segment to play after this one
+                        'event_jump_to': -1             # usage not yet implemented
+                        'event_trigger': 'ON' / 'OFF'   # usage not yet implemented
+                        'wait_for': 'ON' / 'OFF'        # usage not yet implemented
+                        'flag_trigger': 'ON' / 'OFF'    # usage not yet implemented
+                        'flag_high': 'ON' / 'OFF'       # usage not yet implemented
         todo: understand intended usage of parameters_dict items
 
         @return: int, number of sequence steps written (-1 indicates failed process)
@@ -538,20 +546,26 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 # Define how the segment is replayed in the sequence
                 lStep = i  # current step is Step  # i
                 llSegment = i  # associated with memory segment #i
-                llLoop = param_dict['repetitions']  # Pattern will be repeated this many times
+                llLoop = param_dict['repetitions']+1  # Pattern will be repeated this many times. Needs +1 to match qudi/Spectrum syntaxes
+
                 if i == n_segments - 1:  # todo: this may result in unexpected output for sequences defined non-sequentially
                     llNext = 0
                     if param_dict['wait_for'] == 'ON':
                         llCondition = SPCSEQ_ENDLOOPONTRIG
-                        llLoop=1
+                        # llLoop=1
                     else:
                         #llCondition = SPCSEQ_END  # End of sequence
                         llCondition = SPCSEQ_ENDLOOPALWAYS  # Unconditionally leave current step -> continuously loop sequence
                 else:
-                    llNext = param_dict['event_jump_to']  # Next step
+                    if param_dict['go_to'] < 1:
+                        llNext = i+1
+                        print('adjusting llNext')
+                    else:
+                        llNext = param_dict['go_to']  # Next step
+                        print('llNext = {}, type = {}'.format(llNext, type(llNext)))
                     if param_dict['wait_for'] == 'ON':
                         llCondition = SPCSEQ_ENDLOOPONTRIG
-                        llLoop = 1
+                        # llLoop = 1
                     else:
                         llCondition = SPCSEQ_ENDLOOPALWAYS  # Unconditionally leave current step
                 llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment))
@@ -727,7 +741,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                              string describing the asset type ('waveform' or 'sequence')
         """
 
-        print('get_loaded_assets: {}'.format(self.current_loaded_assets))
+        # print('get_loaded_assets: {}'.format(self.current_loaded_assets))
 
         asset_type = self.current_loaded_assets_type
 
@@ -1255,7 +1269,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         """
         # TODO -> check this works
 
-        temp = _spcm_dwGetParam_i32(self, int(question))
+        temp = self._spcm_dwGetParam_i32(int(question))
         if temp == -1:
             return 'error'
         else:
@@ -1647,9 +1661,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
             name = 'odmr_freqstep{}'.format(i)
             parameters_dict = dict()
-            parameters_dict['repetitions'] = 1
-            parameters_dict['go_to'] = 0
-            parameters_dict['event_jump_to'] = i + 1
+            parameters_dict['repetitions'] = 0
+            parameters_dict['go_to'] = i + 1
+            parameters_dict['event_jump_to'] = 0
             parameters_dict['event_trigger'] = 'OFF'
             parameters_dict['wait_for'] = 'ON'
             parameters_dict['flag_trigger'] = 'OFF'
@@ -1661,7 +1675,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # append blank segment at end of sequence, to match with odmr logic architecture (e.g. extra trigger at end of sequence)
         name = 'odmr_freqstep{}'.format(n_freq_steps)
         parameters_dict = dict()
-        parameters_dict['repetitions'] = 1
+        parameters_dict['repetitions'] = 0
         parameters_dict['go_to'] = 0
         parameters_dict['event_jump_to'] = 0
         parameters_dict['event_trigger'] = 'OFF'
@@ -1743,9 +1757,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
             name = 'odmr_freqstep{}'.format(i)
             parameters_dict = dict()
-            parameters_dict['repetitions'] = 1
-            parameters_dict['go_to'] = 0
-            parameters_dict['event_jump_to'] = i + 1
+            parameters_dict['repetitions'] = 0
+            parameters_dict['go_to'] = i + 1
+            parameters_dict['event_jump_to'] = 0
             parameters_dict['event_trigger'] = 'OFF'
             parameters_dict['wait_for'] = 'ON'
             parameters_dict['flag_trigger'] = 'OFF'

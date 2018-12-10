@@ -102,6 +102,9 @@ def ssr_guide(qm_dict, length, replace):
     sequence_parameter_list = param[0:length]
     sequence_length = 0.0
     # compute the length of the sequence for the first data point
+    print('ensemble_list = {}'.format(ensemble_list))
+    print('ensemble_list[0] = {}'.format(ensemble_list[0]))
+    print('ensemble_list[0][repetitions] = {}'.format(ensemble_list[0]['repetitions']))
     for ii in range(length):
         curr_ensemble = sequencegeneratorlogic.get_ensemble(ensemble_list[ii]['ensemble'])
         sequence_length += \

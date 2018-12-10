@@ -16,9 +16,6 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
-Parts of this file were developed from a PI3diamond module which is
-Copyright (C) 2009 Helmut Rathgen <helmut.rathgen@gmail.com>
-
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
@@ -225,10 +222,11 @@ class MicrowaveVaunix(Base, MicrowaveInterface):
             self._vaunixdll.fnLMS_SetPowerLevel(self._devID, int_power_level)
 
         # Return actually set values
-        mode, dummy = self.get_status()
+        mode, _ = self.get_status()
         actual_freq = self.get_frequency()
         actual_power = self.get_power()
 
+        print('set_cw: {}, {}, {}'.format(actual_freq, actual_power, mode))
         return actual_freq, actual_power, mode
 
     def list_on(self):

@@ -78,7 +78,7 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('interfuse off')
+        # print('interfuse off')
         return_val_1 = self._microwave_device.off()
         return_val_2 = self._awg_device.pulser_off()
 
@@ -97,7 +97,6 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
 
         @return str, bool: mode ['cw', 'list', 'sweep'], is_running [True, False]
         """
-        print('get status called')
         mode, mw_is_running = self._microwave_device.get_status()
 
         if mode == 'cw':
@@ -106,16 +105,11 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
             if self._mode == MicrowaveMode.SWEEP:
                 mode = 'sweep'
 
-        # awg_status, status_dic = self._awg_device.get_status()
-        # # print('awg_status = {}, status dict = {}'.format(awg_status, status_dic))
-        #
-        # if awg_status < 0:
-        #     return mode, -1
-        # else:
-        #     return mode, mw_is_running
-
-        print('got status from mw device')
-        return mode, mw_is_running
+        awg_status, _ = self._awg_device.get_status()
+        if awg_status < 0:
+            return mode, -1
+        else:
+            return mode, mw_is_running
 
     def get_power(self):
         """
@@ -177,18 +171,13 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        print('list on')
         self._microwave_device.cw_on()
-        mode, status = self.get_status()
-        #print("Status", mode, status)
-        #time.sleep(2)
         self._awg_device.pulser_on()
         if self._awg_device.read_out_error():
             return -1
         else:
             self._mode = MicrowaveMode.LIST
             self.output_active = True
-            print('list on - success')
             return 0
 
 
@@ -201,8 +190,6 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
 
         @return list, float, str: current frequencies in Hz, current power in dBm, current mode
         """
-
-        print('set list')
         self._freq_list = frequency
 
         # local_oscillator_freq = frequency[0] - self.awg_offset_frequency
@@ -346,7 +333,6 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
         the function at least a save waiting time corresponding to the
         frequency switching speed.
         """
-        print('trigger interfuse')
         self._awg_device.force_trigger()
         if self._awg_device.read_out_error():
             return -1

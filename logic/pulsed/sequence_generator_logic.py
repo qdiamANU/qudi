@@ -1394,7 +1394,7 @@ class SequenceGeneratorLogic(GenericLogic):
         TODO: Add parameters that are stored
         """
 
-        print('sample_pulse_block_ensemble')
+        print('\nsample_pulse_block_ensemble')
         # Get PulseBlockEnsemble from saved ensembles if string has been passed as argument
         if isinstance(ensemble, str):
             ensemble = self.get_ensemble(ensemble)
@@ -1516,10 +1516,10 @@ class SequenceGeneratorLogic(GenericLogic):
                             is_first_chunk = array_write_index == processed_samples
                             is_last_chunk = processed_samples == ensemble_info['number_of_samples']
                             print('name={}'.format(waveform_name))
-                            print('analog_samples ={}'.format(analog_samples))
-                            print('digital_samples ={},'.format(digital_samples))
-                            print('is_first_chunk={}, is_last_chunk={}'.format(is_first_chunk,is_last_chunk))
-                            print('total_number_of_samples={}'.format(ensemble_info['number_of_samples']))
+                            # print('analog_samples ={}'.format(analog_samples))
+                            # print('digital_samples ={},'.format(digital_samples))
+                            # print('is_first_chunk={}, is_last_chunk={}'.format(is_first_chunk,is_last_chunk))
+                            # print('total_number_of_samples={}'.format(ensemble_info['number_of_samples']))
                             written_samples, wfm_list = self.pulsegenerator().write_waveform(
                                 name=waveform_name,
                                 analog_samples=analog_samples,
@@ -1532,7 +1532,7 @@ class SequenceGeneratorLogic(GenericLogic):
                             written_waveforms.update(wfm_list)
 
                             # check if write process was successful
-                            print('written_samples = {}, array_length = {}'.format(written_samples,array_length))
+                            # print('written_samples = {}, array_length = {}'.format(written_samples,array_length))
                             if written_samples != array_length:
                                 self.log.error('Sampling of block "{0}" in ensemble "{1}" failed. '
                                                'Write to device was unsuccessful.\nThe number of '
@@ -1575,8 +1575,8 @@ class SequenceGeneratorLogic(GenericLogic):
             ensemble.sampling_information['waveforms'] = sorted(written_waveforms)
             self.save_ensemble(ensemble)
 
-        self.log.info('Time needed for sampling and writing PulseBlockEnsemble to device: {0} sec'
-                      ''.format(int(np.rint(time.time() - start_time))))
+        # self.log.info('Time needed for sampling and writing PulseBlockEnsemble to device: {0} sec'
+        #               ''.format(int(np.rint(time.time() - start_time))))
         if ensemble_info['number_of_samples'] == 0:
             self.log.warning('Empty waveform (0 samples) created from PulseBlockEnsemble "{0}".'
                              ''.format(ensemble.name))

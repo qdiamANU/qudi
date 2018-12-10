@@ -46,6 +46,12 @@ class HelperMethods(PredefinedGeneratorBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # todo: the minimum number of samples for a sequence waveform is currently hard-coded into this file.
+        # Defining a single parameter here is better than just using a number throughout the class, as before
+        # But the class should really be re-written so that all of this is dealt with in the hardware file
+        # the minimum waveform length for the Spectrum AWG is only 384 samples. Any required idle time is already
+        # applied in the AWG hardware file, when writing the waveform for each pulse ensemble
+        self.minimum_number_of_samples = 384
 
 ##########################################         Laser Helper methods     ##########################################
 
@@ -64,9 +70,9 @@ class HelperMethods(PredefinedGeneratorBase):
 
         ### prevent granularity problems
         tau = self._adjust_to_samplingrate(tau, 2)
-        ### fill up to minimum length of 4800 if necessary
-        if tau * self.pulse_generator_settings['sample_rate'] < 4800:
-            tau = self._adjust_to_samplingrate(4800/self.pulse_generator_settings['sample_rate'], 2)
+        ### fill up to minimum length of self.minimum_number_of_samples if necessary
+        if tau * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
+            tau = self._adjust_to_samplingrate(self.minimum_number_of_samples/self.pulse_generator_settings['sample_rate'], 2)
             self.log.warning('Laser duration adusted to minimum sequence length of {0} for samplingrate '
                              '{1}'.format(tau, self.pulse_generator_settings['sample_rate']))
 
@@ -103,10 +109,10 @@ class HelperMethods(PredefinedGeneratorBase):
 
         ### prevent granularity problems
         laser_length = self._adjust_to_samplingrate(laser_length, 2)
-        ### fill up to minimum length of 4800 if necessary
-        if (laser_length + wait_length) * self.pulse_generator_settings['sample_rate'] < 4800:
+        ### fill up to minimum length of self.minimum_number_of_samples if necessary
+        if (laser_length + wait_length) * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
             wait_length = self._adjust_to_samplingrate(
-                4800 / self.pulse_generator_settings['sample_rate'] - laser_length, 2)
+                self.minimum_number_of_samples / self.pulse_generator_settings['sample_rate'] - laser_length, 2)
         else:
             wait_length = self._adjust_to_samplingrate(wait_length, 2)
 
@@ -222,9 +228,9 @@ class HelperMethods(PredefinedGeneratorBase):
         created_blocks = list()
         created_ensembles = list()
 
-        ### fill up to minimum length of 4800 if necessary
-        if tau * self.pulse_generator_settings['sample_rate'] < 4800:
-            needed_extra_time = 4800 / self.pulse_generator_settings['sample_rate'] - tau
+        ### fill up to minimum length of self.minimum_number_of_samples if necessary
+        if tau * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
+            needed_extra_time = self.minimum_number_of_samples / self.pulse_generator_settings['sample_rate'] - tau
         else:
             needed_extra_time = 0
 
@@ -263,9 +269,9 @@ class HelperMethods(PredefinedGeneratorBase):
 
         ### prevent granularity problems
         tau = self._adjust_to_samplingrate(tau, 2)
-        ### fill up to minimum length of 4800 if necessary
-        if tau * self.pulse_generator_settings['sample_rate'] < 4800:
-            tau = self._adjust_to_samplingrate(4800/self.pulse_generator_settings['sample_rate'], 2)
+        ### fill up to minimum length of self.minimum_number_of_samples if necessary
+        if tau * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
+            tau = self._adjust_to_samplingrate(self.minimum_number_of_samples/self.pulse_generator_settings['sample_rate'], 2)
             self.log.warning('Trigger duration adjusted to minimum sequence length of {0} for samplingrate '
                              '{1}'.format(tau, self.pulse_generator_settings['sample_rate']))
 
@@ -302,9 +308,9 @@ class HelperMethods(PredefinedGeneratorBase):
 
         ### prevent granularity problems
         trigger_length = self._adjust_to_samplingrate(trigger_length, 2)
-        ### fill up to minimum length of 4800 if necessary
-        if (trigger_length+wait_length) * self.pulse_generator_settings['sample_rate'] < 4800:
-            idle_length = self._adjust_to_samplingrate(4800/self.pulse_generator_settings['sample_rate']-trigger_length, 2)
+        ### fill up to minimum length of self.minimum_number_of_samples if necessary
+        if (trigger_length+wait_length) * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
+            idle_length = self._adjust_to_samplingrate(self.minimum_number_of_samples/self.pulse_generator_settings['sample_rate']-trigger_length, 2)
         else:
             idle_length = self._adjust_to_samplingrate(wait_length, 2)
 
@@ -337,7 +343,7 @@ class HelperMethods(PredefinedGeneratorBase):
     def generate_single_mw_pulse(self, name='MW_pulse', tau=1e-6, microwave_amplitude=1.0,
                                     microwave_frequency = 1e6, microwave_phase=0.0):
 
-        # In sequence mode there is a minimum waveform length of 4800 sample. If the pulse is to short add an
+        # In sequence mode there is a minimum waveform length of self.minimum_number_of_samples sample. If the pulse is to short add an
         # extra idle time before the pulse to take that into account
         created_blocks = list()
         created_ensembles = list()
@@ -353,8 +359,8 @@ class HelperMethods(PredefinedGeneratorBase):
 
         # Create PulseBlock object
         block = PulseBlock(name=name)
-        if tau * self.pulse_generator_settings['sample_rate'] < 4800:
-            length_idle = 4800/self.pulse_generator_settings['sample_rate'] -tau
+        if tau * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
+            length_idle = self.minimum_number_of_samples/self.pulse_generator_settings['sample_rate'] -tau
             idle_element = self._get_idle_element(length = length_idle, increment= 0.0)
             block.append(idle_element)
 
@@ -383,7 +389,7 @@ class HelperMethods(PredefinedGeneratorBase):
         else:
             # If there is not more than 1 period just makes this an idle with minimal length
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_idle_s3(name=name + '1', tau=4800/self.pulse_generator_settings['sample_rate'])
+                self.generate_idle_s3(name=name + '1', tau=self.minimum_number_of_samples/self.pulse_generator_settings['sample_rate'])
             # set it to 1 so it is repeated at least once
             rf_dict['number_periods'] = 1
         created_blocks = created_blocks_tmp

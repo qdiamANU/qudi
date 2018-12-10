@@ -134,6 +134,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         tau_array = tau_start + np.arange(num_of_points) * tau_step
         para_list=list()
         for number, tau in enumerate(tau_array):
+            # print('\ndtmw step: {}'.format(number))
             name_tmp = name + '_' + str(number)
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
                 self.generate_single_mw_pulse(name = name_tmp, tau=tau,
@@ -144,12 +145,28 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             seq_param = self._customize_seq_para({})
             para_list.append([name_tmp, seq_param])
 
+            # print('seq_param: {}'.format(seq_param))
+
+        # print('created blocks1: {}'.format(created_blocks))
+        # print('created ensembles1: {}'.format(created_ensembles))
+        # print('para_list: {}'.format(para_list))
+        # print('para_dict: {}'.format(para_dict))
+
         created_blocks, created_ensembles, sequence = \
             self._standard_ssr(created_blocks, created_ensembles, para_list, para_dict)
 
+        # print('created blocks2: {}'.format(created_blocks))
+        # print('created ensembles2: {}'.format(created_ensembles))
+        print('sequence: {}'.format(sequence))
+
+        # LOCALFIX: removed labels=('Tau', 'Spin flip probability'), as this is not currently accepted by _add_metadata_to_settings
+        # self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+        #                                controlled_variable=tau_array, units=('s', ''), number_of_lasers=num_of_points,
+        #                                labels=('Tau', 'Spin flip probability'),
+        #                                counting_length=self.laser_length * self.normalised_safety if ssr_normalise
+        #                                else self.laser_length * self.non_normalised_safety)
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=tau_array, units=('s', ''), number_of_lasers=num_of_points,
-                                       labels=('Tau', 'Spin flip probability'),
                                        counting_length=self.laser_length * self.normalised_safety if ssr_normalise
                                        else self.laser_length * self.non_normalised_safety)
         created_sequences.append(sequence)
@@ -185,9 +202,15 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         created_blocks, created_ensembles, sequence = \
             self._standard_ssr(created_blocks, created_ensembles, para_list, para_dict)
 
+        # LOCALFIX: removed labels=('Tau', 'Spin flip probability'), as this is not currently accepted by _add_metadata_to_settings
+        # self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+        #                                controlled_variable=2*tau_array, units=('s', ''), number_of_lasers=num_of_points,
+        #                                labels=('Tau', 'Spin flip probability'),
+        #                                counting_length=self.laser_length * self.normalised_safety if ssr_normalise
+        #                                else self.laser_length * self.non_normalised_safety)
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
-                                       controlled_variable=2*tau_array, units=('s', ''), number_of_lasers=num_of_points,
-                                       labels=('Tau', 'Spin flip probability'),
+                                       controlled_variable=2 * tau_array, units=('s', ''),
+                                       number_of_lasers=num_of_points,
                                        counting_length=self.laser_length * self.normalised_safety if ssr_normalise
                                        else self.laser_length * self.non_normalised_safety)
         created_sequences.append(sequence)
@@ -223,9 +246,14 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         created_blocks, created_ensembles, sequence = \
             self._standard_ssr(created_blocks, created_ensembles, para_list, para_dict)
 
+        # LOCALFIX: removed labels=('Tau', 'Spin flip probability'), as this is not currently accepted by _add_metadata_to_settings
+        # self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+        #                                controlled_variable=tau_array, units=('s', ''), number_of_lasers=num_of_points,
+        #                                labels=('Tau', 'Spin flip probability'),
+        #                                counting_length=self.laser_length * self.normalised_safety if ssr_normalise
+        #                                else self.laser_length * self.non_normalised_safety)
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=tau_array, units=('s', ''), number_of_lasers=num_of_points,
-                                       labels=('Tau', 'Spin flip probability'),
                                        counting_length=self.laser_length * self.normalised_safety if ssr_normalise
                                        else self.laser_length * self.non_normalised_safety)
         created_sequences.append(sequence)
@@ -261,10 +289,16 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         created_blocks, created_ensembles, sequence = \
             self._standard_ssr(created_blocks, created_ensembles, para_list, para_dict)
 
+        # LOCALFIX: removed labels=('Tau', 'Spin flip probability'), as this is not currently accepted by _add_metadata_to_settings
+        # self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+        #                                controlled_variable=N_array*8*tau, units=('s', ''),
+        #                                number_of_lasers=num_of_points,
+        #                                labels=('Interaction time', 'Spin flip probability'),
+        #                                counting_length=self.laser_length * self.normalised_safety if ssr_normalise
+        #                                else self.laser_length * self.non_normalised_safety)
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
-                                       controlled_variable=N_array*8*tau, units=('s', ''),
+                                       controlled_variable=N_array * 8 * tau, units=('s', ''),
                                        number_of_lasers=num_of_points,
-                                       labels=('Interaction time', 'Spin flip probability'),
                                        counting_length=self.laser_length * self.normalised_safety if ssr_normalise
                                        else self.laser_length * self.non_normalised_safety)
         created_sequences.append(sequence)
@@ -342,9 +376,14 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         created_blocks, created_ensembles, sequence = \
             self._nuclear_manipulation(created_blocks, created_ensembles, para_list, para_dict)
 
+        # LOCALFIX: removed labels=('Tau', 'Spin flip probability'), as this is not currently accepted by _add_metadata_to_settings
+        # self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+        #                                controlled_variable=freq_array, units=('Hz', ''), number_of_lasers=num_of_points,
+        #                                labels = ('Frequency', 'Spin flip probability'),
+        #                                counting_length=self.laser_length * self.normalised_safety if ssr_normalise
+        #                                else self.laser_length * self.non_normalised_safety)
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=freq_array, units=('Hz', ''), number_of_lasers=num_of_points,
-                                       labels = ('Frequency', 'Spin flip probability'),
                                        counting_length=self.laser_length * self.normalised_safety if ssr_normalise
                                        else self.laser_length * self.non_normalised_safety)
         created_sequences.append(sequence)

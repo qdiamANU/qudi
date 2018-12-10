@@ -125,6 +125,7 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         """
 
         """
+        print('basic methods: generate rabi')
         created_blocks = list()
         created_ensembles = list()
         created_sequences = list()
