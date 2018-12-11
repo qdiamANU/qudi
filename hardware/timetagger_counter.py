@@ -23,19 +23,14 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 import thirdparty.swabian_instruments.timetagger.TimeTagger as tt
 import time
 import numpy as np
-
 from core.module import Base, ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
 from interface.slow_counter_interface import CountingMode
 from interface.odmr_counter_interface import ODMRCounterInterface
 
-<<<<<<< HEAD
-class TimeTaggerCounter(Base, SlowCounterInterface, ODMRCounterInterface):
-=======
 class TimeTaggerCounter(Base, SlowCounterInterface):
     """ Using the TimeTagger as a slow counter.
->>>>>>> upstream/master
 
     Example config for copy-paste:
 

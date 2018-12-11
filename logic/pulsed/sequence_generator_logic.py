@@ -1055,19 +1055,9 @@ class SequenceGeneratorLogic(GenericLogic):
         @param PulseBlockEnsemble ensemble: The PulseBlockEnsemble instance to analyze
         @return (float, int, int): length in seconds, length in bins, number of laser/gate pulses
         """
-<<<<<<< HEAD
         # Return if the ensemble is empty
         if len(ensemble) == 0:
             return 0.0, 0, 0
-=======
-        print(ensemble)
-        # variables to keep track of the current timeframe and number of laser/gate pulses
-        ensemble_length_s = 0.0
-        ensemble_length_bins = 0
-        number_of_lasers = 0
-        # memorize the channel state of the previous element.
-        tmp_digital_high = False
->>>>>>> qcomp_SSR_debug
 
         # Determine the right laser channel to choose. For gated counting it should be the gate
         # channel instead of the laser trigger.
@@ -1566,13 +1556,10 @@ class SequenceGeneratorLogic(GenericLogic):
             ensemble.sampling_information['waveforms'] = sorted(written_waveforms)
             self.save_ensemble(ensemble)
 
-<<<<<<< HEAD
+
         self.log.info('Time needed for sampling and writing PulseBlockEnsemble {0} to device: {1} sec'
                       ''.format(ensemble.name, int(np.rint(time.time() - start_time))))
-=======
-        # self.log.info('Time needed for sampling and writing PulseBlockEnsemble to device: {0} sec'
-        #               ''.format(int(np.rint(time.time() - start_time))))
->>>>>>> qcomp_SSR_debug
+
         if ensemble_info['number_of_samples'] == 0:
             self.log.warning('Empty waveform (0 samples) created from PulseBlockEnsemble "{0}".'
                              ''.format(ensemble.name))

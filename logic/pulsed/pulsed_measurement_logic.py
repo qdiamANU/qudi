@@ -147,14 +147,8 @@ class PulsedMeasurementLogic(GenericLogic):
         self.fit_result = None
         self.alt_fit_result = None
         self.signal_fit_data = np.empty((2, 0), dtype=float)  # The x,y data of the fit result
-<<<<<<< HEAD
         self.signal_fit_alt_data = np.empty((2, 0), dtype=float)
-=======
 
-        # Set readout values for qdyne extraction
-        self.read_lines = 0
-        self.time_trace = []
->>>>>>> qcomp_SSR_debug
         return
 
     def on_activate(self):
@@ -1480,12 +1474,9 @@ class PulsedMeasurementLogic(GenericLogic):
                 ft_label = 'FT of data trace 1'
             else:
                 if self._data_units[0]:
-<<<<<<< HEAD
                     x_axis_ft_label = '{0} ({1}{2})'.format(self._data_labels[0], x_axis_prefix,
                                                             self._data_units[0])
-=======
-                    x_axis_ft_label = '{0} ({1})'.format(self._data_labels[0], self._data_units[0])
->>>>>>> qcomp_SSR_debug
+
                 else:
                     x_axis_ft_label = '{0}'.format(self._data_labels[0])
                 if self._data_units[1]:
@@ -1493,11 +1484,8 @@ class PulsedMeasurementLogic(GenericLogic):
                 else:
                     y_axis_ft_label = '{0}'.format(self._data_labels[1])
 
-<<<<<<< HEAD
+
                 ft_label = '{0} of data traces'.format(self._alternative_data_type)
-=======
-                ft_label = ''
->>>>>>> qcomp_SSR_debug
 
             ax2.plot(x_axis_ft_scaled, self.signal_alt_data[1], '-o',
                      linestyle=':', linewidth=0.5, color=colors[0],
@@ -1512,7 +1500,6 @@ class PulsedMeasurementLogic(GenericLogic):
             ax2.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=2,
                        mode="expand", borderaxespad=0.)
 
-<<<<<<< HEAD
             if self.signal_fit_alt_data.size != 0 and np.sum(self.signal_fit_alt_data[1]) > 0:
                 x_axis_fit_scaled = self.signal_fit_alt_data[0] / scaled_float.scale_val
                 ax2.plot(x_axis_fit_scaled, self.signal_fit_alt_data[1],
@@ -1568,9 +1555,6 @@ class PulsedMeasurementLogic(GenericLogic):
 
                     is_first_column = False
 
-=======
-        #FIXME: no fit plot for the alternating graph, use for that graph colors[5]
->>>>>>> qcomp_SSR_debug
         ax1.set_xlabel(
             '{0} ({1}{2})'.format(self._data_labels[0], counts_prefix, self._data_units[0]))
         if self._data_units[1]:
