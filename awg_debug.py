@@ -87,7 +87,7 @@ class AWGDebugClass():
             # spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER | M2CMD_CARD_FORCETRIGGER)
             spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -102,7 +102,7 @@ class AWGDebugClass():
         spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT0, 0)  # enable analog output 1
         spcm_dwSetParam_i64(self._hCard, SPC_ENABLEOUT1, 0)  # enable analog output 1
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -111,7 +111,7 @@ class AWGDebugClass():
     def set_analog_level(self, amplitude=None):
         spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(amplitude['a_ch1'] * 1000 / 2)))
         spcm_dwSetParam_i32(self._hCard, SPC_AMP1, int32(int(amplitude['a_ch2'] * 1000 / 2)))
-        self._read_out_error()
+        self.read_out_error()
         return
 
     def set_active_channels(self, ch=None):
@@ -158,7 +158,7 @@ class AWGDebugClass():
         else:
             spcm_dwSetParam_i32(self._hCard, SPCM_X2_MODE, SPCM_XMODE_DISABLE)
 
-        self._read_out_error()
+        self.read_out_error()
         return self._active_channels
 
     def load_sequence(self, channel_data, loop):
@@ -247,7 +247,7 @@ class AWGDebugClass():
                 print(
                     'Error! {:016x} != {:016x}'.format(np.uint64(llValue.value), np.uint64(llValue_test.value)))
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -268,7 +268,7 @@ class AWGDebugClass():
 
         status = self._spcm_dwGetParam_i32(SPC_M2STATUS)
         self.log.info('M4i6631x8 status: {0:x} (see manual for more information)'.format(status))
-        self._read_out_error()
+        self.read_out_error()
         return (status.value, {status.value: ''})
 
     def force_trigger(self, wait=False):
@@ -279,12 +279,12 @@ class AWGDebugClass():
         else:
             spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_FORCETRIGGER)
 
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
 
-    def _read_out_error(self):
+    def read_out_error(self):
         """checks the error state and prints it out. Errors must be read out before the AWG
         can accept further commands"""
         errortext = (ctypes.c_char * ERRORTEXTLEN)()
@@ -296,14 +296,14 @@ class AWGDebugClass():
     def _spcm_dwGetParam_i32(self, lRegister):
         value = int32(0)
         spcm_dwGetParam_i32(self._hCard, lRegister, byref(value))
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return value.value
 
     def _spcm_dwSetParam_i32(self, lRegister, plValue):
         spcm_dwSetParam_i32(self._hCard, lRegister, int32(plValue))
-        if self._read_out_error():
+        if self.read_out_error():
             return -1
         else:
             return 0
@@ -400,7 +400,7 @@ class AWGDebugClass():
         @return int: error code (0:OK, -1:error)
         """
 
-        self._read_out_error()
+        self.read_out_error()
         self.pulser_on()
         self.force_trigger(wait=True)
         return 0

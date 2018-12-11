@@ -219,6 +219,7 @@ class ODMRLogic(GenericLogic):
 
         @return object: actually set trigger polarity returned from hardware
         """
+        # print('set_trigger')
         if self.module_state() != 'locked':
             self.mw_trigger_pol, triggertime = self._mw_device.set_ext_trigger(trigger_pol, 1/frequency)
         else:
@@ -263,6 +264,7 @@ class ODMRLogic(GenericLogic):
 
         @return int: actually set clock frequency
         """
+        # print('set_clock_frequency')
         # checks if scanner is still running
         if self.module_state() != 'locked' and isinstance(clock_frequency, (int, float)):
             self.clock_frequency = int(clock_frequency)
@@ -282,6 +284,7 @@ class ODMRLogic(GenericLogic):
 
         @return int: actually set number of matrix lines
         """
+        # print('set_matrix_line_number')
         if isinstance(number_of_lines, int):
             self.number_of_lines = number_of_lines
         else:
@@ -300,6 +303,7 @@ class ODMRLogic(GenericLogic):
 
         @return float: actually set runtime in seconds
         """
+        # print('set_runtime')
         if isinstance(runtime, (int, float)):
             self.run_time = runtime
         else:
@@ -342,6 +346,7 @@ class ODMRLogic(GenericLogic):
         @return float, float, float, float: current start_freq, current stop_freq,
                                             current freq_step, current power
         """
+        # print('set_sweep_parameters')
         limits = self.get_hw_constraints()
         if self.module_state() != 'locked':
             if isinstance(start, (int, float)):
@@ -395,6 +400,7 @@ class ODMRLogic(GenericLogic):
 
         @return str, bool: active mode ['cw', 'list', 'sweep'], is_running
         """
+
         limits = self.get_hw_constraints()
         if self.mw_scanmode == MicrowaveMode.LIST:
             if np.abs(self.mw_stop - self.mw_start) / self.mw_step >= limits.list_maxentries:
@@ -442,7 +448,6 @@ class ODMRLogic(GenericLogic):
             err_code = self._mw_device.list_on()
             if err_code < 0:
                 self.log.error('Activation of microwave output failed.')
-
         mode, is_running = self._mw_device.get_status()
         self.sigOutputStateUpdated.emit(mode, is_running)
         return mode, is_running
@@ -462,6 +467,7 @@ class ODMRLogic(GenericLogic):
 
         @return str, bool: active mode ['cw', 'list', 'sweep'], is_running
         """
+        # print('mw_off')
         error_code = self._mw_device.off()
         if error_code < 0:
             self.log.error('Switching off microwave source failed.')
@@ -476,7 +482,7 @@ class ODMRLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-
+        # print('start_odmr_counter')
         clock_status = self._odmr_counter.set_up_odmr_clock(clock_frequency=self.clock_frequency)
         if clock_status < 0:
             return -1
@@ -494,7 +500,7 @@ class ODMRLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-
+        # print('stop_odmr_counter')
         ret_val1 = self._odmr_counter.close_odmr()
         if ret_val1 != 0:
             self.log.error('ODMR counter could not be stopped!')
@@ -508,8 +514,11 @@ class ODMRLogic(GenericLogic):
     def start_odmr_scan(self):
         """ Starting an ODMR scan.
 
+        This is the function called by the CW ODMR GUI to run an ODMR measurement
+
         @return int: error code (0:OK, -1:error)
         """
+        # print('start_odmr_scan')
         with self.threadlock:
             if self.module_state() == 'locked':
                 self.log.error('Can not start ODMR scan. Logic is already locked.')
@@ -527,16 +536,16 @@ class ODMRLogic(GenericLogic):
             self._startTime = time.time()
             self.sigOdmrElapsedTimeUpdated.emit(self.elapsed_time, self.elapsed_sweeps)
 
+            mode, is_running = self.mw_sweep_on()
+            if not is_running:
+                self._stop_odmr_counter()
+                self.module_state.unlock()
+                return -1
+
             odmr_status = self._start_odmr_counter()
             if odmr_status < 0:
                 mode, is_running = self._mw_device.get_status()
                 self.sigOutputStateUpdated.emit(mode, is_running)
-                self.module_state.unlock()
-                return -1
-
-            mode, is_running = self.mw_sweep_on()
-            if not is_running:
-                self._stop_odmr_counter()
                 self.module_state.unlock()
                 return -1
 
@@ -931,13 +940,14 @@ class ODMRLogic(GenericLogic):
 
         return fig
 
-    def perform_odmr_measurement(self, freq_start, freq_step, freq_stop, power, runtime,
+    def perform_odmr_measurement(self, freq_start, freq_stop, freq_step, power, runtime,
                                  fit_function='No Fit', save_after_meas=True, name_tag=''):
         """ An independant method, which can be called by a task with the proper input values
             to perform an odmr measurement.
 
         @return
         """
+        # print('perform_odmr_measurement')
         timeout = 30
         start_time = time.time()
         while self.module_state() != 'idle':
@@ -949,8 +959,7 @@ class ODMRLogic(GenericLogic):
                 return {}
 
         # set all relevant parameter:
-        self.set_power(power)
-        self.set_sweep_frequencies(freq_start, freq_stop, freq_step)
+        self.set_sweep_parameters(freq_start, freq_stop, freq_step, power)
         self.set_runtime(runtime)
 
         # start the scan
@@ -973,5 +982,5 @@ class ODMRLogic(GenericLogic):
         # Save data if requested
         if save_after_meas:
             self.save_odmr_data(tag=name_tag)
-
+        print(fit_params)
         return self.odmr_plot_x, self.odmr_plot_y, fit_params

@@ -2,6 +2,8 @@
 
 """
 This file contains the Qudi Interfuse between Microwave hardware and AWG hardware.
+It is for use in CW ODMR only - it is not appropriate for pulsed operations
+Todo: many parameters are currently hard-coded for the Spectrum M4i6631-x8 AWG
 
 Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,11 +22,7 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-import time
-from core.util.modules import get_main_dir
-import ctypes
-import os
-import matplotlib.pyplot as plt
+
 import numpy as np
 from core.module import Connector, StatusVar
 from core.module import Base, ConfigOption
@@ -49,11 +47,13 @@ class MicrowaveAwgInterfuse(GenericLogic, MicrowaveInterface):
     awg = Connector(interface='PulserInterface')
 
     # additional stuff for AWG-microwave-combo
-    awg_amplitude = StatusVar('awg_amplitude', 4.0)
-    awg_offset = StatusVar('awg_offset', 0.0e6)
+    #  fixme: these should be soft-coded
+    awg_microwave_amplitude = StatusVar('awg_microwave_amplitude', 4.0)
+    awg_offset_frequency = StatusVar('awg_offset', 0.0e6)
     number_of_samples = StatusVar('number_of_samples', 256)
     number_of_loops = StatusVar('number_of_loops', 1000)
     awg_sample_rate = StatusVar('awg_sample_rate', 1.25e9)
+    awg_range = StatusVar('awg_range', 400e6)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -183,33 +183,40 @@ class MicrowaveAwgInterfuse(GenericLogic, MicrowaveInterface):
         @return list, float, str: current frequencies in Hz, current power in dBm, current mode
         """
 
-        freq_list = frequency
-        self._freq_list = freq_list
-
-        local_oscillator_freq = freq_list[0] - self.awg_offset
-        awg_range = 400e6
-
-        if (frequency[-1] - frequency[0]) > awg_range:
-            self.log.error('Sweep range is larger than the awg bandwidth.')
-            return frequency, power, MicrowaveMode.LIST
-
         self._freq_list = frequency
 
-        # set microwave source in list mode
-        self.set_cw(frequency[0]-local_oscillator_freq, power)
+        local_oscillator_freq = frequency[0] - self.awg_offset_frequency
+        awg_freq_array = np.array(frequency) - local_oscillator_freq
+        # awg_freq_list = list(np.array(frequency) - local_oscillator_freq)
 
-        err = self._set_awg_list()
-        sample_rate = self._awg_device.get_sample_rate()
-        self._awg_device.set_sample_rate(600e6)
-        self._awg_device.set_sample_rate(sample_rate)
-        self.log.warning('AWG sample rate cycled {} MS/s -> {} MS/s -> {} MS/s to fix "corrupted-output-bug"'.format(
-            int(sample_rate/1e6), int(600), int(sample_rate/1e6)))
+        # sanity checks:
+        if np.min(awg_freq_array) - local_oscillator_freq < 0:
+            self.log.error('LO freq ({} MHz) larger than desired minimum MW freq ({} MHz). Need to adjust LO freq.'.format(local_oscillator_freq, np.min(awg_freq_array)))
+            return frequency, power, MicrowaveMode.LIST
+
+        if (frequency[-1] - frequency[0]) > awg_range:
+            self.log.error('Sweep range ({} MHz) is larger than the awg bandwidth ({} MHz).'.format(frequency[-1] - frequency[0], awg_range))
+            return frequency, power, MicrowaveMode.LIST
+
+        if (frequency[-1] - local_oscillator_freq) > awg_range:
+            self.log.error('Combined sweep range ({} MHz) and LO offset ({} MHz) is larger than the awg bandwidth ({} MHz).'.format(frequency[-1] - frequency[0], local_oscillator_freq, awg_range))
+            return frequency, power, MicrowaveMode.LIST
+
+        # set microwave source in cw mode to act as local oscillator
+        self.set_cw(local_oscillator_freq, power)
+
+        # prepare AWG in triggered sequence mode, and upload frequency list
+        err = self._set_awg_list(awg_freq_array)
+
+        # cycle sample rate to avoid bug when using Spectrum AWG in sequence mode:
+        self._awg_device._cycle_sample_rate()
 
         if err:
+            self.log.error('Could not set AWG in list mode. Returning to CW microwave mode.')
             self._mode = MicrowaveMode.CW
             power = self.get_power()
-            freq = self.get_frequency()
-            return freq, power, 'cw'
+            frequency = self.get_frequency()
+            return frequency, power, 'cw'
         else:
             self._mode = MicrowaveMode.LIST
             power = self.get_power()
@@ -221,8 +228,9 @@ class MicrowaveAwgInterfuse(GenericLogic, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-
+        # todo: not 100% sure this works - AH 2/11/2018
         if self._mode == MicrowaveMode.LIST:
+            self._awg_device.pulser_off()
             self._awg_device.pulser_on()
             self._awg_device.force_trigger(wait=True)
             return 0
@@ -276,7 +284,7 @@ class MicrowaveAwgInterfuse(GenericLogic, MicrowaveInterface):
         the function at least a save waiting time corresponding to the
         frequency switching speed.
         """
-        self.log.warning('Trigger is not implemented yet.')
+        self.log.warning('Software trigger is not implemented yet.')
         return -1
 
     def get_limits(self):
@@ -289,17 +297,138 @@ class MicrowaveAwgInterfuse(GenericLogic, MicrowaveInterface):
         limits.supported_modes = (MicrowaveMode.CW, MicrowaveMode.SWEEP, MicrowaveMode.ASWEEP, MicrowaveMode.LIST)
         return limits
 
-    def _set_awg_list(self):
-        """
+    def _set_awg_list(self, awg_freq_list):
+        """ Prepare the AWG in triggered sequence mode, and upload frequency list
+
+        AWG MW output frequency is on analogue ch 1
+            amplitude hard-coded to max (4.0 V)
+        CW laser channel is d_ch1
+
+        @param list awg_freq_list: list of output frequencies for the AWG
+
         @return int: error code (0:OK, -1:error)
         """
 
-        frequency = self._freq_list
 
-        llMemSamples = 1024*self.number_of_samples
+        # fixme: currently too much hard-coding.
+        # fixme: need to integrate with pulser 3, e.g. to create waveform?? Not if using for CW ODMR only
+        # fixme: for CW ODMR, need to integrate with scan trigger (traditionally from NI card to SMIQ)
+        # would then need to use sequence mode, looping over each frequency-step section until receiving an external trigger to go to next section
+        # alternative is to write something new with the Time Tagger, where the AWG triggers the TT. This wouldn't have to use sequence mode
+        # might need a new time tagger script??
+
+        frequency = awg_freq_list
+
+        # check number of frequency steps, divide AWG memory into corresponding number of segments
+        n_freq_steps = len(frequency)
+
+        # todo: need to initialise AWG
+        # set active AWG channels: only need a_ch1, d_ch1
+        self._awg_device._active_channels = {'a_ch1': True,
+                                 'a_ch2': False,
+                                 'd_ch1': True,
+                                 'd_ch2': False,
+                                 'd_ch3': False, }
+        self._awg_device.set_active_channels(self._awg_device._active_channels)
+
+        # prepare AWG in sequence mode, and divide AWG memory into [next-power-of-two(n_freq_steps)] number of segments
+        n_actual_segments = self._awg_device.prepare_in_sequence_mode(n_freq_steps)
+
+        # create and upload data for each frequency step
+        #  min data length is 384/192 for 1/2 channels, with a stepsize of 32
+        # max data length is (Mem/n_channels) / SPC_SEQMODE_MAXSEGMENTS)
+
+
+
+        # desired number of samples per segment
+        default_samples = int64(500 * 32) # todo: check if this is an appropriate value
+        mem_size = 2e9  # AWG memory size # todo: possible to read off card?
+        max_samples = mem_size/n_actual_segments
+        n_samples = min(default_samples, max_samples)
+
+        # create list of waveforms for frequency list
+        sample_rate = self.get_sample_rate()
+        awg_waveformbuffer_list = list()
+        for i in range(n_freq_steps):
+            a_ch1_signal = (np.sin(np.arange(n_samples) * (frequency[i] / sample_rate) * 2 * np.pi) * (
+                    2 ** 15 - 1)).astype(dtype=np.int16)
+
+            d_ch1_signal = np.ones(n_samples).astype(dtype=np.bool)
+
+            analog_samples = {'a_ch1': a_ch1_signal}
+            digital_samples = {'d_ch1': d_ch1_signal}
+
+            # fixme: this won't work until write_waveform is rewritten
+            waveformbuffer, qwBufferSize = self._awg_device.write_waveform('freqstep_{}'.format(i), analog_samples, digital_samples, True, True, n_samples)
+            awg_waveformbuffer_list.append(waveformbuffer)
+
+
+        # Transfer data to AWG, segment by segment
+        for i in range(n_freq_steps):
+            spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_WRITESEGMENT, i)  # set current configuration switch to segment i
+            spcm_dwSetParam_i32(self._hCard, SPC_SEQMODE_SEGMENTSIZE, qwBufferSize)  # define size of current segment i
+            pvBuffer = awg_waveformbuffer_list[i]
+            spcm_dwDefTransfer_i64(self._hCard, SPCM_BUF_DATA, SPCM_DIR_PCTOCARD, 0, pvBuffer, 0, qwBufferSize)
+
+            # Setting up the sequence memory(Only two steps used here as an example)
+            lStep = i  # current step is Step  # 0
+            llSegment = i  # associated with memory
+            llLoop = 0  # Pattern will be repeated 10 times
+            if i == n_freq_steps-1:
+                llNext = 0
+            else:
+                llNext = i+1  # Next step is Step  # 1
+            llCondition = SPCSEQ_ENDLOOPONTRIG  # Unconditionally leave current step
+
+            # combine all the parameters to one int64 bit value
+            llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment))
+            spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, llValue)
+
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_DATA_STARTDMA | M2CMD_DATA_WAITDMA)
+
+        self.read_out_error()
+
+
+
+
+
+
+        # Setting up the sequence memory(Only two steps used here as an example)
+        lStep = 0  # current step is Step  # 0
+        llSegment = 0  # associated with memory
+        llLoop = 1  # Pattern will be repeated 10 times
+        llNext = 1  # Next step is Step  # 1
+        llCondition = SPCSEQ_ENDLOOPONTRIG  # Unconditionally leave current step
+
+        # combine all the parameters to one int64 bit value
+        llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment))
+        spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, llValue)
+
+        lStep = 1  # current step is Step  # 1
+        llSegment = 1  # associated with memory segment 1
+        llLoop = 1  # Pattern will be repeated once before condition is checked
+        llNext = 0  # Next step is Step  # 0
+        llCondition = SPCSEQ_ENDLOOPONTRIG  # Repeat current step until a trigger has occurred
+        llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment))
+        spcm_dwSetParam_i64(self._hCard, SPC_SEQMODE_STEPMEM0 + lStep, llValue)
+
+        # Start the card
+        spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_START | M2CMD_CARD_ENABLETRIGGER)
+        print('start')
+        # ... wait here or do something else ...
+
+
+
+
+
+
+
+
+
+
+        llMemSamples = 1024*self.number_of_samples # fixme: no connection to desired ODMR settings
         llLoops = self.number_of_loops
         amplitude = self.awg_amplitude
-        frequency_local_oscillator = frequency[0] - self.awg_offset
         sample_rate = self.awg_sample_rate
 
         self._awg_device.pulser_off()
@@ -311,7 +440,7 @@ class MicrowaveAwgInterfuse(GenericLogic, MicrowaveInterface):
         channel_data = []
         t = np.arange(llMemSamples) / sample_rate
         for i in range(len(frequency)):
-            a_ch1_signal = (np.sin(t * (frequency[i] - frequency_local_oscillator) * 2*np.pi) * (2**15-1)
+            a_ch1_signal = (np.sin(t * (frequency[i] * 2*np.pi) * (2**15-1)
                             ).astype(dtype=np.int16)
             d_ch1_signal = np.full(llMemSamples, 1).astype(dtype=np.bool)
 
@@ -324,8 +453,11 @@ class MicrowaveAwgInterfuse(GenericLogic, MicrowaveInterface):
             channel_data.append({'a_ch1': a_ch1_signal, 'd_ch1': d_ch1_signal, 'd_ch2': d_ch2_signal})
 
         # Fixme: don't generate all the data first and then upload it all at once -> needs a lot of memory
-        err = self._awg_device.load_sequence(channel_data, llLoops)
+        self._awg_device.load_sequence(channel_data, llLoops) # fixme: now need to use write_waveform()
+
+        err = self._awg_device.read_out_error()
         if err:
             return -1
         else:
             return 0
+

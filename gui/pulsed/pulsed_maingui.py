@@ -2550,6 +2550,7 @@ class PulsedMeasurementGui(GUIBase):
 
         @return:
         """
+        print("Measurement Settings updated Woo")
         # Do nothing if measurement is already running
         if self._mw.action_run_stop.isChecked():
             return
@@ -2573,6 +2574,7 @@ class PulsedMeasurementGui(GUIBase):
         settings_dict['controlled_variable'] = controlled_variable * vals_incr + vals_start
 
         self.pulsedmasterlogic().set_measurement_settings(settings_dict)
+        print(settings_dict)
         return
 
     @QtCore.Slot(dict)

@@ -145,7 +145,6 @@ class PiezoStagePI(Base, MotorInterface):
         axis0['pos_min'] = config['x']['constraints']['pos_min']
         axis0['pos_max'] = config['x']['constraints']['pos_max']
         axis0['unit'] = 'm'
-        axis0['pos_step'] = 0.0
         axis0['pos_step'] = 10e-6
         axis0['vel_min'] = 0.0
         axis0['vel_max'] = 100.0
@@ -275,11 +274,25 @@ class PiezoStagePI(Base, MotorInterface):
 
     def abort(self):
         """ Stop movement of the stage
+
+        BOOL PI_StopAll (int ID)
+        Corresponding command: #24
+        Stops the motion of all axes instantaneously. Sets error code to 10.
+        Arguments:
+        ID ID of controller
+        Returns:
+        TRUE if successful, FALSE otherwise
+
         @return int: error code (0:OK, -1:error)
         """
-        self.log.info('Function not yet implemented')
+        print('magnet abort')
 
-        return 0
+        successful = self._pidll.PI_StopAll(self._devID)
+
+        if successful:
+            return 0
+        else:
+            return -1
 
     def get_pos(self, param_list=None):
         """ Get rhe current position of the stage axis
@@ -305,10 +318,10 @@ class PiezoStagePI(Base, MotorInterface):
             param_list = [x.lower() for x in param_list]  # make all param_list elements lower case
             for axis in list(set(param_dict.keys()) - set(param_list)):  # axes not in param_list
                 del param_dict[axis]
-                print(param_dict)
+                # print(param_dict)
             return param_dict
         else:
-            print(param_dict)
+            # print(param_dict)
             return param_dict
 
     def get_status(self, param_list=None):
@@ -325,6 +338,10 @@ class PiezoStagePI(Base, MotorInterface):
             Bit 4: Macro running Bit 5: Motor OFF Bit 6: Brake ON Bit 7: Drive current active
         """
         self.log.info('Not yet implemented for this hardware')
+
+        # BOOL PI_IsMoving(int ID, const char * szAxes, BOOL * pbValueArray)
+        # BOOL PI_IsControllerReady(int ID, int * piControllerReady)
+        # BOOL PI_IsRunningMacro(int ID, BOOL * pbRunningMacro)
 
     def calibrate(self, param_list=None):
         """ Calibrate the stage.
@@ -394,7 +411,11 @@ class PiezoStagePI(Base, MotorInterface):
         ax = ctypes.c_char_p(channel.encode())
         #ax = ctypes.c_char_p(channel)
 
+        # send move command:
         self._pidll.PI_MOV(self._devID, ax, newpos)
+        # check if stage has reached its target (PI_qONT)
+        # todo: this should be removed, and replaced by a checkifmoving call higher up
+        # as-is, the wait-til-there command prevents abort commands
         onT = self._bool1d(0)
         while not onT[0]:
             self._pidll.PI_qONT(self._devID, ax, onT)

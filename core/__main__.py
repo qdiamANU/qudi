@@ -51,7 +51,6 @@ parser.add_argument('-c', '--config', default='', help='configuration file')
 parser.add_argument('-l', '--logdir', default='', help='log directory')
 args = parser.parse_args()
 
-
 # install logging facility
 from .logger import initialize_logger
 initialize_logger(args.logdir)

@@ -433,9 +433,13 @@ class SequenceGeneratorLogic(GenericLogic):
 
         @param str|PulseBlockEnsemble ensemble:
         """
+        print('\nload_ensemble()')
+        print('ensemble1 = {}'.format(ensemble))
+
         # If str has been passed, get the ensemble object from saved ensembles
         if isinstance(ensemble, str):
             ensemble = self.saved_pulse_block_ensembles[ensemble]
+            print('ensemble2 = {}'.format(ensemble))
             if ensemble is None:
                 self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
                 return
@@ -445,8 +449,10 @@ class SequenceGeneratorLogic(GenericLogic):
             self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
             return
 
+        print('self.sampled_waveforms = {}\n'.format(self.sampled_waveforms))
         # Check if the PulseBlockEnsemble has been sampled already.
         if ensemble.sampling_information:
+            print('ensemble.sampling_information[waveforms] = {}'.format(ensemble.sampling_information['waveforms']))
             # Check if the corresponding waveforms are present in the pulse generator memory
             ready_waveforms = self.sampled_waveforms
             for waveform in ensemble.sampling_information['waveforms']:
@@ -456,10 +462,11 @@ class SequenceGeneratorLogic(GenericLogic):
                                    'PulseBlockEnsemble.'.format(waveform, ensemble.name))
                     self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
                     return
-
+            # fixme: there is no way of resetting after triggering this, other than restarting qudi
             if self.pulsegenerator().get_status()[0] > 0:
                 self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
-                return -1
+                # return -1
+                return 0  # fixme: setting return to 0 instead of -1 isn't a great way around the problem
             # Actually load the waveforms to the generic channels
             self.pulsegenerator().load_waveform(ensemble.sampling_information['waveforms'])
         else:
@@ -501,7 +508,8 @@ class SequenceGeneratorLogic(GenericLogic):
 
             if self.pulsegenerator().get_status()[0] > 0:
                 self.log.error('Can´t load a sequence, because pulser running. Switch off the pulser and try again.')
-                return -1
+                # return -1
+                return 0  # fixme: this isn't a great way around the problem
             # Actually load the sequence to the generic channels
             self.pulsegenerator().load_sequence(sequence.name)
         else:
@@ -515,7 +523,9 @@ class SequenceGeneratorLogic(GenericLogic):
         """
         # Read activation_config from device.
         channel_state = self.pulsegenerator().get_active_channels()
+        print(channel_state)
         current_config = {chnl for chnl in channel_state if channel_state[chnl]}
+        print(current_config)
 
         # Check if the read back config is a valid config in constraints
         avail_configs = self.pulse_generator_constraints.activation_config
@@ -1045,9 +1055,19 @@ class SequenceGeneratorLogic(GenericLogic):
         @param PulseBlockEnsemble ensemble: The PulseBlockEnsemble instance to analyze
         @return (float, int, int): length in seconds, length in bins, number of laser/gate pulses
         """
+<<<<<<< HEAD
         # Return if the ensemble is empty
         if len(ensemble) == 0:
             return 0.0, 0, 0
+=======
+        print(ensemble)
+        # variables to keep track of the current timeframe and number of laser/gate pulses
+        ensemble_length_s = 0.0
+        ensemble_length_bins = 0
+        number_of_lasers = 0
+        # memorize the channel state of the previous element.
+        tmp_digital_high = False
+>>>>>>> qcomp_SSR_debug
 
         # Determine the right laser channel to choose. For gated counting it should be the gate
         # channel instead of the laser trigger.
@@ -1296,8 +1316,8 @@ class SequenceGeneratorLogic(GenericLogic):
                            ''.format(ensemble.name, blocks_missing))
         if channel_activation_mismatch:
             self.log.error('Sampling of PulseBlockEnsemble "{0}" failed!\nMismatch of activation '
-                           'config in logic ({1}) and used channels in PulseBlockEnsemble.'
-                           ''.format(ensemble.name, self.__activation_config[1]))
+                           'config in logic ({1}) and used channels in PulseBlockEnsemble ({2}).'
+                           ''.format(ensemble.name, self.__activation_config[1]), block.channel_set)
 
         # Return error code
         return -1 if blocks_missing or channel_activation_mismatch else 0
@@ -1364,6 +1384,8 @@ class SequenceGeneratorLogic(GenericLogic):
         It is a dictionary containing:
         TODO: Add parameters that are stored
         """
+
+        print('\nsample_pulse_block_ensemble')
         # Get PulseBlockEnsemble from saved ensembles if string has been passed as argument
         if isinstance(ensemble, str):
             ensemble = self.get_ensemble(ensemble)
@@ -1396,6 +1418,7 @@ class SequenceGeneratorLogic(GenericLogic):
         # get important parameters from the ensemble
         ensemble_info = self.analyze_block_ensemble(ensemble)
 
+        # Fixme: not correct for Spectrum AWG?
         # Calculate the byte size per sample.
         # One analog sample per channel is 4 bytes (np.float32) and one digital sample per channel
         # is 1 byte (np.bool).
@@ -1483,6 +1506,11 @@ class SequenceGeneratorLogic(GenericLogic):
                             # Set first/last chunk flags
                             is_first_chunk = array_write_index == processed_samples
                             is_last_chunk = processed_samples == ensemble_info['number_of_samples']
+                            print('name={}'.format(waveform_name))
+                            # print('analog_samples ={}'.format(analog_samples))
+                            # print('digital_samples ={},'.format(digital_samples))
+                            # print('is_first_chunk={}, is_last_chunk={}'.format(is_first_chunk,is_last_chunk))
+                            # print('total_number_of_samples={}'.format(ensemble_info['number_of_samples']))
                             written_samples, wfm_list = self.pulsegenerator().write_waveform(
                                 name=waveform_name,
                                 analog_samples=analog_samples,
@@ -1495,6 +1523,7 @@ class SequenceGeneratorLogic(GenericLogic):
                             written_waveforms.update(wfm_list)
 
                             # check if write process was successful
+                            # print('written_samples = {}, array_length = {}'.format(written_samples,array_length))
                             if written_samples != array_length:
                                 self.log.error('Sampling of block "{0}" in ensemble "{1}" failed. '
                                                'Write to device was unsuccessful.\nThe number of '
@@ -1537,8 +1566,13 @@ class SequenceGeneratorLogic(GenericLogic):
             ensemble.sampling_information['waveforms'] = sorted(written_waveforms)
             self.save_ensemble(ensemble)
 
+<<<<<<< HEAD
         self.log.info('Time needed for sampling and writing PulseBlockEnsemble {0} to device: {1} sec'
                       ''.format(ensemble.name, int(np.rint(time.time() - start_time))))
+=======
+        # self.log.info('Time needed for sampling and writing PulseBlockEnsemble to device: {0} sec'
+        #               ''.format(int(np.rint(time.time() - start_time))))
+>>>>>>> qcomp_SSR_debug
         if ensemble_info['number_of_samples'] == 0:
             self.log.warning('Empty waveform (0 samples) created from PulseBlockEnsemble "{0}".'
                              ''.format(ensemble.name))

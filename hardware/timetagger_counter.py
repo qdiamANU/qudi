@@ -24,10 +24,6 @@ import thirdparty.swabian_instruments.timetagger.TimeTagger as tt
 import time
 import numpy as np
 
-<<<<<<< HEAD
-=======
-
->>>>>>> qcomp
 from core.module import Base, ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints

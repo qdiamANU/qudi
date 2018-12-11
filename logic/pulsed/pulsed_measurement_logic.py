@@ -147,7 +147,14 @@ class PulsedMeasurementLogic(GenericLogic):
         self.fit_result = None
         self.alt_fit_result = None
         self.signal_fit_data = np.empty((2, 0), dtype=float)  # The x,y data of the fit result
+<<<<<<< HEAD
         self.signal_fit_alt_data = np.empty((2, 0), dtype=float)
+=======
+
+        # Set readout values for qdyne extraction
+        self.read_lines = 0
+        self.time_trace = []
+>>>>>>> qcomp_SSR_debug
         return
 
     def on_activate(self):
@@ -795,6 +802,75 @@ class PulsedMeasurementLogic(GenericLogic):
         return
 
     @QtCore.Slot(str)
+    def start_simple_pulsed_measurement(self, stashed_raw_data_tag=''):
+        """Start the analysis loop."""
+        self.sigMeasurementStatusUpdated.emit(True, False)
+
+        with self._threadlock:
+            if self.module_state() == 'idle':
+                # Lock module state
+                self.module_state.lock()
+
+                # Clear previous fits
+                self.fc.clear_result()
+
+                # recall stashed raw data
+                if stashed_raw_data_tag in self._saved_raw_data:
+                    self._recalled_raw_data_tag = stashed_raw_data_tag
+                    # self.log.info('Starting pulsed measurement with stashed raw data "{0}".'
+                    #              ''.format(stashed_raw_data_tag))
+                else:
+                    self._recalled_raw_data_tag = None
+
+                # start microwave source
+                if self.__use_ext_microwave:
+                    self.microwave_on()
+
+                # start fast counter
+                self.fast_counter_on()
+                # start pulse generator
+                self.pulse_generator_on()
+
+                # Set measurement paused flag
+                self.__is_paused = False
+            else:
+                self.log.warning('Unable to start pulsed measurement. Measurement already running.')
+        return
+
+    @QtCore.Slot(str)
+    def stop_simple_pulsed_measurement(self, stash_raw_data_tag=''):
+        """
+        Stop the measurement
+        """
+
+        with self._threadlock:
+            if self.module_state() == 'locked':
+                # stopping the timer
+                self.sigStopTimer.emit()
+                # Turn off fast counter
+                self.fast_counter_off()
+                # Turn off pulse generator
+                self.pulse_generator_off()
+                self.pulse_generator_off()
+                # Turn off microwave source
+                if self.__use_ext_microwave:
+                    self.microwave_off()
+
+                # stash raw data if requested
+                if stash_raw_data_tag:
+                    # self.log.info('Raw data saved with tag "{0}" to continue measurement at a '
+                    #              'later point.'.format(stash_raw_data_tag))
+                    self._saved_raw_data[stash_raw_data_tag] = self.raw_data.copy()
+                self._recalled_raw_data_tag = None
+
+                # Set measurement paused flag
+                self.__is_paused = False
+
+                self.module_state.unlock()
+                self.sigMeasurementStatusUpdated.emit(False, False)
+        return
+
+    @QtCore.Slot(str)
     def stop_pulsed_measurement(self, stash_raw_data_tag=''):
         """
         Stop the measurement
@@ -1147,14 +1223,14 @@ class PulsedMeasurementLogic(GenericLogic):
 
         # add old raw data from previous measurements if necessary
         if self._saved_raw_data.get(self._recalled_raw_data_tag) is not None:
-            self.log.info('Found old saved raw data with tag "{0}".'
-                          ''.format(self._recalled_raw_data_tag))
+            #self.log.info('Found old saved raw data with tag "{0}".'
+                   #       ''.format(self._recalled_raw_data_tag))
             if not fc_data.any():
-                self.log.warning('Only zeros received from fast counter!\n'
-                                 'Using recalled raw data only.')
+                #self.log.warning('Only zeros received from fast counter!\n'
+                 #                'Using recalled raw data only.')
                 fc_data = self._saved_raw_data[self._recalled_raw_data_tag]
             elif self._saved_raw_data[self._recalled_raw_data_tag].shape == fc_data.shape:
-                self.log.debug('Recalled raw data has the same shape as current data.')
+                #self.log.debug('Recalled raw data has the same shape as current data.')
                 fc_data = self._saved_raw_data[self._recalled_raw_data_tag] + fc_data
             else:
                 self.log.warning('Recalled raw data has not the same shape as current data.'
@@ -1404,8 +1480,12 @@ class PulsedMeasurementLogic(GenericLogic):
                 ft_label = 'FT of data trace 1'
             else:
                 if self._data_units[0]:
+<<<<<<< HEAD
                     x_axis_ft_label = '{0} ({1}{2})'.format(self._data_labels[0], x_axis_prefix,
                                                             self._data_units[0])
+=======
+                    x_axis_ft_label = '{0} ({1})'.format(self._data_labels[0], self._data_units[0])
+>>>>>>> qcomp_SSR_debug
                 else:
                     x_axis_ft_label = '{0}'.format(self._data_labels[0])
                 if self._data_units[1]:
@@ -1413,7 +1493,11 @@ class PulsedMeasurementLogic(GenericLogic):
                 else:
                     y_axis_ft_label = '{0}'.format(self._data_labels[1])
 
+<<<<<<< HEAD
                 ft_label = '{0} of data traces'.format(self._alternative_data_type)
+=======
+                ft_label = ''
+>>>>>>> qcomp_SSR_debug
 
             ax2.plot(x_axis_ft_scaled, self.signal_alt_data[1], '-o',
                      linestyle=':', linewidth=0.5, color=colors[0],
@@ -1428,6 +1512,7 @@ class PulsedMeasurementLogic(GenericLogic):
             ax2.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=2,
                        mode="expand", borderaxespad=0.)
 
+<<<<<<< HEAD
             if self.signal_fit_alt_data.size != 0 and np.sum(self.signal_fit_alt_data[1]) > 0:
                 x_axis_fit_scaled = self.signal_fit_alt_data[0] / scaled_float.scale_val
                 ax2.plot(x_axis_fit_scaled, self.signal_fit_alt_data[1],
@@ -1483,6 +1568,9 @@ class PulsedMeasurementLogic(GenericLogic):
 
                     is_first_column = False
 
+=======
+        #FIXME: no fit plot for the alternating graph, use for that graph colors[5]
+>>>>>>> qcomp_SSR_debug
         ax1.set_xlabel(
             '{0} ({1}{2})'.format(self._data_labels[0], counts_prefix, self._data_units[0]))
         if self._data_units[1]:

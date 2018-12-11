@@ -61,13 +61,13 @@ class RemoteObjectManager(QObject):
             def get_service_name():
                 return 'RemoteModule'
 
-            def on_connect(self, conn):
+            def on_connect(self, conn=None):
                 """ code that runs when a connection is created
                     (to init the service, if needed)
                 """
                 logger.info('Client connected!')
 
-            def on_disconnect(self, conn):
+            def on_disconnect(self, conn=None):
                 """ code that runs when the connection has already closed
                     (to finalize the service, if needed)
                 """
