@@ -65,7 +65,6 @@ class ConfocalHistoryEntry(QtCore.QObject):
         self.current_x = (self.x_range[0] + self.x_range[1]) / 2
         self.current_y = (self.y_range[0] + self.y_range[1]) / 2
         self.current_z = (self.z_range[0] + self.z_range[1]) / 2
-        print(self.current_z)
         self.current_a = 0.0
 
         # Sets the size of the image to the maximal scanning range
@@ -259,7 +258,6 @@ class ConfocalLogic(GenericLogic):
     # declare connectors
     confocalscanner1 = Connector(interface='ConfocalScannerInterface')
     savelogic = Connector(interface='SaveLogic')
-    sequencegeneratorlogic = Connector(interface='SequenceGeneratorLogic')
 
     # status vars
     _clock_frequency = StatusVar('clock_frequency', 500)
@@ -305,9 +303,6 @@ class ConfocalLogic(GenericLogic):
         """
         self._scanning_device = self.confocalscanner1()
         self._save_logic = self.savelogic()
-
-        self._seq_gen_logic = self.sequencegeneratorlogic()
-        self._awg = self._seq_gen_logic.pulsegenerator()
 
         # Reads in the maximal scanning range. The unit of that scan range is micrometer!
         self.x_range = self._scanning_device.get_position_range()[0]
@@ -396,8 +391,6 @@ class ConfocalLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._awg.laser_on()
-
         # TODO: this is dirty, but it works for now
 #        while self.module_state() == 'locked':
 #            time.sleep(0.01)
@@ -416,7 +409,6 @@ class ConfocalLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._awg.laser_on()
         self._zscan = zscan
         if zscan:
             self._scan_counter = self._depth_line_pos
@@ -572,7 +564,6 @@ class ConfocalLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._awg.laser_on()
         self.module_state.lock()
 
         self._scanning_device.module_state.lock()
@@ -1245,4 +1236,3 @@ class ConfocalLogic(GenericLogic):
             self._change_position('history')
             self.signal_change_position.emit('history')
             self.signal_history_event.emit()
-

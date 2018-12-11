@@ -538,7 +538,7 @@ class Manager(QtCore.QObject):
 
           @return object: the loaded python module
         """
-        #print("Prithvi Is best: " + baseName + " " + module)
+
         logger.info('Loading module ".{0}.{1}"'.format(baseName, module))
         if not isBase(baseName):
             raise Exception('You are trying to cheat the '
@@ -587,9 +587,8 @@ class Manager(QtCore.QObject):
 
         # get class from module by name
         #print(moduleObject, className)
-        #print("Prithvi", " conf ", configuration, " mod ", moduleObject, " cls ", className, " inst ", instanceName)
         modclass = getattr(moduleObject, className)
-        #print(modclass)
+
         # FIXME: Check if the class we just obtained has the right inheritance
         if not issubclass(modclass, BaseMixin):
             raise Exception('Bad inheritance, for instance {0!s} from {1!s}.{2!s}.'.format(
@@ -597,8 +596,7 @@ class Manager(QtCore.QObject):
 
         # Create object from class
         instance = modclass(manager=self, name=instanceName, config=configuration)
-        #print(instance)
-        #print(self)
+
         with self.lock:
             self.tree['loaded'][baseName][instanceName] = instance
 

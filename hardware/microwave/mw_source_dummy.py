@@ -182,7 +182,7 @@ class MicrowaveDummy(Base, MicrowaveInterface):
         @return int: error code (0:OK, -1:error)
         """
         self.current_output_mode = MicrowaveMode.LIST
-        # time.sleep(2)
+        time.sleep(1)
         self.output_active = True
         self.log.info('MicrowaveDummy>List mode output on')
         return 0

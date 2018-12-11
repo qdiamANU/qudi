@@ -144,11 +144,7 @@ class FitSettingsDialog(QtWidgets.QDialog):
             '/path',
             'Fit files (*.fit *.yml)'
             )
-        print(res)
-        print(res[0])
         fits = self.fc.fit_logic.load_fits(res[0])
-        print(fits)
-        print(fits[self.fc.dimension])
         self.loadFits(fits[self.fc.dimension])
 
     def loadFits(self, user_fits):

@@ -90,6 +90,7 @@ class ODMRGui(GUIBase):
     sigRuntimeChanged = QtCore.Signal(float)
     sigDoFit = QtCore.Signal(str, object, object, int)
     sigSaveMeasurement = QtCore.Signal(str, list, list)
+    sigAverageLinesChanged = QtCore.Signal(int)
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -214,16 +215,10 @@ class ODMRGui(GUIBase):
         self._mw.runtime_DoubleSpinBox.setValue(self._odmr_logic.run_time)
         self._mw.elapsed_time_DisplayWidget.display(int(np.rint(self._odmr_logic.elapsed_time)))
         self._mw.elapsed_sweeps_DisplayWidget.display(self._odmr_logic.elapsed_sweeps)
+        self._mw.average_level_SpinBox.setValue(self._odmr_logic.lines_to_average)
 
         self._sd.matrix_lines_SpinBox.setValue(self._odmr_logic.number_of_lines)
         self._sd.clock_frequency_DoubleSpinBox.setValue(self._odmr_logic.clock_frequency)
-
-        # additional stuff for AWG-microwave-combo
-        #self._sd.number_of_loops_spinBox.setValue(self._odmr_logic._mw_device.number_of_loops)
-        #self._sd.number_of_samples_spinBox.setValue(self._odmr_logic._mw_device.number_of_samples)
-        #self._sd.awg_amplitude_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_amplitude)
-        #self._sd.awg_offset_frequency_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_offset)
-        #self._sd.awg_sample_rate_doubleSpinBox.setValue(self._odmr_logic._mw_device.awg_sample_rate)
 
         # fit settings
         self._fsd = FitSettingsDialog(self._odmr_logic.fc)
@@ -246,6 +241,7 @@ class ODMRGui(GUIBase):
         self._mw.odmr_cb_min_DoubleSpinBox.valueChanged.connect(self.colorscale_changed)
         self._mw.odmr_cb_high_percentile_DoubleSpinBox.valueChanged.connect(self.colorscale_changed)
         self._mw.odmr_cb_low_percentile_DoubleSpinBox.valueChanged.connect(self.colorscale_changed)
+        self._mw.average_level_SpinBox.valueChanged.connect(self.average_level_changed)
         # Internal trigger signals
         self._mw.odmr_cb_manual_RadioButton.clicked.connect(self.colorscale_changed)
         self._mw.odmr_cb_centiles_RadioButton.clicked.connect(self.colorscale_changed)
@@ -256,15 +252,6 @@ class ODMRGui(GUIBase):
         self._mw.action_Save.triggered.connect(self.save_data)
         self._mw.action_RestoreDefault.triggered.connect(self.restore_defaultview)
         self._mw.do_fit_PushButton.clicked.connect(self.do_fit)
-
-        '''
-        # additional stuff for AWG-microwave-combo
-        self._sd.number_of_loops_spinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.number_of_samples_spinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.awg_offset_frequency_doubleSpinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.awg_amplitude_doubleSpinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.awg_sample_rate_doubleSpinBox.editingFinished.connect(self.change_awg_params)
-        '''
 
         # Control/values-changed signals to logic
         self.sigCwMwOn.connect(self._odmr_logic.mw_cw_on, QtCore.Qt.QueuedConnection)
@@ -285,6 +272,8 @@ class ODMRGui(GUIBase):
         self.sigClockFreqChanged.connect(self._odmr_logic.set_clock_frequency,
                                          QtCore.Qt.QueuedConnection)
         self.sigSaveMeasurement.connect(self._odmr_logic.save_odmr_data, QtCore.Qt.QueuedConnection)
+        self.sigAverageLinesChanged.connect(self._odmr_logic.set_average_length,
+                                            QtCore.Qt.QueuedConnection)
 
         # Update signals coming from logic:
         self._odmr_logic.sigParameterUpdated.connect(self.update_parameter,
@@ -335,6 +324,7 @@ class ODMRGui(GUIBase):
         self.sigNumberOfLinesChanged.disconnect()
         self.sigClockFreqChanged.disconnect()
         self.sigSaveMeasurement.disconnect()
+        self.sigAverageLinesChanged.disconnect()
         self._mw.odmr_cb_manual_RadioButton.clicked.disconnect()
         self._mw.odmr_cb_centiles_RadioButton.clicked.disconnect()
         self._mw.clear_odmr_PushButton.clicked.disconnect()
@@ -355,6 +345,7 @@ class ODMRGui(GUIBase):
         self._mw.odmr_cb_min_DoubleSpinBox.valueChanged.disconnect()
         self._mw.odmr_cb_high_percentile_DoubleSpinBox.valueChanged.disconnect()
         self._mw.odmr_cb_low_percentile_DoubleSpinBox.valueChanged.disconnect()
+        self._mw.average_level_SpinBox.valueChanged.disconnect()
         self._fsd.sigFitsUpdated.disconnect()
         self._mw.action_FitSettings.triggered.disconnect()
         self._mw.close()
@@ -527,6 +518,13 @@ class ODMRGui(GUIBase):
             self._odmr_logic.odmr_plot_y,
             self._odmr_logic.odmr_plot_xy)
 
+    def average_level_changed(self):
+        """
+        Sends to lines to average to the logic
+        """
+        self.sigAverageLinesChanged.emit(self._mw.average_level_SpinBox.value())
+        return
+
     def colorscale_changed(self):
         """
         Updates the range of the displayed colorscale in both the colorbar and the matrix plot.
@@ -691,6 +689,12 @@ class ODMRGui(GUIBase):
             self._mw.cw_power_DoubleSpinBox.blockSignals(True)
             self._mw.cw_power_DoubleSpinBox.setValue(param)
             self._mw.cw_power_DoubleSpinBox.blockSignals(False)
+
+        param = param_dict.get('average_length')
+        if param is not None:
+            self._mw.average_level_SpinBox.blockSignals(True)
+            self._mw.average_level_SpinBox.setValue(param)
+            self._mw.average_level_SpinBox.blockSignals(False)
         return
 
     ############################################################################
@@ -733,11 +737,3 @@ class ODMRGui(GUIBase):
 
         self.sigSaveMeasurement.emit(filetag, cb_range, pcile_range)
         return
-
-    def change_awg_params(self):
-        # additional stuff for AWG-microwave-combo
-        self._odmr_logic._mw_device.awg_amplitude = self._sd.awg_amplitude_doubleSpinBox.value()
-        self._odmr_logic._mw_device.awg_offset = self._sd.awg_offset_frequency_doubleSpinBox.value()
-        self._odmr_logic._mw_device.number_of_samples = self._sd.number_of_samples_spinBox.value()
-        self._odmr_logic._mw_device.number_of_loops = self._sd.number_of_loops_spinBox.value()
-        self._odmr_logic._mw_device.awg_sample_rate = self._sd.awg_sample_rate_doubleSpinBox.value()

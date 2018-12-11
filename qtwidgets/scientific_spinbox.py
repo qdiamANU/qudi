@@ -758,7 +758,7 @@ class ScienDSpinBox(QtWidgets.QAbstractSpinBox):
         """
         return self.validator.fixup(text)
 
-    def valueFromText(self, text):
+    def valueFromText(self, text, use_assumed_unit_prefix=False):
         """
         This method is responsible for converting a string displayed in the SpinBox into a Decimal.
 

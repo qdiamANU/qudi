@@ -39,7 +39,6 @@ class OptimizerLogic(GenericLogic):
     # declare connectors
     confocalscanner1 = Connector(interface='ConfocalScannerInterface')
     fitlogic = Connector(interface='FitLogic')
-    sequencegeneratorlogic = Connector(interface='SequenceGeneratorLogic')
 
     # declare status vars
     _clock_frequency = StatusVar('clock_frequency', 50)
@@ -89,9 +88,6 @@ class OptimizerLogic(GenericLogic):
         """
         self._scanning_device = self.confocalscanner1()
         self._fit_logic = self.fitlogic()
-
-        self._seq_gen_logic = self.sequencegeneratorlogic()
-        self._awg = self._seq_gen_logic.pulsegenerator()
 
         # Reads in the maximal scanning range. The unit of that scan range is micrometer!
         self.x_range = self._scanning_device.get_position_range()[0]
@@ -203,7 +199,6 @@ class OptimizerLogic(GenericLogic):
         """
         # checking if refocus corresponding to crosshair or corresponding to initial_pos
 
-        self._awg.laser_on()
 
         if isinstance(initial_pos, (np.ndarray,)) and initial_pos.size >= 3:
             self._initial_pos_x, self._initial_pos_y, self._initial_pos_z = initial_pos[0:3]

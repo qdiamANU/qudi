@@ -75,16 +75,6 @@ class CrossROI(pg.ROI):
         """
         super().setPos(pos, update=update, finish=finish)
 
-    def getPos(self, pos, update=True, finish=False):
-        """Sets the position of the ROI.
-
-        @param bool update: whether to update the display for this call of setPos
-        @param bool finish: whether to emit sigRegionChangeFinished
-
-        Changed finish from parent class implementation to not disrupt user dragging detection.
-        """
-        return super().pos()
-
 
     def setSize(self, size, update=True, finish=True):
         """
@@ -109,8 +99,6 @@ class CrossROI(pg.ROI):
     def stopUserDrag(self, roi):
         """ROI has stopped being dragged by user"""
         self.userDrag = False
-        #pos = self.getPos()
-        #MagnetGui()._mw.crosshair_position_LineEdit.set(pos)
 
 
     def regionUpdateInfo(self, roi):
@@ -210,43 +198,6 @@ class MagnetGui(GUIBase):
 
         self._create_meas_type_RadioButtons()
 
-        # Set initial position for the crosshair, default is current magnet position
-        current_position = self._magnet_logic.get_pos()
-        ini_pos_x_crosshair = current_position['x']
-        ini_pos_y_crosshair = current_position['y']
-
-        current_2d_array = self._magnet_logic.get_2d_axis_arrays()
-        ini_width_crosshair = [(current_2d_array[0][-1]-current_2d_array[0][0])/len(current_2d_array[0]),
-                               (current_2d_array[1][-1] - current_2d_array[1][0]) / len(current_2d_array[0])]
-
-        self.roi_magnet = CrossROI(
-            # [
-            #     ini_pos_x_crosshair - len(arr01) / 40,
-            #     ini_pos_y_crosshair - len(arr01) / 40
-            # ],
-            [
-                ini_pos_x_crosshair,
-                ini_pos_y_crosshair
-            ],
-            # [len(arr01) / 20, len(arr01) / 20],
-            ini_width_crosshair,
-            pen={'color': "F0F", 'width': 1},
-            removable=True
-        )
-
-        self._mw.alignment_2d_GraphicsView.addItem(self.roi_magnet)
-
-        # create horizontal and vertical line as a crosshair in xy image:
-        self.hline_magnet = CrossLine(pos=self.roi_magnet.pos() + self.roi_magnet.size() * 0.5,
-                                  angle=0, pen={'color': palette.green, 'width': 1})
-        self.vline_magnet = CrossLine(pos=self.roi_magnet.pos() + self.roi_magnet.size() * 0.5,
-                                  angle=90, pen={'color': palette.green, 'width': 1})
-
-        # connect the change of a region with the adjustment of the crosshair:
-        self.roi_magnet.sigRegionChanged.connect(self.hline_magnet.adjust)
-        self.roi_magnet.sigRegionChanged.connect(self.vline_magnet.adjust)
-        self.roi_magnet.sigUserRegionUpdate.connect(self.update_from_roi_magnet)
-
         # Configuring the dock widgets
         # Use the class 'MagnetMainWindow' to create the GUI window
 
@@ -268,6 +219,11 @@ class MagnetGui(GUIBase):
         self.set_default_view_main_window()
         raw_data_2d = self._magnet_logic.get_2d_data_matrix()
 
+        # Set initial position for the crosshair, default is the middle of the
+        # screen:
+        ini_pos_x_crosshair = len(raw_data_2d) / 2
+        ini_pos_y_crosshair = len(raw_data_2d) / 2
+
         # After a movement command, the device should not block the program, at
         # least on the hardware level. That meant that the dll (or whatever
         # protocol is used to access the hardware) can receive a command during
@@ -287,8 +243,6 @@ class MagnetGui(GUIBase):
         for axis_label in curr_pos:
             dspinbox_move_abs_ref = self.get_ref_move_abs_ScienDSpinBox(axis_label)
             dspinbox_move_abs_ref.setValue(curr_pos[axis_label])
-            #slider_move_abs_ref = self.get_ref_move_abs_Slider(axis_label)
-            #slider_move_abs_ref.setValue(curr_pos[axis_label])
 
         self._magnet_logic.sigPosChanged.connect(self.update_pos)
 
@@ -319,12 +273,10 @@ class MagnetGui(GUIBase):
           #  axisOrder='row-major')
 
         axis0, axis1 = self._magnet_logic.get_2d_axis_arrays()
-        step0 = axis0[1]-axis0[0]
-        step1 = axis1[1] - axis1[0]
-        self._2d_alignment_ImageItem.setRect(QtCore.QRectF(axis0[0]-step0/2,
-                                                           axis1[0]-step1/2,
-                                                           axis0[-1]-axis0[0]+step0,
-                                                           axis1[-1]-axis1[0]+step1,))
+        self._2d_alignment_ImageItem.setRect(QtCore.QRectF(axis0[0],
+                                                           axis1[0],
+                                                           axis0[-1]-axis0[0],
+                                                           axis1[-1]-axis1[0],))
 
         self._mw.alignment_2d_GraphicsView.addItem(self._2d_alignment_ImageItem)
 
@@ -343,6 +295,34 @@ class MagnetGui(GUIBase):
         self._mw.alignment_2d_cb_GraphicsView.hideAxis('left')
 
         self._mw.alignment_2d_cb_GraphicsView.addItem(self._2d_alignment_cb)
+        self.roi_magnet = CrossROI(
+            # [
+            #     ini_pos_x_crosshair - len(arr01) / 40,
+            #     ini_pos_y_crosshair - len(arr01) / 40
+            # ],
+            [
+                ini_pos_x_crosshair - axis0[0],
+                ini_pos_y_crosshair - axis1[1]
+            ],
+            # [len(arr01) / 20, len(arr01) / 20],
+            [0.01, 0.01],
+            pen={'color': "F0F", 'width': 1},
+            removable=True
+        )
+
+        self._mw.alignment_2d_GraphicsView.addItem(self.roi_magnet)
+
+        # create horizontal and vertical line as a crosshair in xy image:
+        self.hline_magnet = CrossLine(pos=self.roi_magnet.pos() + self.roi_magnet.size() * 0.5,
+                                  angle=0, pen={'color': palette.green, 'width': 1})
+        self.vline_magnet = CrossLine(pos=self.roi_magnet.pos() + self.roi_magnet.size() * 0.5,
+                                  angle=90, pen={'color': palette.green, 'width': 1})
+
+        # connect the change of a region with the adjustment of the crosshair:
+        self.roi_magnet.sigRegionChanged.connect(self.hline_magnet.adjust)
+        self.roi_magnet.sigRegionChanged.connect(self.vline_magnet.adjust)
+        self.roi_magnet.sigUserRegionUpdate.connect(self.update_from_roi_magnet)
+
 
 
 
@@ -353,7 +333,6 @@ class MagnetGui(GUIBase):
         self._mw.alignment_2d_cb_GraphicsView.setLabel('right',
             self._alignment_2d_cb_label,
             units=self._alignment_2d_cb_units)
-
 
 
         #FIXME: that should be actually set in the logic
@@ -394,7 +373,7 @@ class MagnetGui(GUIBase):
 
         for axis_label in list(constraints):
             self.get_ref_move_rel_ScienDSpinBox(axis_label).setValue(self._magnet_logic.move_rel_dict[axis_label])
-            self.get_ref_move_rel_ScienDSpinBox(axis_label).editingFinished.connect(self.move_rel_para_changed)
+            self.get_ref_move_rel_ScienDSpinBox(axis_label).valueChanged.connect(self.move_rel_para_changed)
             #print('self.get_ref_move_rel_ScienDSpinBox('+axis_label+').valueChanged.connect(lambda: self.move_rel_changed('+axis_label+'))')
 
 
@@ -404,30 +383,30 @@ class MagnetGui(GUIBase):
         self._mw.align_2d_axis0_name_ComboBox.setCurrentIndex(index)
         self._mw.align_2d_axis0_name_ComboBox.currentIndexChanged.connect(self.align_2d_axis0_name_changed)
         self._mw.align_2d_axis0_range_DSpinBox.setValue(self._magnet_logic.align_2d_axis0_range)
-        self._mw.align_2d_axis0_range_DSpinBox.editingFinished.connect(self.align_2d_axis0_range_changed)
-        self._mw.align_2d_axis0_range_DSpinBox.editingFinished.connect(self.update_roi_from_range)
+        self._mw.align_2d_axis0_range_DSpinBox.valueChanged.connect(self.align_2d_axis0_range_changed)
+        self._mw.align_2d_axis0_range_DSpinBox.valueChanged.connect(self.update_roi_from_range)
         self._mw.align_2d_axis0_step_DSpinBox.setValue(self._magnet_logic.align_2d_axis0_step)
-        self._mw.align_2d_axis0_step_DSpinBox.editingFinished.connect(self.align_2d_axis0_step_changed)
+        self._mw.align_2d_axis0_step_DSpinBox.valueChanged.connect(self.align_2d_axis0_step_changed)
         self._mw.align_2d_axis0_vel_DSpinBox.setValue(self._magnet_logic.align_2d_axis0_vel)
-        self._mw.align_2d_axis0_vel_DSpinBox.editingFinished.connect(self.align_2d_axis0_vel_changed)
+        self._mw.align_2d_axis0_vel_DSpinBox.valueChanged.connect(self.align_2d_axis0_vel_changed)
 
         index = self._mw.align_2d_axis1_name_ComboBox.findText(self._magnet_logic.align_2d_axis1_name)
         self._mw.align_2d_axis1_name_ComboBox.setCurrentIndex(index)
         self._mw.align_2d_axis1_name_ComboBox.currentIndexChanged.connect(self.align_2d_axis1_name_changed)
         self._mw.align_2d_axis1_range_DSpinBox.setValue(self._magnet_logic.align_2d_axis1_range)
-        self._mw.align_2d_axis1_range_DSpinBox.editingFinished.connect(self.align_2d_axis1_range_changed)
-        self._mw.align_2d_axis1_range_DSpinBox.editingFinished.connect(self.update_roi_from_range)
+        self._mw.align_2d_axis1_range_DSpinBox.valueChanged.connect(self.align_2d_axis1_range_changed)
+        self._mw.align_2d_axis1_range_DSpinBox.valueChanged.connect(self.update_roi_from_range)
         self._mw.align_2d_axis1_step_DSpinBox.setValue(self._magnet_logic.align_2d_axis1_step)
-        self._mw.align_2d_axis1_step_DSpinBox.editingFinished.connect(self.align_2d_axis1_step_changed)
+        self._mw.align_2d_axis1_step_DSpinBox.valueChanged.connect(self.align_2d_axis1_step_changed)
         self._mw.align_2d_axis1_vel_DSpinBox.setValue(self._magnet_logic.align_2d_axis1_vel)
-        self._mw.align_2d_axis1_vel_DSpinBox.editingFinished.connect(self.align_2d_axis1_vel_changed)
+        self._mw.align_2d_axis1_vel_DSpinBox.valueChanged.connect(self.align_2d_axis1_vel_changed)
 
 
         # for fluorescence alignment:
         self._mw.align_2d_fluorescence_optimize_freq_SpinBox.setValue(self._magnet_logic.get_optimize_pos_freq())
         self._mw.align_2d_fluorescence_integrationtime_DSpinBox.setValue(self._magnet_logic.get_fluorescence_integration_time())
-        self._mw.align_2d_fluorescence_optimize_freq_SpinBox.editingFinished.connect(self.optimize_pos_freq_changed)
-        self._mw.align_2d_fluorescence_integrationtime_DSpinBox.editingFinished.connect(self.fluorescence_integration_time_changed)
+        self._mw.align_2d_fluorescence_optimize_freq_SpinBox.valueChanged.connect(self.optimize_pos_freq_changed)
+        self._mw.align_2d_fluorescence_integrationtime_DSpinBox.valueChanged.connect(self.fluorescence_integration_time_changed)
 
         # for odmr alignment:
         self._mw.meas_type_fluorescence_RadioButton.toggled.connect(self.set_measurement_type)
@@ -465,7 +444,7 @@ class MagnetGui(GUIBase):
 
 
         # for single shot alignment of a nuclear spin:
-        self._mw.align_2d_nuclear_rabi_periode_DSpinBox.setValue(self._magnet_logic.nuclear_2d_rabi_period)
+        self._mw.align_2d_nuclear_rabi_periode_DSpinBox.setValue(self._magnet_logic.nuclear_2d_rabi_periode)
         self._mw.align_2d_nuclear_mw_freq_DSpinBox.setValue(self._magnet_logic.nuclear_2d_mw_freq)
         self._mw.align_2d_nuclear_mw_channel_SpinBox.setValue(self._magnet_logic.nuclear_2d_mw_channel)
         self._mw.align_2d_nuclear_mw_power_DSpinBox.setValue(self._magnet_logic.nuclear_2d_mw_power)
@@ -1100,7 +1079,6 @@ class MagnetGui(GUIBase):
 
         @return float: Passed range
         """
-        print('align_2d_axis0_range_changed')
         range = self._mw.align_2d_axis0_range_DSpinBox.value()
         self._magnet_logic.set_align_2d_axis0_range(range)
         return range
@@ -1218,7 +1196,6 @@ class MagnetGui(GUIBase):
             #dspinbox_move_abs_ref = self.get_ref_move_abs_ScienDSpinBox(axis_label)
             #dspinbox_move_abs_ref.setValue(curr_pos[axis_label])
 
-        self.roi_magnet.setPos([curr_pos['x'], curr_pos['y']])
         return curr_pos
 
 
@@ -1300,7 +1277,7 @@ class MagnetGui(GUIBase):
             self._magnet_logic.odmr_2d_single_trans = self._mw.odmr_2d_single_trans_CheckBox.isChecked()
 
             # nuclear ops:
-            self._magnet_logic.nuclear_2d_rabi_period = self._mw.align_2d_nuclear_rabi_periode_DSpinBox.value()*1e-9
+            self._magnet_logic.nuclear_2d_rabi_periode = self._mw.align_2d_nuclear_rabi_periode_DSpinBox.value()*1e-9
             self._magnet_logic.nuclear_2d_mw_freq = self._mw.align_2d_nuclear_mw_freq_DSpinBox.value()*1e6
             self._magnet_logic.nuclear_2d_mw_channel = self._mw.align_2d_nuclear_mw_channel_SpinBox.value()
             self._magnet_logic.nuclear_2d_mw_power = self._mw.align_2d_nuclear_mw_power_DSpinBox.value()
@@ -1375,20 +1352,20 @@ class MagnetGui(GUIBase):
         """ Whenever a new axis name was chosen in axis0 config, the limits of the
             viewboxes will be adjusted.
         """
-        print('_update_limits_axis0')
+
         constraints = self._magnet_logic.get_hardware_constraints()
         axis0_name = self._mw.align_2d_axis0_name_ComboBox.currentText()
 
         # set the range constraints:
         self._mw.align_2d_axis0_range_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis0_range_DSpinBox.setMaximum(constraints[axis0_name]['pos_max']-constraints[axis0_name]['pos_min'])
+        self._mw.align_2d_axis0_range_DSpinBox.setMaximum(constraints[axis0_name]['pos_max'])
         self._mw.align_2d_axis0_range_DSpinBox.setSingleStep(constraints[axis0_name]['pos_step'],
                                                              dynamic_stepping=False)
         self._mw.align_2d_axis0_range_DSpinBox.setSuffix(constraints[axis0_name]['unit'])
 
         # set the step constraints:
         self._mw.align_2d_axis0_step_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis0_step_DSpinBox.setMaximum(constraints[axis0_name]['pos_max']-constraints[axis0_name]['pos_min'])
+        self._mw.align_2d_axis0_step_DSpinBox.setMaximum(constraints[axis0_name]['pos_max'])
         self._mw.align_2d_axis0_step_DSpinBox.setSingleStep(constraints[axis0_name]['pos_step'],
                                                             dynamic_stepping=False)
         self._mw.align_2d_axis0_step_DSpinBox.setSuffix(constraints[axis0_name]['unit'])
@@ -1409,13 +1386,13 @@ class MagnetGui(GUIBase):
         axis1_name = self._mw.align_2d_axis1_name_ComboBox.currentText()
 
         self._mw.align_2d_axis1_range_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis1_range_DSpinBox.setMaximum(constraints[axis1_name]['pos_max']-constraints[axis1_name]['pos_min'])
+        self._mw.align_2d_axis1_range_DSpinBox.setMaximum(constraints[axis1_name]['pos_max'])
         self._mw.align_2d_axis1_range_DSpinBox.setSingleStep(constraints[axis1_name]['pos_step'],
                                                              dynamic_stepping=False)
         self._mw.align_2d_axis1_range_DSpinBox.setSuffix(constraints[axis1_name]['unit'])
 
         self._mw.align_2d_axis1_step_DSpinBox.setMinimum(0)
-        self._mw.align_2d_axis1_step_DSpinBox.setMaximum(constraints[axis1_name]['pos_max']-constraints[axis1_name]['pos_min'])
+        self._mw.align_2d_axis1_step_DSpinBox.setMaximum(constraints[axis1_name]['pos_max'])
         self._mw.align_2d_axis1_step_DSpinBox.setSingleStep(constraints[axis1_name]['pos_step'],
                                                             dynamic_stepping=False)
         self._mw.align_2d_axis1_step_DSpinBox.setSuffix(constraints[axis1_name]['unit'])
@@ -1453,17 +1430,10 @@ class MagnetGui(GUIBase):
 
         axis0_array, axis1_array = self._magnet_logic.get_2d_axis_arrays()
 
-        step0 = axis0_array[1] - axis0_array[0]
-        step1 = axis1_array[1] - axis1_array[0]
-        self._2d_alignment_ImageItem.setRect(QtCore.QRectF(axis0_array[0] - step0 / 2,
-                                                           axis1_array[0] - step1 / 2,
-                                                           axis0_array[-1] - axis0_array[0] + step0,
-                                                           axis1_array[-1] - axis1_array[0] + step1, ))
-
-        # self._2d_alignment_ImageItem.setRect(QtCore.QRectF(axis0_array[0],
-        #                                                    axis1_array[0],
-        #                                                    axis0_array[-1]-axis0_array[0],
-        #                                                    axis1_array[-1]-axis1_array[0],))
+        self._2d_alignment_ImageItem.setRect(QtCore.QRectF(axis0_array[0],
+                                                           axis1_array[0],
+                                                           axis0_array[-1]-axis0_array[0],
+                                                           axis1_array[-1]-axis1_array[0],))
 
         self._mw.alignment_2d_GraphicsView.setLabel('bottom', 'Absolute Position, Axis0: ' + axis0_name, units=axis0_unit)
         self._mw.alignment_2d_GraphicsView.setLabel('left', 'Absolute Position, Axis1: '+ axis1_name, units=axis1_unit)
@@ -1638,7 +1608,6 @@ class MagnetGui(GUIBase):
         User changed scan range and therefore the rectangular should be adjusted
         @return:
         """
-        print('update_roi_from_range')
         # first get the size of axis0 and axis1 range
         x_range = self._mw.align_2d_axis0_range_DSpinBox.value()
         y_range = self._mw.align_2d_axis0_range_DSpinBox.value()
@@ -1665,7 +1634,6 @@ class MagnetGui(GUIBase):
 
         @return float: Range to update
          """
-        print('')
         self._mw.align_2d_axis0_range_DSpinBox.blockSignals(True)
         self._mw.align_2d_axis0_range_DSpinBox.setValue(range)
         self._mw.align_2d_axis0_range_DSpinBox.blockSignals(False)
