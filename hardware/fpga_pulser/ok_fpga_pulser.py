@@ -30,7 +30,7 @@ from collections import OrderedDict
 
 
 class OkFpgaPulser(Base, PulserInterface):
-    """Methods to control Pulse Generator running on OK FPGA.
+    """ Methods to control Pulse Generator running on OK FPGA.
 
     Chan   PIN
     ----------
@@ -42,7 +42,16 @@ class OkFpgaPulser(Base, PulserInterface):
     Ch6    B8
     Ch7    D9
     Ch8    C9
+
+    Example config for copy-paste:
+
+    fpga_pulser_ok:
+        module.Class: 'fpga_fastcounter.fast_pulser_qo.OkFpgaPulser'
+        fpga_serial: '143400058N'
+        fpga_type: 'XEM6310_LX150'
+
     """
+
     _modclass = 'pulserinterface'
     _modtype = 'hardware'
 
@@ -52,7 +61,7 @@ class OkFpgaPulser(Base, PulserInterface):
     __current_waveform = StatusVar(name='current_waveform', default=np.zeros(32, dtype='uint8'))
     __current_waveform_name = StatusVar(name='current_waveform_name', default='')
     __sample_rate = StatusVar(name='sample_rate', default=950e6)
- 
+
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
@@ -172,14 +181,14 @@ class OkFpgaPulser(Base, PulserInterface):
         For a device without mass memory this will make the waveform/pattern that has been
         previously written with self.write_waveform ready to play.
 
-        @param load_dict:  dict|list, a dictionary with keys being one of the available channel
-                                      index and values being the name of the already written
-                                      waveform to load into the channel.
-                                      Examples:   {1: rabi_ch1, 2: rabi_ch2} or
-                                                  {1: rabi_ch2, 2: rabi_ch1}
-                                      If just a list of waveform names if given, the channel
-                                      association will be invoked from the channel
-                                      suffix '_ch1', '_ch2' etc.
+        @param dict|list load_dict: a dictionary with keys being one of the available channel
+                                    index and values being the name of the already written
+                                    waveform to load into the channel.
+                                    Examples:   {1: rabi_ch1, 2: rabi_ch2} or
+                                                {1: rabi_ch2, 2: rabi_ch1}
+                                    If just a list of waveform names if given, the channel
+                                    association will be invoked from the channel
+                                    suffix '_ch1', '_ch2' etc.
 
         @return dict: Dictionary containing the actually loaded waveforms per channel.
         """
@@ -257,14 +266,14 @@ class OkFpgaPulser(Base, PulserInterface):
         For a device without mass memory this will make the waveform/pattern that has been
         previously written with self.write_waveform ready to play.
 
-        @param sequence_name:  dict|list, a dictionary with keys being one of the available channel
-                                      index and values being the name of the already written
-                                      waveform to load into the channel.
-                                      Examples:   {1: rabi_ch1, 2: rabi_ch2} or
-                                                  {1: rabi_ch2, 2: rabi_ch1}
-                                      If just a list of waveform names if given, the channel
-                                      association will be invoked from the channel
-                                      suffix '_ch1', '_ch2' etc.
+        @param dict|list sequence_name: a dictionary with keys being one of the available channel
+                                        index and values being the name of the already written
+                                        waveform to load into the channel.
+                                        Examples:   {1: rabi_ch1, 2: rabi_ch2} or
+                                                    {1: rabi_ch2, 2: rabi_ch1}
+                                        If just a list of waveform names if given, the channel
+                                        association will be invoked from the channel
+                                        suffix '_ch1', '_ch2' etc.
 
         @return dict: Dictionary containing the actually loaded waveforms per channel.
         """
@@ -612,8 +621,8 @@ class OkFpgaPulser(Base, PulserInterface):
         """
         Write a new sequence on the device memory.
 
-        @param name: str, the name of the waveform to be created/append to
-        @param sequence_parameters: dict, dictionary containing the parameters for a sequence
+        @param str name: the name of the waveform to be created/append to
+        @param dict sequence_parameters: dictionary containing the parameters for a sequence
 
         @return: int, number of sequence steps written (-1 indicates failed process)
         """
@@ -688,7 +697,7 @@ class OkFpgaPulser(Base, PulserInterface):
     def write(self, command):
         """ Sends a command string to the device.
 
-        @param string command: string containing the command
+        @param str command: string containing the command
 
         @return int: error code (0:OK, -1:error)
         """
@@ -701,7 +710,7 @@ class OkFpgaPulser(Base, PulserInterface):
     def query(self, question=None):
         """ Asks the device a 'question' and receive and return an answer from it.
 
-        @param string question: string containing the command
+        @param str question: string containing the command
 
         @return string: the answer of the device to the 'question' in a string
         """

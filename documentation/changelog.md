@@ -4,7 +4,10 @@
 
 Changes/New features:
 
-* Improved scientific SpinBox validators to allow for more intuitive keyboard input
+* Save_logic now expands environment variables in the configured data path (e.g. $HOME under Unix or $HOMEPATH under Windows)
+* Added command line argument --logdir to specify the path to the logging directory
+* Added the keyword "labels" to the "measurement_information" dict container in predefined methods.
+This can be used to specify the axis labels for the measurement (excluding units)
 * All modules use new connector style where feasible.
 * Bug fix for POI manager was losing active POI when moving crosshair in confocal
 * Added a how-to-get-started guide to the documentation
@@ -20,11 +23,19 @@ Changes/New features:
 * Added fitting to the spectrometer
 * Microwave interface passes trigger timing to microwave source, needs hardware module adjustments for not-in-tree modules
 * Bug fixes and support for SMD12 laser controller
+* For SMIQs added config options to additionally limit frequency and power. Added constraint for SMQ06B model.
+* Added live OMDR functionality to only calculate the average signal over a limited amount of scanned lines
 * New hardware file for Microwave source - Anritsu MG3691C has been added.
 * New hardware file for Microwave source - WindFreak Technologies SynthHDPro 54MHz-13GHz source
+* New hardware file for AWG - Keysight M3202A 1GS/s 4-channel PXIe AWG
 * Add separate conda environments for windows 7 32bit, windows 7 64bit, and windows 10 64bit. 
 * Extend the windows installation procedure of the conda environment for qudi. The conda environments is selected automatically for the correct windows version and the appropriate environment file is taken.
 * Rewrite the documentation for required python packages for Qudi and mention instead the installation procedure, how to create manually a python environment for qudi.
+* Correct the low level implementation for the PulseBlasterESR-PRO.
+* Implement the pulser interface for PulseBlasterESR-PRO devices.
+* Implement the switch interface for PulseBlasterESR-PRO devices.
+* Add possibility to set instruction delays in the config for PulseBlasterESR-PRO sequence generation.
+* Add a copy-paste config option to the docstrings of all current qudi hardware modules.
 * **Pulsed 3.0:**\
     _A truckload of changes regarding all pulsed measurement related modules_
     * Bug fix for waveform generation larger than ~2 GSamples
@@ -107,7 +118,11 @@ Changes/New features:
 	  and falling bins in the laser channel which indicate the positions of the laser pulses in 
 	  the ungated trace. For fine-tuning additional delays (for example from AOMs) can be taken 
 	  into account. This method speeds up laser extractions from ungated timetraced by a lot.
-    
+	* Improved pulsed measurement textfile and plot layout for saved data
+    * Added buttons to delete all saved PulseBlock/PulseBlockEnsemble/PulseSequence objects at once.
+    * Introduced separate fit tools for each of the two plots in the pulsed analysis tab
+    * Automatically clears fit data when changing the alternative plot type or starting a new 
+      measurement.
 
 Config changes:
 * **All** pulsed related logic module paths need to be changed because they have been moved in the logic
