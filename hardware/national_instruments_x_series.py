@@ -683,7 +683,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                               and upper limit. The unit of the scan range is
                               meters.
         """
-        print('NI card: get_position_range = {}'.format(self._scanner_position_ranges))
+        # print('NI card: get_position_range = {}'.format(self._scanner_position_ranges))
         return self._scanner_position_ranges
 
     def set_position_range(self, myrange=None):
