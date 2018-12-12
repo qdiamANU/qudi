@@ -226,7 +226,7 @@ class MicrowaveVaunix(Base, MicrowaveInterface):
         actual_freq = self.get_frequency()
         actual_power = self.get_power()
 
-        print('set_cw: {}, {}, {}'.format(actual_freq, actual_power, mode))
+        # print('vaunix set_cw: {}, {}, {}'.format(actual_freq, actual_power, mode))
         return actual_freq, actual_power, mode
 
     def list_on(self):
@@ -311,7 +311,7 @@ class MicrowaveVaunix(Base, MicrowaveInterface):
         frequency switching speed.
         """
         self.log.warning('Trigger not available for Vaunix microwave generator.')
-        return -1
+        return 0
 
     def get_limits(self):
         """ Return the device-specific limits in a nested dictionary.

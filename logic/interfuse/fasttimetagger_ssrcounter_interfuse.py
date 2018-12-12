@@ -72,6 +72,9 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         self.charge_threshold = 5
         self.subtract_mean = True
 
+        self.counts_per_readout = 1
+        self.countlength = 1
+
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
         """
@@ -90,20 +93,23 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
 
 
     def configure_ssr_counter(self, counts_per_readout, countlength):
-        """ Moves stage in given direction (relative movement)
+        """ Configuration of the fast counter.
 
-        @param dict param_dict: dictionary, which passes all the relevant
-                                parameters, which should be changed. Usage:
-                                 {'axis_label': <the-abs-pos-value>}.
-                                 'axis_label' must correspond to a label given
-                                 to one of the axis.
+        from ssr_counter interface, may be out of date:
+        @param int counts_per_readout: optional, number of readouts for one measurement
+        @param int cycles: countlength, number of measurements
 
-        A smart idea would be to ask the position after the movement.
-        @return dict pos: dictionary with changed axis and positions
+        @return tuple(binwidth_s, record_length_s, preset, cycles, sequences ):
+                    binwidth_s: float the actual set binwidth in seconds
+                    gate_length_s: the actual record length in seconds
+                    preset: number of readout per measurement
+                    cycles: number of measurements
+                    sequences: number of sequences
         """
-        self._fastcounter.configure_ssr_counter(counts_per_readout, countlength)
-        return
-
+        # self._fastcounter.configure_ssr_counter(counts_per_readout, countlength)
+        # self._fastcounter.configure(bin_width_s, record_length_s, number_of_gates=0)
+        self.counts_per_readout = counts_per_readout
+        self.countlength = countlength
 
     def get_status(self):
         """ Get the status of the position
@@ -118,8 +124,6 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         """
         status = self._fastcounter.get_status()
         return status
-
-
 
     def start_measure(self):
         """ Start the fast counter. """
@@ -150,9 +154,6 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         status = self._fastcounter.continue_measure()
         return status
 
-
-
-
     def get_data_trace(self, normalized):
         """ Polls the current timetrace data from the fastcounter.
 
@@ -161,7 +162,10 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         """
 
         raw_data = netobtain(self._fastcounter.get_data_trace())
-
+        print('netobtain raw_data = {}, type = {}'.format(raw_data, type(raw_data)))
+        #LOCALFIX Andrew
+        raw_data = self._fastcounter.get_data_trace()
+        print('raw_data = {}, type = {}'.format(raw_data, type(raw_data)))
         # remove all zeros at the end
         # first find all rows with only zeros
         data_size = np.where(~raw_data.any(axis=1))[0]
@@ -181,18 +185,22 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
 
         if not self.charge_state_selection:
             if normalized:
-                print('normalised')
+                print('normalised, not self.charge_state_selection')
                 # FIXME: here it is important that one laser pulse is on one side respectively
                 data_width = self.raw_data.shape[1]
+                print('data_width = {}'.format(data_width))
                 raw_data1 = self.raw_data[:, :int(data_width / 2)]
                 raw_data2 = self.raw_data[:, int(data_width / 2):]
+                print('raw_data1 = {}'.format(raw_data1))
                 return_dict1 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data1)
+                print('return_dict1 = {}'.format(return_dict1))
                 laser1 = return_dict1['laser_counts_arr']
-                print('laser1 = ' + laser1)
+                print('laser1 = {}'.format(laser1))
                 return_dict2 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data2)
                 laser2 = return_dict2['laser_counts_arr']
+                print('laser2 = {}'.format(laser1))
                 self.laser_data = [laser1, laser2]
-                print('laser data = ' + self.laser_data)
+                # print('laser data = ' + self.laser_data)
                 if laser1.any() and laser2.any():
                     tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
                     tmp_signal2, tmp_error2 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser2)
@@ -203,7 +211,7 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
                 print('not normalised')
                 return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(self.raw_data)
                 self.laser_data = return_dict['laser_counts_arr']
-                print('laser data = ' + str(self.laser_data))
+                # print('laser data = ' + str(self.laser_data))
                 # analyze pulses and get data points for signal array.
                 if self.laser_data.any():
                     tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
@@ -227,7 +235,7 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             # find all the entries which are below the threshold
             incorrect_charge = np.where(charge_signal < self.charge_threshold)[0]
             if normalized:
-                print('normalised')
+                # print('normalised')
                 # FIXME: here it is important that one laser pulse is on one side respectively
                 data_width = ssr_raw.shape[1]
                 raw_data1 = ssr_raw[:, :int(data_width / 2)]

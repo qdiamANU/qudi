@@ -345,7 +345,13 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
           @return MicrowaveLimits: Microwave limits object
 
         """
+
+        # Microwave LO limits:
         limits = self._microwave_device.get_limits()
+
+        # AWG limits:
+        limits.min_frequency = 1  # unit: Hz
+        limits.max_frequency = 400e6  # unit: Hz
         limits.list_maxentries = self._awg_device.get_constraints().sequence_num.max
         limits.supported_modes = (MicrowaveMode.CW, MicrowaveMode.SWEEP, MicrowaveMode.LIST)
         return limits

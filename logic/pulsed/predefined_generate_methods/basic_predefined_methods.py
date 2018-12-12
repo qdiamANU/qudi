@@ -330,6 +330,8 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         created_sequences = list()
 
         # get tau array for measurement ticks
+        # fixme: this creates a string that causes an error when creating tau_element
+        # the issue is not solved by changing to tau_array = tau_list
         tau_array = [n.strip() for n in tau_list]
 
         waiting_element = self._get_idle_element(length=self.wait_time,
@@ -360,6 +362,8 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
 
         # Create block and append to created_blocks list
         ramsey_block = PulseBlock(name=name)
+
+
         for tau in tau_array:
             tau_element = self._get_idle_element(length=tau, increment=0)
             ramsey_block.append(pihalf_element)

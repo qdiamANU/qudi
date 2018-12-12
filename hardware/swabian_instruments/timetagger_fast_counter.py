@@ -258,10 +258,22 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
 ################################### Methods for SSR interface ####################################
 
     def configure_ssr_counter(self, counts_per_readout=None, countlength=None):
+        """ Configuration of the fast counter.
 
-        """
         necessary for some fast counters. Does not appear necessary for TimeTagger
+
+                @param int counts_per_readout: optional, number of readouts for one measurement
+                @param int cycles: countlength, number of measurements
+
+
+                @return tuple(binwidth_s, record_length_s, preset, cycles, sequences ):
+                            binwidth_s: float the actual set binwidth in seconds
+                            gate_length_s: the actual record length in seconds
+                            preset: number of readout per measurement
+                            cycles: number of measurements
+                            sequences: number of sequences
         """
+
         pass
 
     def change_sweep_mode(self, gated=True):

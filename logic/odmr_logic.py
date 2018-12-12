@@ -22,6 +22,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 from qtpy import QtCore
 from collections import OrderedDict
+from core.module import Connector
 from interface.microwave_interface import MicrowaveMode
 from interface.microwave_interface import TriggerEdge
 import numpy as np
@@ -69,6 +70,8 @@ class ODMRLogic(GenericLogic):
 
     # Internal signals
     sigNextLine = QtCore.Signal()
+    sigStartOdmrScan = QtCore.Signal()
+    sigStopOdmrScan = QtCore.Signal()
 
     # Update signals, e.g. for GUI module
     sigParameterUpdated = QtCore.Signal(dict)
@@ -133,6 +136,10 @@ class ODMRLogic(GenericLogic):
 
         # Connect signals
         self.sigNextLine.connect(self._scan_odmr_line, QtCore.Qt.QueuedConnection)
+
+        self.sigStartOdmrScan.connect(self.start_odmr_scan, QtCore.Qt.QueuedConnection)
+        self.sigStopOdmrScan.connect(self.stop_odmr_scan, QtCore.Qt.QueuedConnection)
+
         return
 
     def on_deactivate(self):
@@ -154,6 +161,9 @@ class ODMRLogic(GenericLogic):
         self._mw_device.off()
         # Disconnect signals
         self.sigNextLine.disconnect()
+
+        self.sigStartOdmrScan.disconnect()
+        self.sigStopOdmrScan.disconnect()
 
     @fc.constructor
     def sv_set_fits(self, val):
@@ -346,7 +356,6 @@ class ODMRLogic(GenericLogic):
         @return float, float, float, float: current start_freq, current stop_freq,
                                             current freq_step, current power
         """
-        # print('set_sweep_parameters')
         limits = self.get_hw_constraints()
         if self.module_state() != 'locked':
             if isinstance(start, (int, float)):
@@ -400,7 +409,6 @@ class ODMRLogic(GenericLogic):
 
         @return str, bool: active mode ['cw', 'list', 'sweep'], is_running
         """
-
         limits = self.get_hw_constraints()
         if self.mw_scanmode == MicrowaveMode.LIST:
             if np.abs(self.mw_stop - self.mw_start) / self.mw_step >= limits.list_maxentries:
@@ -414,9 +422,7 @@ class ODMRLogic(GenericLogic):
                                  'Lowering resolution to fit the maximum length.')
                 self.mw_step = np.abs(self.mw_stop - self.mw_start) / (limits.list_maxentries - 1)
                 self.sigParameterUpdated.emit({'mw_step': self.mw_step})
-
         if self.mw_scanmode == MicrowaveMode.SWEEP:
-
             sweep_return = self._mw_device.set_sweep(
                 self.mw_start, self.mw_stop, self.mw_step, self.sweep_mw_power)
             self.mw_start, self.mw_stop, self.mw_step, self.sweep_mw_power, mode = sweep_return
@@ -948,6 +954,9 @@ class ODMRLogic(GenericLogic):
         @return
         """
         # print('perform_odmr_measurement')
+
+        print('starting odmr measurement')
+
         timeout = 30
         start_time = time.time()
         while self.module_state() != 'idle':
@@ -958,19 +967,32 @@ class ODMRLogic(GenericLogic):
                                'and 30 sec timeout has been reached.')
                 return {}
 
+        # importing stuff to get the sigStart/StopOdmrScan.emit() to work
+        #self._odmr_logic = self.odmrlogic1()
+
+
         # set all relevant parameter:
         self.set_sweep_parameters(freq_start, freq_stop, freq_step, power)
         self.set_runtime(runtime)
 
+        time.sleep(1)
+        # instead of below two lines, toggle
         # start the scan
-        self.start_odmr_scan()
+        # GUI file calls self.sigStartOdmrScan.emit() where sigStartOdmrScan = QtCore.Signal(), but I think this is a GUI approach to the problem
+
+        self.sigStartOdmrScan.emit()
 
         # wait until the scan has started
         while self.module_state() != 'locked':
             time.sleep(1)
+            # print('Scan has started')
+
+        #self.sigStopOdmrScan.emit()
+
         # wait until the scan has finished
         while self.module_state() == 'locked':
             time.sleep(1)
+            # print('Scan has finished')
 
         # Perform fit if requested
         if fit_function != 'No Fit':
@@ -983,4 +1005,8 @@ class ODMRLogic(GenericLogic):
         if save_after_meas:
             self.save_odmr_data(tag=name_tag)
         print(fit_params)
+
+
+        #toggle off somewhere here or above
+
         return self.odmr_plot_x, self.odmr_plot_y, fit_params

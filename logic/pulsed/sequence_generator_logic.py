@@ -1375,7 +1375,7 @@ class SequenceGeneratorLogic(GenericLogic):
         TODO: Add parameters that are stored
         """
 
-        print('\nsample_pulse_block_ensemble')
+        # print('\nsample_pulse_block_ensemble')
         # Get PulseBlockEnsemble from saved ensembles if string has been passed as argument
         if isinstance(ensemble, str):
             ensemble = self.get_ensemble(ensemble)
@@ -1496,7 +1496,7 @@ class SequenceGeneratorLogic(GenericLogic):
                             # Set first/last chunk flags
                             is_first_chunk = array_write_index == processed_samples
                             is_last_chunk = processed_samples == ensemble_info['number_of_samples']
-                            print('name={}'.format(waveform_name))
+                            # print('name={}'.format(waveform_name))
                             # print('analog_samples ={}'.format(analog_samples))
                             # print('digital_samples ={},'.format(digital_samples))
                             # print('is_first_chunk={}, is_last_chunk={}'.format(is_first_chunk,is_last_chunk))

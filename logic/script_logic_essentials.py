@@ -19,12 +19,15 @@ try:
 except NameError:
     manager.startModule('logic', 'optimizerlogic')
 try:
+    odmrlogic_lowfield
+except NameError:
+    manager.startModule('logic', 'odmrlogic_lowfield')
+try:
     odmrlogic_highfield
 except NameError:
     manager.startModule('logic', 'odmrlogic_highfield')
 
-# LOCALFIX Prithvi: just putting static value for cause_an_error
-# cause_an_error = -1
+
 ############################################ Static hardware parameters ################################################
 
 # static hardware parameters:
@@ -38,10 +41,10 @@ setup['laser_delay'] = 510e-9
 setup['laser_safety'] = 200e-9
 
 if setup['gated']:
-    setup['sync_channel'] = 'd_ch1'
+    setup['sync_channel'] = 'd_ch2'
     setup['gate_channel'] = 'd_ch3'
 else:
-    setup['sync_channel'] = 'd_ch1'
+    setup['sync_channel'] = 'd_ch2'
     setup['gate_channel'] = 'd_ch3'
 
 setup['laser_channel'] = 'd_ch1'
@@ -71,8 +74,6 @@ setup['analysis_interval'] = 3
 setup['use_ext_microwave'] = False
 setup['ext_microwave_amplitude'] = -30
 setup['ext_microwave_frequency'] = 1
-
-
 
 ############################## Standard function for conventional and SSR measurements #################################
 
@@ -545,15 +546,11 @@ def optimize_poi(poi):
 
 def laser_on(pulser_on=True):
     # Turns on the laser. If pulser_on the pulser is not stopped
-    #pulsedmasterlogic.toggle_pulse_generator(pulser_on)
-    #nicard.digital_channel_switch(setup['optimize_channel'], mode=True)
     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_on(setup['laser_channel'])
     return
 
 def laser_off(pulser_on=False):
-    # Switches off the laser trigger from nicard
-    #pulsedmasterlogic.toggle_pulse_generator(pulser_on)
-    #nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
+    # Switches off the laser trigger from awg
     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_off()
     return
 
@@ -570,7 +567,7 @@ def _reload_measurement_waveform(name):
 
 ######################################## Microwave frequency optimize functions #########################################
 
-# LOCALFIX Prithvi: I dint think this is any good. Lets ignore it for now
+
 
 def optimize_frequency_during_experiment(opt_dict, qm_dict):
     # FIXME: Add the moment only working for conventional measurements

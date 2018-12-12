@@ -406,18 +406,19 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         # analogue channel sanity checks and adjustment to 16-bit format:
         for key in analog_samples:
-            # perform sanity check on waveform amplitude: should be bounded by +/-1
-            if max(analog_samples[key]) > 1 or min(analog_samples[key]) < -1:
-                self.log.error('Cannot write waveform: waveform amplitude ({} to {}) for {} is out of bounds (+/-1)'.
-                               format(min(analog_samples[key]), max(analog_samples[key]), key))
-                return -1, current_waveform_name
-
             # perform sanity check on number of samples: should match total_number_of_samples
             len_samples = len(analog_samples[key])
             if len_samples != total_number_of_samples:
                 self.log.error(
                     'Cannot write waveform: number of samples for {} ({}) does not match expected value ({})'.
                     format(key, len_samples, total_number_of_samples))
+                return -1, current_waveform_name
+
+            # perform sanity check on waveform amplitude: should be bounded by +/-1
+            if max(analog_samples[key]) > 1 or min(analog_samples[key]) < -1:
+                self.log.error(
+                    'Cannot write waveform: waveform amplitude ({} to {}) for {} is out of bounds (+/-1)'.
+                    format(min(analog_samples[key]), max(analog_samples[key]), key))
                 return -1, current_waveform_name
 
             # adjust analogue amplitude to match expected 16-bit input for Spectrum AWG
@@ -552,20 +553,18 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                     llNext = 0
                     if param_dict['wait_for'] == 'ON':
                         llCondition = SPCSEQ_ENDLOOPONTRIG
-                        # llLoop=1
                     else:
                         #llCondition = SPCSEQ_END  # End of sequence
                         llCondition = SPCSEQ_ENDLOOPALWAYS  # Unconditionally leave current step -> continuously loop sequence
                 else:
                     if param_dict['go_to'] < 1:
                         llNext = i+1
-                        print('adjusting llNext')
+                        # print('adjusting llNext')
                     else:
                         llNext = param_dict['go_to']  # Next step
-                        print('llNext = {}, type = {}'.format(llNext, type(llNext)))
+                        # print('llNext = {}, type = {}'.format(llNext, type(llNext)))
                     if param_dict['wait_for'] == 'ON':
                         llCondition = SPCSEQ_ENDLOOPONTRIG
-                        # llLoop = 1
                     else:
                         llCondition = SPCSEQ_ENDLOOPALWAYS  # Unconditionally leave current step
                 llValue = int64((llCondition << 32) | (llLoop << 32) | (llNext << 16) | (llSegment))

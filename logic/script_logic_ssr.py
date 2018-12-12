@@ -6,6 +6,8 @@ try:
 except NameError:
     manager.startModule('logic', 'singleshotlogic')
 
+awg = sequencegeneratorlogic.pulsegenerator()
+
 ####################################### just a SSR readout, no real experiment ###########################
 
 def add_just_ssr_info(experiment, qm_dict):
@@ -15,7 +17,6 @@ def add_just_ssr_info(experiment, qm_dict):
     # for key in ssr:
     for key in ssr.keys():
         if key not in qm_dict.keys():
-            # qm_dict[key] = ssr[key]
             qm_dict[key] = ssr[key]
     return qm_dict
 
@@ -29,6 +30,7 @@ def add_ssr_info(experiment, qm_dict):
     return qm_dict
 
 def just_ssr_measurement(qm_dict):
+    print('qm_dict[sequence_length] = {}'.format(qm_dict['sequence_length']))
     qm_dict['sequence_length'] = qm_dict['sequence_length'] * qm_dict['counts_per_readout']
     set_up_ssr_measurement(qm_dict)
     #time.sleep(2)
@@ -46,7 +48,12 @@ def set_up_ssr_measurement(qm_dict):
     if 'num_of_tries' in qm_dict:
         qm_dict['measurement_time'] = qm_dict['sequence_length'] * qm_dict['num_of_tries']
     if not 'countlength' in qm_dict:
-        qm_dict['countlength'] = 1.03*int(qm_dict['measurement_time']/qm_dict['sequence_length'])
+        qm_dict['countlength'] = int(1.03*qm_dict['measurement_time']/qm_dict['sequence_length']) # LOCALFIX Andrew: moved 1.03 inside int()
+        # qm_dict['countlength'] = 1.03 * int(qm_dict['measurement_time'] / qm_dict['sequence_length'])
+
+    print('qm_dict[counts_per_readout] = {}'.format(qm_dict['counts_per_readout']))
+    print('qm_dict[countlength] = {}'.format(qm_dict['countlength']))
+    print('qm_dict[delay_length] = {}'.format(qm_dict['delay_length']))
     if 'ssr_normalise' in qm_dict and qm_dict['ssr_normalise']:
         singleshotlogic.set_ssr_counter_settings({'counts_per_readout': 2*qm_dict['counts_per_readout'],
                                                   'countlength': qm_dict['countlength']})
@@ -101,16 +108,17 @@ def ssr_guide(qm_dict, length, replace):
     param = sequencegeneratorlogic.get_sequence(qm_dict['name']).sampling_information['step_parameters']
     sequence_parameter_list = param[0:length]
     sequence_length = 0.0
+    # print('ensemble_list = {}'.format(ensemble_list))
+    # print('ensemble_list[0] = {}'.format(ensemble_list[0]))
+    # print('ensemble_list[0][repetitions] = {}'.format(ensemble_list[0]['repetitions']))
     # compute the length of the sequence for the first data point
-    print('ensemble_list = {}'.format(ensemble_list))
-    print('ensemble_list[0] = {}'.format(ensemble_list[0]))
-    print('ensemble_list[0][repetitions] = {}'.format(ensemble_list[0]['repetitions']))
     for ii in range(length):
         curr_ensemble = sequencegeneratorlogic.get_ensemble(ensemble_list[ii]['ensemble'])
         sequence_length += \
             pulsedmasterlogic.get_ensemble_info(curr_ensemble)[0] * (ensemble_list[ii]['repetitions']+1)
     singleshotlogic.set_sequence_length(sequence_length)
-    # make sequence continous
+    print('sequence_length = {}'.format(sequence_length))
+    # make sequence continuous
     sequence_parameter_list[-1][1]['go_to'] = 1
     set_up_ssr_measurement(qm_dict)
     user_terminated = False
@@ -125,9 +133,9 @@ def ssr_guide(qm_dict, length, replace):
             # adapt fastcounter cycles
             singleshotlogic.set_ssr_counter_settings(
                     {'countlength': 1.1*int(qm_dict['measurement_time']/sequence_length)})
-            myawg.write_sequence(qm_dict['name'], sequence_parameter_list)
-            myawg.load_sequence(qm_dict['name'])
-            # run just_ssr_measurement and break the loop if the user derminated
+            awg.write_sequence(qm_dict['name'], sequence_parameter_list)
+            awg.load_sequence(qm_dict['name'])
+            # run just_ssr_measurement and break the loop if the user terminated
             user_terminated = basic_ssr_measurement(qm_dict)
             if user_terminated: break
             update_ssr_result(singleshotlogic.spin_flip_prob,
