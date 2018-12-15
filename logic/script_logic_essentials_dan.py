@@ -585,6 +585,30 @@ def optimize_frequency_during_experiment(opt_dict, qm_dict):
     while not pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
     return time.time()-time_start_optimize
 
+def optimize_position_return_position():
+    # FIXME: Add the option to pause pulsed measurement during position optimization
+    laser_on()
+    time_start_optimize = time.time()
+    #pulsedmeasurementlogic.fast_counter_pause()
+    nicard.digital_channel_switch(setup['optimize_channel'], mode=True)
+    # perform refocus
+    scannerlogic.stop_scanning()
+    crosshair_pos = scannerlogic.get_position()
+    optimizerlogic.start_refocus(initial_pos=crosshair_pos)
+    while optimizerlogic.module_state() == 'idle':
+        time.sleep(0.2)
+    while optimizerlogic.module_state() != 'idle':
+        time.sleep(0.2)
+    scannerlogic.set_position('optimizer', x=optimizerlogic.optim_pos_x, y=optimizerlogic.optim_pos_y,
+                              z=optimizerlogic.optim_pos_z, a=0.0)
+    time.sleep(0.5)
+    # switch off laser
+    nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
+    # pulsedmeasurementlogic.fast_counter_continue()
+    time_stop_optimize = time.time()
+    laser_off()
+    additional_time = (time_stop_optimize - time_start_optimize)
+    return optimizerlogic.optim_pos_x, optimizerlogic.optim_pos_y, optimizerlogic.optim_pos_z
 
 def optimize_poi(poi):
     # FIXME: Add the option to pause pulsed measurement during position optimization

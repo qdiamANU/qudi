@@ -330,6 +330,8 @@ def control_measurement(qm_dict, analysis_method=None):
     freq_optimize_real_time = start_time
     real_update_time = start_time
 
+    awg = pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator()
+
     print('control_measurement')
     while True:
         time.sleep(2)
@@ -344,14 +346,20 @@ def control_measurement(qm_dict, analysis_method=None):
         if qm_dict['optimize_time'] is not None:
             if time.time() - optimize_real_time > qm_dict['optimize_time']:
                 # get name of current measurement waveform on AWG, before overwriting for optimisation measurement
-                measurement_waveform_name = \
-                pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().current_loaded_assets['AWG']
+                awg_asset_name = awg.current_loaded_assets['AWG']
+                awg_asset_type = awg.current_loaded_assets_type
                 pulsedmeasurementlogic.pause_pulsed_measurement()
                 print('paused measurement time = {}'.format(time.time()))
                 # release pulser from 'running'
                 additional_time = optimize_position()
                 start_time = start_time + additional_time
-                additional_time = _reload_measurement_waveform(measurement_waveform_name)
+                if awg_asset_type == 'waveform':
+                    additional_time = _reload_awg_waveform(awg_asset_name)
+                elif awg_asset_type == 'sequence':
+                    additional_time = _reload_awg_sequence(awg_asset_name)
+                else:
+                    print('error: incorrect awg asset type!')
+                    return cause_an_error
                 start_time = start_time + additional_time
                 pulsedmeasurementlogic.continue_pulsed_measurement()
                 optimize_real_time = time.time()
@@ -517,6 +525,30 @@ def optimize_position():
     additional_time = (time_stop_optimize - time_start_optimize)
     return additional_time
 
+def optimize_position_return_position():
+    # FIXME: Add the option to pause pulsed measurement during position optimization
+    laser_on()
+    time_start_optimize = time.time()
+    #pulsedmeasurementlogic.fast_counter_pause()
+    nicard.digital_channel_switch(setup['optimize_channel'], mode=True)
+    # perform refocus
+    scannerlogic.stop_scanning()
+    crosshair_pos = scannerlogic.get_position()
+    optimizerlogic.start_refocus(initial_pos=crosshair_pos)
+    while optimizerlogic.module_state() == 'idle':
+        time.sleep(0.2)
+    while optimizerlogic.module_state() != 'idle':
+        time.sleep(0.2)
+    scannerlogic.set_position('optimizer', x=optimizerlogic.optim_pos_x, y=optimizerlogic.optim_pos_y,
+                              z=optimizerlogic.optim_pos_z, a=0.0)
+    time.sleep(0.5)
+    # switch off laser
+    nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
+    # pulsedmeasurementlogic.fast_counter_continue()
+    time_stop_optimize = time.time()
+    laser_off()
+    additional_time = (time_stop_optimize - time_start_optimize)
+    return optimizerlogic.optim_pos_x, optimizerlogic.optim_pos_y, optimizerlogic.optim_pos_z
 
 def optimize_poi(poi):
     # FIXME: Add the option to pause pulsed measurement during position optimization
@@ -554,13 +586,24 @@ def laser_off(pulser_on=False):
     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_off()
     return
 
-def _reload_measurement_waveform(name):
+def _reload_awg_waveform(name):
     """
     @param str name: name of AWG waveform to reload
     @return float additional_time: time taken
     """
     time_start_load = time.time()
     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_waveform(name)
+    time_stop_load = time.time()
+    additional_time = (time_stop_load - time_start_load)
+    return additional_time
+
+def _reload_awg_sequence(name):
+    """
+    @param str name: name of AWG waveform to reload
+    @return float additional_time: time taken
+    """
+    time_start_load = time.time()
+    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_sequence(name)
     time_stop_load = time.time()
     additional_time = (time_stop_load - time_start_load)
     return additional_time

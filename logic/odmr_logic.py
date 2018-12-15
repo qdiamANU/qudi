@@ -72,6 +72,7 @@ class ODMRLogic(GenericLogic):
     sigNextLine = QtCore.Signal()
     sigStartOdmrScan = QtCore.Signal()
     sigStopOdmrScan = QtCore.Signal()
+    sigContinueOdmrScan = QtCore.Signal()
 
     # Update signals, e.g. for GUI module
     sigParameterUpdated = QtCore.Signal(dict)
@@ -139,6 +140,7 @@ class ODMRLogic(GenericLogic):
 
         self.sigStartOdmrScan.connect(self.start_odmr_scan, QtCore.Qt.QueuedConnection)
         self.sigStopOdmrScan.connect(self.stop_odmr_scan, QtCore.Qt.QueuedConnection)
+        self.sigContinueOdmrScan.connect(self.continue_odmr_scan, QtCore.Qt.QueuedConnection)
 
         return
 
@@ -164,6 +166,7 @@ class ODMRLogic(GenericLogic):
 
         self.sigStartOdmrScan.disconnect()
         self.sigStopOdmrScan.disconnect()
+        self.sigContinueOdmrScan.disconnect()
 
     @fc.constructor
     def sv_set_fits(self, val):
@@ -955,8 +958,6 @@ class ODMRLogic(GenericLogic):
         """
         # print('perform_odmr_measurement')
 
-        print('starting odmr measurement')
-
         timeout = 30
         start_time = time.time()
         while self.module_state() != 'idle':
@@ -967,18 +968,11 @@ class ODMRLogic(GenericLogic):
                                'and 30 sec timeout has been reached.')
                 return {}
 
-        # importing stuff to get the sigStart/StopOdmrScan.emit() to work
-        #self._odmr_logic = self.odmrlogic1()
-
-
         # set all relevant parameter:
         self.set_sweep_parameters(freq_start, freq_stop, freq_step, power)
         self.set_runtime(runtime)
 
         time.sleep(1)
-        # instead of below two lines, toggle
-        # start the scan
-        # GUI file calls self.sigStartOdmrScan.emit() where sigStartOdmrScan = QtCore.Signal(), but I think this is a GUI approach to the problem
 
         self.sigStartOdmrScan.emit()
 
@@ -986,8 +980,6 @@ class ODMRLogic(GenericLogic):
         while self.module_state() != 'locked':
             time.sleep(1)
             # print('Scan has started')
-
-        #self.sigStopOdmrScan.emit()
 
         # wait until the scan has finished
         while self.module_state() == 'locked':
@@ -1005,8 +997,5 @@ class ODMRLogic(GenericLogic):
         if save_after_meas:
             self.save_odmr_data(tag=name_tag)
         print(fit_params)
-
-
-        #toggle off somewhere here or above
 
         return self.odmr_plot_x, self.odmr_plot_y, fit_params
