@@ -98,8 +98,10 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         self._odmr_length = None
         self._gated_counter_daq_task = None
         self._scanner_analog_daq_task = None
-        self._do_afm_scan = True
+        self._do_afm_scan = False
         self._afm_voltage_offset = (0.,0.)
+        self._afm_Xconv = 13.5/10.
+        self._afm_Yconv = -12./10.
 
         # handle all the parameters given by the config
         self._current_position = np.zeros(len(self._scanner_ao_channels))
@@ -1027,7 +1029,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                 )
                 self._scanner_analog_daq_task = atask
 
-            # output of scanner clock to AFM analog out clock input terminal
+            ## output of scanner clock to AFM analog out clock input terminal
             daq.DAQmxConnectTerms(self._scanner_clock_channel + 'InternalOutput',
                                   self._scanner_clock_out_channel,
                                   daq.DAQmx_Val_DoNotInvertPolarity)
@@ -1038,15 +1040,20 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
         return retval
 
-    def scanner_to_afm_transformation(self, volts, Xconv = 10./12., Yconv=-10./12., ):
+    def _scanner_to_afm_transformation(self, volts, Xconv = None, Yconv= None):
 
         # Map voltages on the confocal scale to the AFM scale -> +1 V = 10 um on confocal and -12 um on AFM
         Xoffset, Yoffset = self._afm_voltage_offset
-        for i, position in enumerate(volts):
-            volts[i][0] += Xoffset
-            volts[i][1] += Yoffset
-            volts[i][0] *= Xconv
-            volts[i][1] *= Yconv
+        if Xconv is None:
+            Xconv = self._afm_Xconv
+        if Yconv is None:
+            Yconv = self._afm_Yconv
+
+        volts[0,:] *= Xconv
+        volts[1,:] *= Yconv
+
+        volts[0, :] += Xoffset
+        volts[1, :] += Yoffset
 
         return volts
 
@@ -1259,7 +1266,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                     'Voltages ({0}, {1}) exceed the limit, the positions have to '
                     'be adjusted to stay in the given range.'.format(v.min(), v.max()))
                 return np.array([np.NaN])
-        return self.scanner_to_afm_transformation(volts)
+        return self._scanner_to_afm_transformation(volts)
 
     def _scanner_position_to_volt(self, positions=None):
         """ Converts a set of position pixels to acutal voltages.
@@ -1430,7 +1437,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             return -1
         return 0
 
-    def scan_line(self, line_path=None, pixel_clock=False, afm_offsets=None):
+    def scan_line(self, line_path=None, afm_path=None, pixel_clock=False, afm_offsets=None):
         """ Scans a line and return the counts on that line.
 
         @param float[c][m] line_path: array of c-tuples defining the voltage points
@@ -1465,14 +1472,14 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                 daq.DAQmxSetSampTimingType(self._afm_ao_task, daq.DAQmx_Val_SampClk)
             self._set_up_line(np.shape(line_path)[1])
             line_volts_confocal = self._scanner_position_to_volt(line_path)
-            if self._do_afm_scan:
-                line_volts_afm = self._afm_position_to_volt(line_path)
+            if self._do_afm_scan and afm_path is not None:
+                line_volts_afm = self._afm_position_to_volt(afm_path)
             # write the positions to the analog output
             written_voltages_confocal = self._write_scanner_ao(
                 voltages=line_volts_confocal,
                 length=self._line_length,
                 start=False)
-            if self._do_afm_scan:
+            if self._do_afm_scan and afm_path is not None:
                 written_voltages_afm = self._write_afm_ao(
                     voltages=line_volts_afm,
                     length=self._line_length,
@@ -1480,7 +1487,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
             # start the timed analog output task
             daq.DAQmxStartTask(self._scanner_ao_task)
-            if self._do_afm_scan:
+            if self._do_afm_scan and afm_path is not None:
                 daq.DAQmxStartTask(self._afm_ao_task)
 
             for i, task in enumerate(self._scanner_counter_daq_tasks):

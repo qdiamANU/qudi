@@ -46,7 +46,7 @@ class OptimizerLogic(GenericLogic):
     refocus_XY_size = StatusVar('xy_size', 0.6e-6)
     optimizer_XY_res = StatusVar('xy_resolution', 10)
     refocus_Z_size = StatusVar('z_size', 2e-6)
-    optimizer_Z_res = StatusVar('z_resolution', 30)
+    optimizer_Z_res = StatusVar('z_resolution', 90)
     hw_settle_time = StatusVar('settle_time', 0.1)
     optimization_sequence = StatusVar(default=['XY', 'Z'])
     do_surface_subtraction = StatusVar('surface_subtraction', False)

@@ -344,6 +344,9 @@ class ConfocalLogic(GenericLogic):
 
         self._change_position('activation')
 
+        #set afm position to zero - we only play with relative changes from zero here
+        self._scanning_device.afm_set_position(x=0,y=0)
+
     def on_deactivate(self):
         """ Reverse steps of activation
 
@@ -534,6 +537,11 @@ class ConfocalLogic(GenericLogic):
                 self._return_YL = np.linspace(self._YL[-1], self._YL[0], self.return_slowness)
                 self._return_AL = np.zeros(self._return_YL.shape)
 
+            # add a copy for AFM scanning
+            # For depth scanning, we don't want the AFM to do anything!
+            self.depth_afm_image = np.zeros(self.depth_image.shape)
+
+
             self.sigImageDepthInitialized.emit()
 
         # xy scan is in xy plane
@@ -556,7 +564,14 @@ class ConfocalLogic(GenericLogic):
             self.xy_image[:, :, 2] = self._current_z * np.ones(
                 (len(self._image_vert_axis), len(self._X)))
 
+            # add a copy for AFM scanning
+            self.xy_afm_image = self.xy_image.copy()
+            # for afm we only want the change in position - to chase the NV
+            self.xy_afm_image[:,:,0] -= self.xy_afm_image[0,0,0]
+            self.xy_afm_image[:,:,1] -= self.xy_afm_image[0,0,1]
+
             self.sigImageXYInitialized.emit()
+
         return 0
 
     def start_scanner(self):
@@ -672,6 +687,40 @@ class ConfocalLogic(GenericLogic):
             self.signal_change_position.emit(tag)
             return 0
 
+    def update_afm_offset(self, offsets=None):
+        """ Updates hardware variable that adds offset to AFM scanner voltage
+        @param float offsets: single tuple of (x,y,..) offsets
+
+        @return int: error code (0:OK, -1:error)
+        """
+        if offsets is not None:
+            if len(offsets) == 2:
+                myoffset = tuple([float(voff) for voff in offsets])
+                self._scanning_device._afm_voltage_offset = myoffset
+                retval = 0
+            else:
+                retval = -1
+        else:
+            retval = -1
+        return retval
+
+    def update_do_afm(self, cmd=None):
+        """ Updates the boolean which controls if the AFM scans in parallel with the confocal scan
+
+        @param bool cmd: do afm scan
+
+        @return int: error code (0:OK, -1:error)
+        """
+        if cmd is not None:
+            if isinstance(cmd, bool):
+                self._scanning_device._do_afm_scan = cmd
+                retval = 0
+            else:
+                retval = -1
+        else:
+            retval = -1
+        return retval
+
     def _change_position(self, tag):
         """ Threaded method to change the hardware position.
 
@@ -720,6 +769,7 @@ class ConfocalLogic(GenericLogic):
                 self.signal_xy_image_updated.emit()
                 self.signal_depth_image_updated.emit()
                 self.set_position('scanner')
+                self._scanning_device.afm_set_position(x=0,y=0)
                 if self._zscan:
                     self._depth_line_pos = self._scan_counter
                 else:
@@ -734,6 +784,8 @@ class ConfocalLogic(GenericLogic):
                 return
 
         image = self.depth_image if self._zscan else self.xy_image
+        afm_image = self.depth_afm_image if self._zscan else self.xy_afm_image
+
         n_ch = len(self.get_scanner_axes())
         s_ch = len(self.get_scanner_count_channels())
 
@@ -751,7 +803,8 @@ class ConfocalLogic(GenericLogic):
                     start_line = np.vstack(
                         [lsx, lsy, lsz, np.ones(lsx.shape) * self._current_a])
                 # move to the start position of the scan, counts are thrown away
-                start_line_counts = self._scanning_device.scan_line(start_line)
+                # don't move the AFM
+                start_line_counts = self._scanning_device.scan_line(start_line,afm_path=None)
                 if np.any(start_line_counts == -1):
                     self.stopRequested = True
                     self.signal_scan_lines_next.emit()
@@ -766,14 +819,26 @@ class ConfocalLogic(GenericLogic):
             lsx = image[self._scan_counter, :, 0]
             lsy = image[self._scan_counter, :, 1]
             lsz = image[self._scan_counter, :, 2]
+
+            afm_lsx = afm_image[self._scan_counter, :, 0]
+            afm_lsy = afm_image[self._scan_counter, :, 1]
+            afm_lsz = afm_image[self._scan_counter, :, 2]
+
             if n_ch <= 3:
                 line = np.vstack([lsx, lsy, lsz][0:n_ch])
             else:
                 line = np.vstack(
                     [lsx, lsy, lsz, np.ones(lsx.shape) * self._current_a])
 
+            if n_ch <= 3:
+                afm_line = np.vstack([afm_lsx, afm_lsy, afm_lsz][0:n_ch])
+            else:
+                afm_line = np.vstack(
+                    [afm_lsx, afm_lsy, afm_lsz, np.ones(afm_lsx.shape) * self._current_a])
+
+
             # scan the line in the scan
-            line_counts = self._scanning_device.scan_line(line, pixel_clock=True)
+            line_counts = self._scanning_device.scan_line(line, afm_path=afm_line, pixel_clock=True)
             if np.any(line_counts == -1):
                 self.stopRequested = True
                 self.signal_scan_lines_next.emit()
@@ -809,8 +874,41 @@ class ConfocalLogic(GenericLogic):
                             np.ones(self._return_YL.shape) * self._current_a
                         ])
 
+            # Do the same for the AFM
+            # make a line to go to the starting position of the next scan line
+            rs = self.return_slowness
+            if self.depth_img_is_xz or not self._zscan:
+                afm_return_XL = np.linspace(self.xy_afm_image[self._scan_counter,-1,0], self.xy_afm_image[self._scan_counter,0,0],rs),
+                if n_ch <= 3:
+                    afm_return_line = np.vstack([
+                                               afm_return_XL,
+                                                afm_image[self._scan_counter, 0, 1] * np.ones(self._return_XL.shape),
+                                                afm_image[self._scan_counter, 0, 2] * np.ones(self._return_XL.shape)
+                    ][0:n_ch])
+                else:
+                    afm_return_line = np.vstack([
+                    afm_return_XL,
+                    afm_image[self._scan_counter, 0, 1] * np.ones(self._return_XL.shape),
+                    afm_image[self._scan_counter, 0, 2] * np.ones(self._return_XL.shape),
+                    np.ones(self._return_XL.shape) * self._current_a
+                    ])
+            else:
+                afm_return_YL = np.linspace(self.xy_afm_image[self._scan_counter, -1, 1], self.xy_afm_image[self._scan_counter, 0, 1], rs),
+                if n_ch <= 3:
+                    afm_return_line = np.vstack([afm_image[self._scan_counter, 0, 1] * np.ones(self._return_YL.shape),
+                                                afm_return_YL,
+                                                afm_image[self._scan_counter, 0, 2] * np.ones(self._return_YL.shape)
+                                            ][0:n_ch])
+                else:
+                    afm_return_line = np.vstack([
+                        afm_image[self._scan_counter, 0, 1] * np.ones(self._return_YL.shape),
+                        afm_return_YL,
+                        afm_image[self._scan_counter, 0, 2] * np.ones(self._return_YL.shape),
+                        np.ones(self._return_YL.shape) * self._current_a
+                    ])
+
             # return the scanner to the start of next line, counts are thrown away
-            return_line_counts = self._scanning_device.scan_line(return_line)
+            return_line_counts = self._scanning_device.scan_line(return_line,afm_path=afm_return_line)
             if np.any(return_line_counts == -1):
                 self.stopRequested = True
                 self.signal_scan_lines_next.emit()

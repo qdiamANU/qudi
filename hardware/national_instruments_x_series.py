@@ -1750,8 +1750,8 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
     def close_odmr_clock(self):
         """ Closes the odmr and cleans up afterwards.
-
         @return int: error code (0:OK, -1:error)
+
         """
         return self.close_clock(scanner=True)
 
