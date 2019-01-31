@@ -24,52 +24,42 @@ import thirdparty.swabian_instruments.timetagger.TimeTagger as tt
 import time
 import numpy as np
 
-<<<<<<< HEAD
-=======
 
->>>>>>> qcomp
 from core.module import Base, ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
 from interface.slow_counter_interface import CountingMode
 from interface.odmr_counter_interface import ODMRCounterInterface
 
-<<<<<<< HEAD
-class TimeTaggerCounter(Base, SlowCounterInterface, ODMRCounterInterface):
-=======
-class TimeTaggerCounter(Base, SlowCounterInterface):
-    """ Using the TimeTagger as a slow counter.
->>>>>>> upstream/master
+class TimeTaggerSlowCounter(Base, SlowCounterInterface, ODMRCounterInterface):
 
-    Example config for copy-paste:
-
-    timetagger_slowcounter:
-        module.Class: 'timetagger_counter.TimeTaggerCounter'
-        timetagger_channel_apd_0: 0
-        timetagger_channel_apd_1: 1
-        timetagger_sum_channels: 2
-
-    """
+    """ Using the TimeTagger as a counter."""
 
     _modtype = 'TTCounter'
     _modclass = 'hardware'
 
-    _channel_apd_0 = ConfigOption('timetagger_channel_apd_0', missing='error')
-    _channel_apd_1 = ConfigOption('timetagger_channel_apd_1', None, missing='warn')
+    _channel_apd_0 = ConfigOption('channel_apd_0', missing='error')
+    _channel_apd_1 = ConfigOption('channel_apd_1', None)
+    _channel_apd = _channel_apd_0
     _sum_channels = ConfigOption('timetagger_sum_channels', False)
-    _odmr_trigger_channel = ConfigOption('timetagger_odmr_trigger', None, missing='warn')
+    _odmr_trigger_channel = ConfigOption('channel_odmr_trigger', None, missing='warn')
 
-    _nvalues = 100
+    _nvalues = 4096
     def on_activate(self):
         """ Start up TimeTagger interface
         """
         self._tagger = tt.createTimeTagger()
+        self._tagger.reset()
         self._count_frequency = 50  # Hz
+
+        self._tagger.setTestSignal([0, 1], False)
+
+        self.odmr_counter = None
 
         if self._sum_channels and self._channel_apd_1 is None:
             self.log.error('Cannot sum channels when only one apd channel given')
 
-        ## self._mode can take 3 values:
+        # self._mode can take 3 values:
         # 0: single channel, no summing
         # 1: single channel, summed over apd_0 and apd_1
         # 2: dual channel for apd_0 and apd_1
@@ -84,8 +74,9 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
     def on_deactivate(self):
         """ Shut down the TimeTagger.
         """
-        #self.reset_hardware()
-        pass
+        self.close_counter()
+        self.close_odmr()
+        return 0
 
     def set_up_clock(self, clock_frequency=None, clock_channel=None):
         """ Configures the hardware clock of the TimeTagger for timing
@@ -108,12 +99,9 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
                        counter_buffer=None):
         """ Configures the actual counter with a given clock.
 
-        @param str counter_channel: optional, physical channel of the counter
-        @param str photon_source: optional, physical channel where the photons
+        @param str counter_channels: optional, physical channel of the counter
+        @param str sources: optional, physical channel where the photons
                                   are to count from
-        @param str counter_channel2: optional, physical channel of the counter 2
-        @param str photon_source2: optional, second physical channel where the
-                                   photons are to count from
         @param str clock_channel: optional, specifies the clock channel for the
                                   counter
         @param int counter_buffer: optional, a buffer of specified integer
@@ -125,6 +113,8 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
 
         # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
         # set at startup
+        #self._tagger.setTestSignal(0, True)
+        #self._tagger.setTestSignal(1, True)
         if self._mode == 1:
             channel_combined = tt.Combiner(self._tagger, channels = [self._channel_apd_0, self._channel_apd_1])
             self._channel_apd = channel_combined.getChannel()
@@ -162,8 +152,14 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
         return 0
 
     def get_counter_channels(self):
+        """ Returns the list of counter channel names.
+
+                @return tuple(str): channel names
+
+                Most methods calling this might just care about the number of channels, though.
+                """
         if self._mode < 2:
-            return self._channel_apd
+            return [self._channel_apd, ]
         else:
             return [self._channel_apd_0, self._channel_apd_1]
 
@@ -201,7 +197,6 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._tagger.reset()
         return 0
 
     def close_clock(self):
@@ -223,7 +218,6 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._count_frequency = clock_frequency
         return 0
 
     def set_up_odmr(self, counter_channel=None, photon_source=None,
@@ -243,7 +237,8 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
         """
         # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
         # set at startup
-
+        self._tagger.setTestSignal(0, False)
+        self._tagger.setTestSignal(1, False)
         if self._mode == 0:
             self._channel_apd = self._channel_apd_0
             self.odmr_counter = tt.CountBetweenMarkers(
@@ -254,21 +249,19 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
                 n_values=self._nvalues
             )
         elif self._mode == 1:
-            channel_combined = tt.CountBetweenMarkers(self._tagger, channels=[self._channel_apd_0, self._channel_apd_1])
+            channel_combined = tt.Combiner(self._tagger, channels=[self._channel_apd_0, self._channel_apd_1])
             self._channel_apd = channel_combined.getChannel()
-
             self.odmr_counter = tt.CountBetweenMarkers(
                 self._tagger,
-                click_channel=self._channel_apd,
-                begin_channel=self._odmr_trigger_channel,
-                end_channel=self._odmr_trigger_channel + 8,
-                n_values=self._nvalues
-            )
+                click_channel=channel_combined,
+                begin_channel=self._channel_apd,
+                end_channel=self._odmr_trigger_channel+8,
+                n_values=self._nvalues)
         else:
             self.log.error('Cannot do the dual channel mode for ODMR')
             return -1
 
-        self.log.info('set up counter with {0}'.format(self._count_frequency))
+        self.log.info('set up odmr counter with')
         return 0
 
     def set_odmr_length(self, length=100):
@@ -278,8 +271,12 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._nvalues = length
-        return 0
+        if length > self._nvalues:
+            self.log.error('ODMR length is higher than the hardcoded limit of {} pixels for the timetagger!'.format(
+                self._nvalues))
+            return -1
+        else:
+            return 0
 
     def count_odmr(self, length=100):
         """ Sweeps the microwave and returns the counts on that sweep.
@@ -288,14 +285,33 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
 
         @return float[]: the photon counts per second
         """
-        return self.odmr_counter.get_data()
+
+        self.set_odmr_length(length)
+
+        #start_count = time.time()
+        for i in range(50):
+            bin_widths = self.odmr_counter.getBinWidths()
+            if np.count_nonzero(bin_widths) < length + 1:
+                time.sleep(0.001)
+                continue
+            else:
+                break
+        #end_count = time.time()
+
+        data = self.odmr_counter.getData()[:length]
+        self.odmr_counter.clear()
+        #print('collect data: {:0.3f} s'.format(end_count - start_count))
+
+        return np.reshape(data, (1, data.size))
 
     def close_odmr(self):
         """ Close the odmr and clean up afterwards.
 
         @return int: error code (0:OK, -1:error)
         """
-        self.counter.clearOverflows()
+        if not self.odmr_counter == None:
+            self.odmr_counter.stop()
+        self._tagger.clearOverflows()
         return 0
 
     def close_odmr_clock(self):
@@ -303,11 +319,11 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        return self.close_counter()
+        return 0
 
     def get_odmr_channels(self):
         """ Return a list of channel names.
 
         @return list(str): channels recorded during ODMR measurement
         """
-        return []
+        return ['', ]
