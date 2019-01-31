@@ -82,6 +82,10 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         self.current_output_mode = MicrowaveMode.CW
 
+        self.mw_cw_freq = 2.87e9
+        self.mw_cw_power = -30
+        self.mw_sweep_power = -30
+
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
         """
@@ -143,8 +147,8 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         @return float: the power set at the device in dBm
         """
         if self.current_output_mode == MicrowaveMode.CW:
-            mw_cw_power = float(self._conn.query('W?'))
-            return mw_cw_power
+            self.mw_cw_power = float(self._conn.query('W?'))
+            return self.mw_cw_power
         else:
             return self.mw_sweep_power
 
@@ -206,10 +210,10 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
             self._conn.write('[{0:2.3f}'.format(power))
             self._conn.write(']{0:2.3f}'.format(power))
 
-        mw_cw_freq = float(self._conn.query('f?')) * 1e6
-        mw_cw_power = float(self._conn.query('W?'))
-        self.log.debug('CW f: {0} {2} P: {1} {3}'.format(frequency, power, mw_cw_freq, mw_cw_power))
-        return mw_cw_freq, mw_cw_power, 'cw'
+        self.mw_cw_freq = float(self._conn.query('f?')) * 1e6
+        self.mw_cw_power = float(self._conn.query('W?'))
+        self.log.debug('CW f: {0} {2} P: {1} {3}'.format(frequency, power, self.mw_cw_freq , self.mw_cw_power))
+        return self.mw_cw_freq, self.mw_cw_power, 'cw'
 
     def list_on(self):
         """
@@ -221,7 +225,7 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         self.current_output_mode = MicrowaveMode.LIST
         time.sleep(1)
         self.output_active = True
-        self.log.warn('MicrowaveDummy>List mode output on')
+        # self.log.warn('MicrowaveDummy>List mode output on')
         return 0
 
     def set_list(self, frequency=None, power=None):
@@ -233,15 +237,16 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
 
         @return list, float, str: current frequencies in Hz, current power in dBm, current mode
         """
-        self.log.debug('MicrowaveDummy>set_list, frequency_list: {0}, power: {1:f}'
-                       ''.format(frequency, power))
+        # self.log.debug('MicrowaveDummy>set_list, frequency_list: {0}, power: {1:f}'
+                       # ''.format(frequency, power))
         self.output_active = False
         self.current_output_mode = MicrowaveMode.LIST
         if frequency is not None:
             self.mw_frequency_list = frequency
         if power is not None:
+            self.mw_sweep_power = power
             self._conn.write('W{0:2.3f}'.format(power))
-        return self.mw_frequency_list, self.mw_cw_power, 'list'
+        return self.mw_frequency_list, self.mw_sweep_power, 'list'
 
     def reset_listpos(self):
         """
@@ -309,6 +314,8 @@ class MicrowaveSynthHDPro(Base, MicrowaveInterface):
         self.log.debug('SWEEP: {} -> {} {}, {} -> {} {}, {} -> {}'.format(
             start, stop, step, mw_start_freq, mw_stop_freq, mw_step_freq, mw_power,
             mw_sweep_power_start, mw_sweep_power_stop))
+
+        self.mw_sweep_power = mw_sweep_power_start
         return (
             mw_start_freq,
             mw_stop_freq,

@@ -201,10 +201,11 @@ class OptimizerLogic(GenericLogic):
             @param str caller_tag:
             @param str tag:
         """
-        # checking if refocus corresponding to crosshair or corresponding to initial_pos
 
+        # turn on laser (assumes laser is controlled by AWG digital output)
         self._awg.laser_on()
 
+        # checking if refocus corresponding to crosshair or corresponding to initial_pos
         if isinstance(initial_pos, (np.ndarray,)) and initial_pos.size >= 3:
             self._initial_pos_x, self._initial_pos_y, self._initial_pos_z = initial_pos[0:3]
         elif isinstance(initial_pos, (list, tuple)) and len(initial_pos) >= 3:

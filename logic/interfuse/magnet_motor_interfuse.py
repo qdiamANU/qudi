@@ -50,6 +50,9 @@ class MagnetMotorInterfuse(GenericLogic, MagnetInterface):
 
         self._motor_device = self.motorstage()
 
+        # step precision for the magnet, in sig figs of metres. 9 -> 1 nm precision
+        self.magnet_step_precision = self._motor_device.step_precision
+
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
         """

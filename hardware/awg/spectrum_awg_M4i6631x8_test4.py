@@ -105,6 +105,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self.sequence_names = list()
         self.sequence_dict = dict()
 
+        self.laser_on_mw_on_status_dict = dict()
+
         self.current_loaded_assets = dict()
         self.current_loaded_assets_type = ''
 
@@ -969,7 +971,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             #    self.sample_rate = constraint.min
             #else:
             #    self.sample_rate = sample_rate
-        self.log.warning('set_analogue_level')
+        # self.log.warning('set_analogue_level')
         constraints = self.get_constraints()
         # print('\namplitude constraints: {} to {}'.format(constraints.a_ch_amplitude.min, constraints.a_ch_amplitude.max))
         # print('\namplitude a_ch1 cmd = {}\n'.format(amplitude['a_ch1']))
@@ -977,18 +979,33 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             if (amplitude['a_ch1'] >= constraints.a_ch_amplitude.min) and\
                     (amplitude['a_ch1'] <= constraints.a_ch_amplitude.max):
                 # channel0 amplitude in mV
-                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(amplitude['a_ch1']*1000/2))) #todo: why the factor of 2?
-            else:
-                self.log.warning('Amplitude voltage level for the analog output channel 1 is out of constraints for the'
-                                 'Spectrum M4i AWG series!\nMethod call will be ignored.')
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(amplitude['a_ch1']*1000/2)))
+            elif amplitude['a_ch1'] < constraints.a_ch_amplitude.min:
+                self.log.warning(
+                    'Requested amplitude for a_ch1 is too low for AWG. Setting to min. allowed value of {} V'.format(
+                        constraints.a_ch_amplitude.min))
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.min * 1000 / 2)))
+            elif amplitude['a_ch1'] > constraints.a_ch_amplitude.max:
+                self.log.warning(
+                    'Requested amplitude for a_ch1 is too high for AWG. Setting to max. allowed value of {} V'.format(
+                        constraints.a_ch_amplitude.max))
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.max * 1000 / 2)))
+
         if 'a_ch2' in amplitude.keys():
             if (amplitude['a_ch2'] >= constraints.a_ch_amplitude.min) and\
                     (amplitude['a_ch2'] <= constraints.a_ch_amplitude.max):
                 # channel0 amplitude in mV
                 spcm_dwSetParam_i32(self._hCard, SPC_AMP1, int32(int(amplitude['a_ch2']*1000/2)))
-            else:
-                self.log.warning('Amplitude voltage level for the analog output channel 2 is out of constraints for the'
-                                 'Spectrum M4i AWG series!\nMethod call will be ignored.')
+            elif amplitude['a_ch2'] < constraints.a_ch_amplitude.min:
+                self.log.warning(
+                    'Requested amplitude for a_ch1 is too low for AWG. Setting to min. allowed value of {} V'.format(
+                        constraints.a_ch_amplitude.min))
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.min * 1000 / 2)))
+            elif amplitude['a_ch2'] > constraints.a_ch_amplitude.max:
+                self.log.warning(
+                    'Requested amplitude for a_ch1 is too high for AWG. Setting to max. allowed value of {} V'.format(
+                        constraints.a_ch_amplitude.max))
+                spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.max * 1000 / 2)))
 
         self.read_out_error()
         return self.get_analog_level()
@@ -1420,13 +1437,15 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # fixme: laser is off for ca. 25.6 ns at end of every n_samples
         # with n_samples = 32*10000, the waveform length is ca. 256 us, so the 'off' duty cycle is 1e-4
 
+        waveform_name = 'laser_on'
+
         # check if laser is already on.
         current_status = self.get_status()[0]
         if self.current_loaded_assets == dict():
             pass
-        elif self.current_loaded_assets['AWG'] == 'laser_on' and current_status == 1:
+        elif self.current_loaded_assets['AWG'] == waveform_name and current_status == 1:
             return
-        elif self.current_loaded_assets['AWG'] == 'laser_on' and current_status != 1:
+        elif self.current_loaded_assets['AWG'] == waveform_name and current_status != 1:
             self.pulser_on()
             return
 
@@ -1464,11 +1483,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                            'd_ch3': d_ch3_signal}
 
         # save waveform in awg.waveform_dict[name]:
-        name = 'laser_on'
-        self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples, turn_off_pulser=False)
+        self.write_waveform(waveform_name, analog_samples, digital_samples, True, True, n_samples, turn_off_pulser=False)
 
         # upload the data to the AWG
-        self.load_waveform(name, print_time=False)
+        self.load_waveform(waveform_name, print_time=False)
 
         # turn on pulser
         self.pulser_on()
@@ -1505,16 +1523,96 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                            'd_ch3': d_ch3_signal}
 
         # save waveform in awg.waveform_dict[name]:
-        name = 'all_off'
-        self.write_waveform(name, analog_samples, digital_samples, True, True, n_samples)
+        waveform_name = 'all_off'
+        self.write_waveform(waveform_name, analog_samples, digital_samples, True, True, n_samples)
 
         # upload the data to the AWG
-        self.load_waveform(name, print_time=False)
+        self.load_waveform(waveform_name, print_time=False)
 
         # DON'T turn on pulser
         self.pulser_off()
 
         return
+
+    def laser_on_mw_on(self, mw_freq=100e6, mw_amplitude=4.0, laser_channel='d_ch1', mw_channel='a_ch1', n_samples=32000000):
+        """ AWG output results in cw laser, and cw output on mw channel, with everything else off"""
+        # fixme: laser is off for ca. 25.6 ns at end of every n_samples
+        # with n_samples = 32*10000, the waveform length is ca. 256 us, so the 'off' duty cycle is 1e-4
+
+        waveform_name = 'laser_on_mw_on'
+        status_dict = {'mw_freq': mw_freq,
+                       'mw_amplitude': mw_amplitude,
+                       'laser_channel': laser_channel,
+                       'mw_channel': mw_channel,
+                       'n_samples': n_samples}
+
+        # check if an identical laser+mw is already loaded / on.
+        current_status = self.get_status()[0]
+        if self.current_loaded_assets == dict():
+            pass
+        elif self.current_loaded_assets['AWG'] == waveform_name and current_status == 1 and self.laser_on_mw_on_status_dict == status_dict:
+            return
+        elif self.current_loaded_assets['AWG'] == waveform_name and current_status != 1 and self.laser_on_mw_on_status_dict == status_dict:
+            self.pulser_on()
+            return
+
+        self.laser_on_mw_on_status_dict = status_dict
+
+        # check if AWG already running. If so, turn off output first
+        if current_status > 0:
+            # self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
+            # return 0
+            self.pulser_off()
+
+        # create waveform
+        # n_samples = 32 * 1000000
+        sample_rate = self.get_sample_rate()
+        if mw_channel == 'a_ch1':
+            a_ch1_signal = np.sin(np.arange(n_samples) * (mw_freq / sample_rate) * 2 * np.pi)
+            a_ch2_signal = np.zeros(n_samples)
+            self.set_analog_level({'a_ch1': mw_amplitude, 'a_ch2': mw_amplitude})
+        elif mw_channel == 'a_ch2':
+            a_ch1_signal = np.zeros(n_samples)
+            a_ch2_signal = np.sin(np.arange(n_samples) * (mw_freq / sample_rate) * 2 * np.pi)
+            self.set_analog_level({'a_ch1': mw_amplitude, 'a_ch2': mw_amplitude})
+        else:
+            self.log.error('Invalid mw channel!')
+            return -1
+
+        if laser_channel == 'd_ch1':
+            d_ch1_signal = np.ones(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        elif laser_channel == 'd_ch2':
+            d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.ones(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        elif laser_channel == 'd_ch3':
+            d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.ones(n_samples).astype(dtype=np.bool)
+        else:
+            self.log.error('Invalid laser channel!')
+            return -1
+
+        # combine analogue and digital sample dictionaries into two dictionaries
+        analog_samples = {'a_ch1': a_ch1_signal,
+                          'a_ch2': a_ch2_signal}
+        digital_samples = {'d_ch1': d_ch1_signal,
+                           'd_ch2': d_ch2_signal,
+                           'd_ch3': d_ch3_signal}
+
+        # save waveform in awg.waveform_dict[name]:
+        self.write_waveform(waveform_name, analog_samples, digital_samples, True, True, int(n_samples), turn_off_pulser=False)
+
+        # upload the data to the AWG
+        self.load_waveform(waveform_name, print_time=False)
+
+        # turn on pulser
+        self.pulser_on()
+
+        return
+
 
     def write_cw_odmr_waveform(self, freq_start, freq_stop, freq_step, name):
         """

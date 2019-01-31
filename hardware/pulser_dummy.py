@@ -21,6 +21,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 import time
+import numpy as np
 from collections import OrderedDict
 
 from core.module import Base, StatusVar, ConfigOption
@@ -411,38 +412,45 @@ class PulserDummy(Base, PulserInterface):
                              respective asset loaded into the channel, string describing the asset
                              type ('waveform' or 'sequence')
         """
-        if isinstance(load_dict, list):
-            new_dict = dict()
-            for waveform in load_dict:
-                channel = int(waveform.rsplit('_ch', 1)[1])
-                new_dict[channel] = waveform
-            load_dict = new_dict
+        # if isinstance(load_dict, list):
+        #     new_dict = dict()
+        #     for waveform in load_dict:
+        #         channel = int(waveform.rsplit('_ch', 1)[1])
+        #         new_dict[channel] = waveform
+        #     load_dict = new_dict
+        #
+        # # Determine if the device is purely digital and get all active channels
+        # analog_channels = [chnl for chnl in self.activation_config if chnl.startswith('a')]
+        # digital_channels = [chnl for chnl in self.activation_config if chnl.startswith('d')]
+        # pure_digital = len(analog_channels) == 0
+        #
+        # # Check if waveforms are present in virtual dummy device memory and specified channels are
+        # # active. Create new load dict.
+        # new_loaded_assets = dict()
+        # for channel, waveform in load_dict.items():
+        #     if waveform not in self.waveform_set:
+        #         self.log.error('Loading failed. Waveform "{0}" not found on device memory.'
+        #                        ''.format(waveform))
+        #         return self.current_loaded_assets
+        #     if pure_digital:
+        #         if 'd_ch{0:d}'.format(channel) not in digital_channels:
+        #             self.log.error('Loading failed. Digital channel {0:d} not active.'
+        #                            ''.format(channel))
+        #             return self.current_loaded_assets
+        #     else:
+        #         if 'a_ch{0:d}'.format(channel) not in analog_channels:
+        #             self.log.error('Loading failed. Analog channel {0:d} not active.'
+        #                            ''.format(channel))
+        #             return self.current_loaded_assets
+        #     new_loaded_assets[channel] = waveform
+        # self.current_loaded_assets = new_loaded_assets
 
-        # Determine if the device is purely digital and get all active channels
-        analog_channels = [chnl for chnl in self.activation_config if chnl.startswith('a')]
-        digital_channels = [chnl for chnl in self.activation_config if chnl.startswith('d')]
-        pure_digital = len(analog_channels) == 0
+        load_key = ''.join(load_dict)
+        # waveform = self.waveform_dict[load_key]
 
-        # Check if waveforms are present in virtual dummy device memory and specified channels are
-        # active. Create new load dict.
-        new_loaded_assets = dict()
-        for channel, waveform in load_dict.items():
-            if waveform not in self.waveform_set:
-                self.log.error('Loading failed. Waveform "{0}" not found on device memory.'
-                               ''.format(waveform))
-                return self.current_loaded_assets
-            if pure_digital:
-                if 'd_ch{0:d}'.format(channel) not in digital_channels:
-                    self.log.error('Loading failed. Digital channel {0:d} not active.'
-                                   ''.format(channel))
-                    return self.current_loaded_assets
-            else:
-                if 'a_ch{0:d}'.format(channel) not in analog_channels:
-                    self.log.error('Loading failed. Analog channel {0:d} not active.'
-                                   ''.format(channel))
-                    return self.current_loaded_assets
-            new_loaded_assets[channel] = waveform
-        self.current_loaded_assets = new_loaded_assets
+        # self.current_loaded_assets_type = 'waveform'
+        self.current_loaded_assets['AWG'] = load_key
+
         return self.get_loaded_assets()
 
     def load_sequence(self, sequence_name):
@@ -917,3 +925,107 @@ class PulserDummy(Base, PulserInterface):
         @return: bool, True for yes, False for no.
         """
         return True
+
+
+############################## extra functions, defined at ANU for Spectrum AWG ##############
+
+    def laser_on(self, laser_channel='d_ch1'):
+        """ AWG output results in cw laser, with everything else off"""
+        # fixme: laser is off for ca. 25.6 ns at end of every n_samples
+        # with n_samples = 32*10000, the waveform length is ca. 256 us, so the 'off' duty cycle is 1e-4
+
+        waveform_name = 'laser_on'
+
+        # check if laser is already on.
+        current_status = self.get_status()[0]
+        if self.current_loaded_assets == dict():
+            pass
+        elif self.current_loaded_assets['AWG'] == waveform_name and current_status == 1:
+            return
+        elif self.current_loaded_assets['AWG'] == waveform_name and current_status != 1:
+            self.pulser_on()
+            return
+
+        # check if AWG already running. If so, turn off output first
+        if current_status > 0:
+            # self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
+            # return 0
+            self.pulser_off()
+
+        # create waveform
+        n_samples = 32 * 10000
+        a_ch1_signal = np.zeros(n_samples)
+        a_ch2_signal = np.zeros(n_samples)
+        if laser_channel == 'd_ch1':
+            d_ch1_signal = np.ones(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        elif laser_channel == 'd_ch2':
+            d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.ones(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        elif laser_channel == 'd_ch3':
+            d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
+            d_ch3_signal = np.ones(n_samples).astype(dtype=np.bool)
+        else:
+            self.log.error('Invalid laser channel!')
+            return -1
+
+        # combine analogue and digital sample dictionaries into two dictionaries
+        analog_samples = {'a_ch1': a_ch1_signal,
+                          'a_ch2': a_ch2_signal}
+        digital_samples = {'d_ch1': d_ch1_signal,
+                           'd_ch2': d_ch2_signal,
+                           'd_ch3': d_ch3_signal}
+
+        self.write_waveform(waveform_name, analog_samples, digital_samples, True, True, n_samples)
+
+        # upload the data to the AWG
+        self.load_waveform(waveform_name)
+
+        # turn on pulser
+        self.pulser_on()
+
+        return
+
+    def laser_off(self):
+        """ Turns off laser_on() """
+
+        self.pulser_off()
+
+        return
+
+    def all_off(self):
+        """ Writes zeros to all AWG channels and turns AWG output chennels off.
+        This is a kill switch: function does not check if any measurement is running """
+
+        if self.current_status == 1:
+            self.pulser_off()
+
+        # create waveforms, assuming laser channel is d_ch1
+        n_samples = 32 * 1000
+        a_ch1_signal = np.zeros(n_samples)
+        a_ch2_signal = np.zeros(n_samples)
+        d_ch1_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        d_ch2_signal = np.zeros(n_samples).astype(dtype=np.bool)
+        d_ch3_signal = np.zeros(n_samples).astype(dtype=np.bool)
+
+        # combine analogue and digital sample dictionaries into two dictionaries
+        analog_samples = {'a_ch1': a_ch1_signal,
+                          'a_ch2': a_ch2_signal}
+        digital_samples = {'d_ch1': d_ch1_signal,
+                           'd_ch2': d_ch2_signal,
+                           'd_ch3': d_ch3_signal}
+
+        # save waveform in awg.waveform_dict[name]:
+        waveform_name = 'all_off'
+        self.write_waveform(waveform_name, analog_samples, digital_samples, True, True, n_samples)
+
+        # upload the data to the AWG
+        self.load_waveform(waveform_name)
+
+        # DON'T turn on pulser
+        self.pulser_off()
+
+        return

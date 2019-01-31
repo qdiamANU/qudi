@@ -30,6 +30,8 @@ from logic.generic_logic import GenericLogic
 from qtpy import QtCore
 from interface.slow_counter_interface import CountingMode
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 class MagnetLogic(GenericLogic):
     """ A general magnet logic to control an magnetic stage with an arbitrary
@@ -78,6 +80,7 @@ class MagnetLogic(GenericLogic):
     traceanalysis = Connector(interface='TraceAnalysisLogic')
     gatedcounterlogic = Connector(interface='GatedCounterLogic')
     sequencegeneratorlogic = Connector(interface='SequenceGeneratorLogic')
+    fitlogic = Connector(interface='FitLogic')
 
     align_2d_axis0_range = StatusVar('align_2d_axis0_range', 10e-3)
     align_2d_axis0_step = StatusVar('align_2d_axis0_step', 1e-3)
@@ -203,6 +206,7 @@ class MagnetLogic(GenericLogic):
         self._confocal_logic = self.scannerlogic()
         self._counter_logic = self.counterlogic()
         self._odmr_logic = self.odmrlogic()
+        self._fit_logic = self.fitlogic()
 
         self._gc_logic = self.gatedcounterlogic()
         self._ta_logic = self.traceanalysis()
@@ -291,6 +295,9 @@ class MagnetLogic(GenericLogic):
 
         # use that if only one ODMR transition is available.
         self.odmr_2d_single_trans = False
+
+        # step precision for the magnet, in sig figs of metres. 9 -> 1 nm precision
+        self.magnet_step_precision = self._magnet_device.magnet_step_precision
 
 
     def on_deactivate(self):
@@ -513,8 +520,8 @@ class MagnetLogic(GenericLogic):
             self.log.debug(axis0_name)
             self.log.debug(axis0_range)
             self.log.debug(init_pos[axis0_name])
-            axis0_pos = round(init_pos[axis0_name] - axis0_range/2, 7)
-            axis1_pos = round(init_pos[axis1_name] - axis1_range/2, 7)
+            axis0_pos = round(init_pos[axis0_name] - axis0_range/2, self.magnet_step_precision)
+            axis1_pos = round(init_pos[axis1_name] - axis1_range/2, self.magnet_step_precision)
 
             # append again so that the for loop later will run once again
             # through the axis0 array but the last value of axis1_steparray will
@@ -575,7 +582,7 @@ class MagnetLogic(GenericLogic):
                     # step_config[axis0_name] = {'move_rel': direction*step_in_axis0}
 
                     # absolute movement:
-                    axis0_pos =round(axis0_pos + direction*step_in_axis0, 7)
+                    axis0_pos =round(axis0_pos + direction*step_in_axis0, self.magnet_step_precision)
 
                     # if axis0_vel is None:
                     #     step_config[axis0_name] = {'move_abs': axis0_pos}
@@ -613,7 +620,7 @@ class MagnetLogic(GenericLogic):
                 # step_config[axis1_name] = {'move_rel' : step_in_axis1}
 
                 # absolute movement:
-                axis1_pos = round(axis1_pos + step_in_axis1, 7)
+                axis1_pos = round(axis1_pos + step_in_axis1, self.magnet_step_precision)
 
                 if axis1_vel is None and axis0_vel is None:
                     step_config[axis0_name] = {'move_abs': axis0_pos}
@@ -635,7 +642,9 @@ class MagnetLogic(GenericLogic):
                                         'index': (axis0_index, axis1_index)}
                 path_index += 1
 
-
+        #LOCALFIX ANDREW: for fitting
+        self.axis0_steparray = axis0_steparray
+        self.axis1_steparray = axis1_steparray
 
         return pathway, back_map
 
@@ -855,7 +864,7 @@ class MagnetLogic(GenericLogic):
         @return:
         The loop body goes through the 1D array
         """
-        print('_stepwise_loop_body')
+        # print('_stepwise_loop_body')
 
         if self._stop_measure:
             self._end_alignment_procedure()
@@ -1186,7 +1195,7 @@ class MagnetLogic(GenericLogic):
 
 
     def _perform_fluorescence_measure(self):
-        print('_perform_fluorescence_measure')
+        # print('_perform_fluorescence_measure')
         #FIXME: that should be run through the TaskRunner! Implement the call
         #       by not using this connection!
 
@@ -1887,10 +1896,27 @@ class MagnetLogic(GenericLogic):
         for entry in self._backmap:
             parameters['related_intex_'+str(entry)] = self._backmap[entry]
 
+        # prepare a figure for saving
+        axis0_name = self.get_align_2d_axis0_name()
+        axis1_name = self.get_align_2d_axis1_name()
+        scan_axis = [axis0_name, axis1_name]
+        centre_pos = self._saved_pos_before_align
+        range0 = self.get_align_2d_axis0_range()
+        range1 = self.get_align_2d_axis1_range()
+        start_pos0 = round(centre_pos[axis0_name] - range0/2, self.magnet_step_precision)
+        start_pos1 = round(centre_pos[axis1_name] - range1/2, self.magnet_step_precision)
+        image_extent = [start_pos0, start_pos0+range0, start_pos1, start_pos1+range1]
+        figs = self.draw_figure(data=np.transpose(self._2D_data_matrix),
+                                image_extent=image_extent,
+                                scan_axis=scan_axis)
 
+        # print('matrix_data = {}'.format(matrix_data))
+        # print('parameters = {}'.format(parameters))
+        # print('filepath = {}, filelabel = {}, timestamp = {}'.format(filepath, filelabel, timestamp))
 
+        # Save the image data and figure
         self._save_logic.save_data(matrix_data, filepath=filepath, parameters=parameters,
-                                   filelabel=filelabel, timestamp=timestamp)
+                                   filelabel=filelabel, timestamp=timestamp, plotfig=figs)
 
         self.log.debug('Magnet 2D data saved to:\n{0}'.format(filepath))
 
@@ -1913,16 +1939,23 @@ class MagnetLogic(GenericLogic):
         add_data['{0} values ({1})'.format(self._axis1_name, units_axis1)] = axis1_data
         add_data['all measured additional parameter'] = param_data
 
+        # print('_axis0_name = {}, units_axis0 = {}'.format(self._axis0_name, units_axis0))
 
+        # print('data = {}'.format(add_data))
+        # print('filepath = {}, filelabel2 = {}, timestamp = {}'.format(filepath, filelabel2, timestamp))
+        # fixme: unclear why, but the following save call causes an error
+        # self._save_logic.save_data(add_data, filepath=filepath, filelabel=filelabel2,
+        #                            timestamp=timestamp, fmt='%.6e')
+        # self._save_logic.save_data(add_data, filepath=filepath, filelabel=filelabel2,
+        #                            timestamp=timestamp)
 
-        self._save_logic.save_data(add_data, filepath=filepath, filelabel=filelabel2,
-                                   timestamp=timestamp)
         # save the data table
 
         count_data = self._2D_data_matrix
         x_val = self._2D_axis0_data
         y_val = self._2D_axis1_data
         save_dict = OrderedDict()
+        print('_axis0_name = {}, units_axis0 = {}'.format(self._axis0_name, units_axis0))
         axis0_key = '{0} values ({1})'.format(self._axis0_name, units_axis0)
         axis1_key = '{0} values ({1})'.format(self._axis1_name, units_axis1)
         counts_key = 'counts (c/s)'
@@ -1944,14 +1977,15 @@ class MagnetLogic(GenericLogic):
 
         self._save_logic.save_data(save_dict, filepath=filepath, filelabel=filelabel3,
                                    timestamp=timestamp, fmt='%.6e')
-        keys = self._2d_intended_fields[0].keys()
-        intended_fields = OrderedDict()
-        for key in keys:
-            field_values = [coord_dict[key] for coord_dict in self._2d_intended_fields]
-            intended_fields[key] = field_values
 
-        self._save_logic.save_data(intended_fields, filepath=filepath, filelabel=filelabel4,
-                                   timestamp=timestamp)
+        keys = self._2d_intended_fields[0].keys()
+        # intended_fields = OrderedDict()
+        # for key in keys:
+        #     field_values = [coord_dict[key] for coord_dict in self._2d_intended_fields]
+        #     intended_fields[key] = field_values
+        #
+        # self._save_logic.save_data(intended_fields, filepath=filepath, filelabel=filelabel4,
+        #                            timestamp=timestamp)
 
         measured_fields = OrderedDict()
         for key in keys:
@@ -1961,11 +1995,192 @@ class MagnetLogic(GenericLogic):
         self._save_logic.save_data(measured_fields, filepath=filepath, filelabel=filelabel5,
                                    timestamp=timestamp)
 
-        error = OrderedDict()
-        error['quadratic error'] = self._2d_error
+        # error = OrderedDict()
+        # error['quadratic error'] = self._2d_error
+        #
+        # self._save_logic.save_data(error, filepath=filepath, filelabel=filelabel6,
+        #                            timestamp=timestamp)
 
-        self._save_logic.save_data(error, filepath=filepath, filelabel=filelabel6,
-                                   timestamp=timestamp)
+    def _set_optimized_xy_from_fit(self):
+        """Fit the completed xy optimizer scan and set the optimized xy position."""
+        fit_x, fit_y = np.meshgrid(self._X_values, self._Y_values)
+        # xy_fit_data = self.xy_refocus_image[:, :, 3].ravel()
+        xy_fit_data = np.transpose(self._2D_data_matrix)
+        axes = np.empty((len(self._X_values) * len(self._Y_values), 2))
+        axes = (fit_x.flatten(), fit_y.flatten())
+        result_2D_gaus = self._fit_logic.make_twoDgaussian_fit(
+            xy_axes=axes,
+            data=xy_fit_data,
+            estimator=self._fit_logic.estimate_twoDgaussian_MLE
+        )
+        print(result_2D_gaus.fit_report())
+
+        # if result_2D_gaus.success is False:
+        #     self.log.error('Error: 2D Gaussian Fit was not successfull!.')
+        #     print('2D gaussian fit not successfull')
+        #     self.optim_pos_x = self._initial_pos_x
+        #     self.optim_pos_y = self._initial_pos_y
+        #     self.optim_sigma_x = 0.
+        #     self.optim_sigma_y = 0.
+        #     # hier abbrechen
+        # else:
+        #     #                @reviewer: Do we need this. With constraints not one of these cases will be possible....
+        #     if abs(self._initial_pos_x - result_2D_gaus.best_values['center_x']) < self._max_offset and abs(
+        #             self._initial_pos_x - result_2D_gaus.best_values['center_x']) < self._max_offset:
+        #         if result_2D_gaus.best_values['center_x'] >= self.x_range[0] and result_2D_gaus.best_values[
+        #             'center_x'] <= self.x_range[1]:
+        #             if result_2D_gaus.best_values['center_y'] >= self.y_range[0] and result_2D_gaus.best_values[
+        #                 'center_y'] <= self.y_range[1]:
+        #                 self.optim_pos_x = result_2D_gaus.best_values['center_x']
+        #                 self.optim_pos_y = result_2D_gaus.best_values['center_y']
+        #                 self.optim_sigma_x = result_2D_gaus.best_values['sigma_x']
+        #                 self.optim_sigma_y = result_2D_gaus.best_values['sigma_y']
+        #     else:
+        #         self.optim_pos_x = self._initial_pos_x
+        #         self.optim_pos_y = self._initial_pos_y
+        #         self.optim_sigma_x = 0.
+        #         self.optim_sigma_y = 0.
+
+        # # emit image updated signal so crosshair can be updated from this fit
+        # self.sigImageUpdated.emit()
+        # self._sigDoNextOptimizationStep.emit()
+
+    def draw_figure(self, data, image_extent, scan_axis=None, cbar_range=None, percentile_range=None,
+                    crosshair_pos=None):
+        """ Create a 2-D color map figure of the scan image.
+
+        @param: array data: The NxM array of count values from a scan with NxM pixels.
+
+        @param: list image_extent: The scan range in the form [hor_min, hor_max, ver_min, ver_max]
+
+        @param: list axes: Names of the horizontal and vertical axes in the image
+
+        @param: list cbar_range: (optional) [color_scale_min, color_scale_max].  If not supplied then a default of
+                                 data_min to data_max will be used.
+
+        @param: list percentile_range: (optional) Percentile range of the chosen cbar_range.
+
+        @param: list crosshair_pos: (optional) crosshair position as [hor, vert] in the chosen image axes.
+
+        @return: fig fig: a matplotlib figure object to be saved to file.
+        """
+        if scan_axis is None:
+            scan_axis = ['X', 'Y']
+
+        # If no colorbar range was given, take full range of data
+        if cbar_range is None:
+            cbar_range = [np.min(data[np.nonzero(data)]), np.max(data)]
+
+        # Scale color values using SI prefix
+        prefix = ['', 'k', 'M', 'G']
+        prefix_count = 0
+        image_data = data
+        draw_cb_range = np.array(cbar_range)
+        image_dimension = image_extent.copy()
+
+        while draw_cb_range[1] > 1000:
+            image_data = image_data / 1000
+            draw_cb_range = draw_cb_range / 1000
+            prefix_count = prefix_count + 1
+
+        c_prefix = prefix[prefix_count]
+
+        # Scale axes values using SI prefix
+        axes_prefix = ['', 'm', r'$\mathrm{\mu}$', 'n']
+        x_prefix_count = 0
+        y_prefix_count = 0
+
+        while np.abs(image_dimension[1] - image_dimension[0]) < 1:
+            image_dimension[0] = image_dimension[0] * 1000.
+            image_dimension[1] = image_dimension[1] * 1000.
+            x_prefix_count = x_prefix_count + 1
+
+        while np.abs(image_dimension[3] - image_dimension[2]) < 1:
+            image_dimension[2] = image_dimension[2] * 1000.
+            image_dimension[3] = image_dimension[3] * 1000.
+            y_prefix_count = y_prefix_count + 1
+
+        x_prefix = axes_prefix[x_prefix_count]
+        y_prefix = axes_prefix[y_prefix_count]
+
+        # Use qudi style
+        plt.style.use(self._save_logic.mpl_qd_style)
+
+        # Create figure
+        fig, ax = plt.subplots()
+
+        # Create image plot
+        cfimage = ax.imshow(image_data,
+                            cmap=plt.get_cmap('inferno'),  # reference the right place in qd
+                            origin="lower",
+                            vmin=draw_cb_range[0],
+                            vmax=draw_cb_range[1],
+                            interpolation='none',
+                            extent=image_dimension
+                            )
+
+        ax.set_aspect(1)
+        ax.set_xlabel(scan_axis[0] + ' position (' + x_prefix + 'm)')
+        ax.set_ylabel(scan_axis[1] + ' position (' + y_prefix + 'm)')
+        ax.spines['bottom'].set_position(('outward', 10))
+        ax.spines['left'].set_position(('outward', 10))
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.get_xaxis().tick_bottom()
+        ax.get_yaxis().tick_left()
+
+        # draw the crosshair position if defined
+        if crosshair_pos is not None:
+            trans_xmark = mpl.transforms.blended_transform_factory(
+                ax.transData,
+                ax.transAxes)
+
+            trans_ymark = mpl.transforms.blended_transform_factory(
+                ax.transAxes,
+                ax.transData)
+
+            ax.annotate('', xy=(crosshair_pos[0] * np.power(1000, x_prefix_count), 0),
+                        xytext=(crosshair_pos[0] * np.power(1000, x_prefix_count), -0.01), xycoords=trans_xmark,
+                        arrowprops=dict(facecolor='#17becf', shrink=0.05),
+                        )
+
+            ax.annotate('', xy=(0, crosshair_pos[1] * np.power(1000, y_prefix_count)),
+                        xytext=(-0.01, crosshair_pos[1] * np.power(1000, y_prefix_count)), xycoords=trans_ymark,
+                        arrowprops=dict(facecolor='#17becf', shrink=0.05),
+                        )
+
+        # Draw the colorbar
+        cbar = plt.colorbar(cfimage, shrink=0.8)  # , fraction=0.046, pad=0.08, shrink=0.75)
+        cbar.set_label('Fluorescence (' + c_prefix + 'c/s)')
+
+        # remove ticks from colorbar for cleaner image
+        cbar.ax.tick_params(which=u'both', length=0)
+
+        # If we have percentile information, draw that to the figure
+        if percentile_range is not None:
+            cbar.ax.annotate(str(percentile_range[0]),
+                             xy=(-0.3, 0.0),
+                             xycoords='axes fraction',
+                             horizontalalignment='right',
+                             verticalalignment='center',
+                             rotation=90
+                             )
+            cbar.ax.annotate(str(percentile_range[1]),
+                             xy=(-0.3, 1.0),
+                             xycoords='axes fraction',
+                             horizontalalignment='right',
+                             verticalalignment='center',
+                             rotation=90
+                             )
+            cbar.ax.annotate('(percentile)',
+                             xy=(-0.3, 0.5),
+                             xycoords='axes fraction',
+                             horizontalalignment='right',
+                             verticalalignment='center',
+                             rotation=90
+                             )
+        # self.signal_draw_figure_completed.emit()
+        return fig
 
     def _move_to_index(self, pathway_index, pathway):
 
@@ -1998,7 +2213,6 @@ class MagnetLogic(GenericLogic):
                     'the passed value "{0}" is either zero or negative!\n'
                     'Choose a proper checktime value in seconds, the old '
                     'value will be kept!')
-
 
     def get_2d_data_matrix(self):
         return self._2D_data_matrix

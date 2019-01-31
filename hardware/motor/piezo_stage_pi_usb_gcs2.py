@@ -107,6 +107,9 @@ class PiezoStagePI(Base, MotorInterface):
         else:
             self.log.warning('I cannot find any connected devices with "PI" in their name.')
 
+        # set the step precision for the device, in sig figs of metres. 9 -> 1 nm precision
+        self.step_precision = 9
+
         if not self._pidll.PI_IsConnected(self._devID):
             return 1
         else:
@@ -369,7 +372,8 @@ class PiezoStagePI(Base, MotorInterface):
                                      velocity is asked.
             @return dict : with the axis label as key and the velocity as item.
         """
-        self.log.info('Function not yet implemented for this stage')
+        # self.log.info('Function not yet implemented for this stage')
+        pass
 
     def set_velocity(self, param_dict):
         """ Write new value for velocity in m/s.
@@ -380,7 +384,8 @@ class PiezoStagePI(Base, MotorInterface):
                                  to one of the axis.
         @return dict param_dict2 : dictionary with the updated axis velocity
         """
-        self.log.info('Not yet implemented for this hardware')
+        # self.log.info('Not yet implemented for this hardware')
+        pass
 
     ########################## internal methods ##################################
 

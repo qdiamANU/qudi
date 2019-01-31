@@ -86,6 +86,7 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
         # print('interfuse off')
         return_val_1 = self._microwave_device.off()
         # return_val_2 = self._awg_device.pulser_off()
+        return_val_2 = 0
 
         self.output_active = False
 

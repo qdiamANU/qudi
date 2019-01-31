@@ -317,6 +317,45 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
     #################################### Nuclear control methods ###################################
 
+    # def generate_nuclear_polarisation_with_readout(self, name='nuclear_polarisation_with_readout',
+    #                                 laser_name='laser_wait', laser_length=2e-6, wait_length=1e-6, initial_pi_pulse=False,
+    #                                 mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=1.0,
+    #                                 mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=1.0,
+    #                                 mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True,
+    #                                 rf_duration=1.0e6, rf_amp=0.1, rf_phase=0,
+    #                                 counts_per_readout=1000,
+    #                                 mw_freq_start=1.0e6, mw_freq_step=1.0e3, num_of_points=50):
+    #
+    #     created_blocks = list()
+    #     created_ensembles = list()
+    #     created_sequences = list()
+    #     para_dict = locals()
+    #
+    #
+    #
+    #     # generate the
+    #     mw_freq_array = mw_freq_start + np.arange(num_of_points) * mw_freq_step
+    #     para_list=list()
+    #     for number, freq in enumerate(mw_freq_array):
+    #         name_tmp = name + '_' + str(number)
+    #         created_blocks_tmp, created_ensembles_tmp, list1, list2 = \
+    #             self._chopped_rf_pulse(name = name_tmp, rf_duration=rf_duration, rf_amp=rf_amp,
+    #                                    rf_freq=freq, rf_phase=rf_phase)
+    #         created_blocks += created_blocks_tmp
+    #         created_ensembles += created_ensembles_tmp
+    #         para_list.append([list1, list2])
+    #
+    #     created_blocks, created_ensembles, sequence = \
+    #         self._nuclear_manipulation(created_blocks, created_ensembles, para_list, para_dict)
+    #
+    #     self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+    #                                    controlled_variable=freq_array, units=('Hz', ''), number_of_lasers=num_of_points,
+    #                                    labels = ('Frequency', 'Spin flip probability'),
+    #                                    counting_length=self.laser_length * self.normalised_safety if ssr_normalise
+    #                                    else self.laser_length * self.non_normalised_safety)
+    #     created_sequences.append(sequence)
+    #     return created_blocks, created_ensembles, created_sequences
+
     def generate_ssr_nuclear_odmr(self, name='Nuclear-ODMR', freq_start=1.0e6, freq_step=1.0e3, num_of_points=50,
                                   laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6, initial_pi_pulse=False,
                                   rf_duration=1.0e6, rf_amp=0.1, rf_phase=0,

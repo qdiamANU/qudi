@@ -176,8 +176,8 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         created_ensembles.append(block_ensemble)
         return created_blocks, created_ensembles, created_sequences
 
-    def generate_pulsedodmr(self, name='pulsedODMR', freq_start=2870.0e6, freq_step=0.2e6,
-                            num_of_points=50):
+    def generate_pulsedodmr_dan(self, name='pulsedODMR', freq_start=2870.0e6, freq_step=0.2e6,
+                            num_of_points=50, pi_pulse=10e-9):
         """
 
         """
@@ -198,7 +198,7 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         # Create block and append to created_blocks list
         pulsedodmr_block = PulseBlock(name=name)
         for mw_freq in freq_array:
-            mw_element = self._get_mw_element(length=self.rabi_period / 2,
+            mw_element = self._get_mw_element(length=pi_pulse,
                                               increment=0,
                                               amp=self.microwave_amplitude,
                                               freq=mw_freq,

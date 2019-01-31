@@ -76,6 +76,7 @@ setup['ext_microwave_frequency'] = 1
 
 
 
+
 def perform_odmr_scan(odmr_dict, save_folder, save_after_each_scan=True, save_tag = 'CWODMRscan'):
     """
     A method to scan through GHz frequency ranges.
@@ -100,6 +101,8 @@ def perform_odmr_scan(odmr_dict, save_folder, save_after_each_scan=True, save_ta
         odmr_logic_local = odmrlogic_lowfield
     elif odmr_dict['measurement_setup'] == 'highfield':
         odmr_logic_local = odmrlogic_highfield
+    elif odmr_dict['measurement_setup'] == 'synthHD':
+        odmr_logic_local = odmrlogic_synthHD
     else:
         print('measurement setup not recognised! Must be lowfield or highfield')
 
@@ -187,6 +190,8 @@ def perform_odmr_measurement(odmr_dict, fit_function='No Fit', save_after_meas=T
         odmr_logic_local = odmrlogic_lowfield
     elif odmr_dict['measurement_setup'] == 'highfield':
         odmr_logic_local = odmrlogic_highfield
+    elif odmr_dict['measurement_setup'] == 'synthHD':
+        odmr_logic_local = odmrlogic_synthHD
     else:
         print('measurement setup not recognised! Must be lowfield or highfield')
 
@@ -245,7 +250,179 @@ def perform_odmr_measurement(odmr_dict, fit_function='No Fit', save_after_meas=T
 
     return odmr_logic_local.odmr_plot_x, odmr_logic_local.odmr_plot_y, fit_params
 
+def perform_odmr_scan_scannedlo(odmr_dict, save_folder, save_after_each_scan=True, save_tag = 'CWODMRscan'):
+    """
+    A method to scan through GHz frequency ranges.
 
+    num_scans --> number of ODMR scans.
+
+    odmr_dict['num_scans'] = 1
+    odmr_dict['runtime'] = 20
+    odmr_dict['measurement_setup'] = 'lowfield'
+
+    odmr_dict['awg_freq_start'] = 100e6
+    odmr_dict['awg_freq_stop'] = 300e6
+    odmr_dict['awg_freq_step'] = 1e6
+    odmr_dict['ext_mw_freq_start'] = 2.7e9
+    odmr_dict['ext_mw_freq_list'] = list(ext_mw_freq_start + (freq_stop-freq_start)*np.arange(num_scans))
+    odmr_dict['ext_mw_power'] = -10
+
+    """
+    start_time = time.time()
+
+    if odmr_dict['measurement_setup'] == 'lowfield':
+        odmr_logic_local = odmrlogic_lowfield
+    elif odmr_dict['measurement_setup'] == 'highfield':
+        odmr_logic_local = odmrlogic_highfield
+    elif odmr_dict['measurement_setup'] == 'synthHD':
+        odmr_logic_local = odmrlogic_synthHD
+    else:
+        print('measurement setup not recognised! Must be lowfield or highfield')
+
+    cw_odmr_list = []
+    freq_data = []
+    count_data = []
+    position = dict()
+    position['x'] = []
+    position['y'] = []
+    position['z'] = []
+    position['time_exp'] = []
+    position['time_real'] = []
+
+    for i in range(0, odmr_dict['num_scans']):
+
+        # optimise and log position
+        x, y, z = optimize_position_return_position()
+        position['x'].append(x)
+        position['y'].append(y)
+        position['z'].append(z)
+        position['time_exp'].append(time.time() - start_time)
+        position['time_real'].append(datetime.datetime.now())
+
+        # perform odmr scan
+        odmr_dict['ext_mw_freq'] = odmr_dict['ext_mw_freq_list'][i]
+        save_tag_scan = save_tag + '_LOfreq' + str(round(odmr_dict['ext_mw_freq_list'][i] * 1e-6)) + 'MHz'
+        scan_output = perform_odmr_measurement_scannedlo(odmr_dict,
+                                         odmr_dict['fit_function'],
+                                         save_after_meas = save_after_each_scan,
+                                         save_tag=save_tag_scan)
+        cw_odmr_list.append(scan_output)
+
+    # pre-process odmr data
+    for i in range(0, odmr_dict['num_scans']):
+        for j in range(len(cw_odmr_list[i][0])):
+            freq_data.append(cw_odmr_list[i][0][j])
+            # count_data.append(cw_odmr_list[i][1][0][j] / np.mean(cw_odmr_list[i][1][0]))
+            count_data.append(cw_odmr_list[i][1][0][j] / np.mean(cw_odmr_list[i][1][0]))
+
+        cw_odmr_data = np.column_stack((freq_data, count_data))
+
+    # pre-process position tracking
+    position['x'] = np.array(position['x'])
+    position['y'] = np.array(position['y'])
+    position['z'] = np.array(position['z'])
+    position['time_exp'] = np.array(position['time_exp'])
+    position['time_real'] = np.array(position['time_real'])
+    position['x_drift'] = position['x']-position['x'][0]
+    position['y_drift'] = position['y'] - position['y'][0]
+    position['z_drift'] = position['z'] - position['z'][0]
+
+    # save data
+    min_freq_str = str(int(scan_output[0][0] * 1e-6))
+    max_freq_str = str(int(scan_output[0][-1] * 1e-6)) + 'MHz'
+    with open(save_folder + save_tag+'_'+min_freq_str + 'to' + max_freq_str + '.pkl', 'wb') as f:
+        pickle.dump(cw_odmr_data, f, 0)
+        pickle.dump(position, f, 0)
+    # todo: automatically save in same folder as data - atm this needs to be manually set
+
+    return cw_odmr_data, position
+
+def perform_odmr_measurement_scannedlo(odmr_dict, fit_function='No Fit', save_after_meas=True, save_tag='CWODMR'):
+    """ An independant method, which can be called by a task with the proper input values
+        to perform an odmr measurement.
+
+        odmr_dict['runtime'] = 20
+        odmr_dict['measurement_setup'] = 'lowfield'
+
+        # fit function options are either 'No Fit', or:
+        # ['Lorentzian dip', 'Two Lorentzian dips', 'N14', 'N15', 'Two Gaussian dips']
+        fitfunction_options = odmrlogic_highfield.get_fit_functions()
+        odmr_dict['fit_function'] = fitfunction_options[1]
+
+        odmr_dict['awg_freq_start'] = 100e6
+        odmr_dict['awg_freq_stop'] = 300e6
+        odmr_dict['awg_freq_step'] = 1e6
+        odmr_dict['ext_mw_freq'] = 2.7e9
+        odmr_dict['ext_mw_power'] = 0
+
+    @return
+    """
+    scan_start_time = time.time()
+
+    if odmr_dict['measurement_setup'] == 'lowfield':
+        odmr_logic_local = odmrlogic_lowfield
+    elif odmr_dict['measurement_setup'] == 'highfield':
+        odmr_logic_local = odmrlogic_highfield
+    elif odmr_dict['measurement_setup'] == 'synthHD':
+        odmr_logic_local = odmrlogic_synthHD
+    else:
+        print('measurement setup not recognised! Must be lowfield or highfield')
+
+    print('starting odmr measurement')
+    timeout = 30
+    start_time = time.time()
+    while odmr_logic_local.module_state() != 'idle':
+        time.sleep(0.5)
+        timeout -= (time.time() - start_time)
+        if timeout <= 0:
+            odmr_logic_local.log.error('perform_odmr_measurement failed. Logic module was still locked '
+                           'and 30 sec timeout has been reached.')
+            return {}
+
+    # set all relevant parameter:
+    freq_start = odmr_dict['ext_mw_freq']
+    freq_stop = odmr_dict['ext_mw_freq'] + odmr_dict['awg_freq_range']
+    freq_step = odmr_dict['awg_freq_step']
+    ext_mw_power = odmr_dict['ext_mw_power']
+    runtime = odmr_dict['runtime']
+    # odmr_logic_local._mw_device.ext_microwave_frequency = odmr_dict['ext_mw_freq']
+    odmr_logic_local.set_sweep_parameters(freq_start, freq_stop, freq_step, ext_mw_power)
+    odmr_logic_local.set_runtime(runtime)
+
+    print('freqscan start={}, stop={}, step={}'.format(freq_start, freq_stop, freq_step))
+    # wait for hardware settings to be implemented
+    time.sleep(1)
+
+    # start the scan
+    odmr_logic_local.sigStartOdmrScan.emit()
+
+    # wait until the scan has started
+    while odmr_logic_local.module_state() != 'locked':
+        time.sleep(1)
+    # print('Scan has started')
+
+    # do periodic refocussing
+    # control_odmr_measurement(odmr_dict, odmr_logic_local, scan_start_time)
+
+    # wait until the scan has finished
+    while odmr_logic_local.module_state() == 'locked':
+        time.sleep(1)
+        # print('waiting for scan to finish')
+    # print('Scan has finished')
+
+    # Perform fit if requested
+    if fit_function != 'No Fit':
+        odmr_logic_local.do_fit(fit_function)
+        fit_params = odmr_logic_local.fc.current_fit_param
+    else:
+        fit_params = None
+
+    # Save data if requested
+    if save_after_meas:
+        odmr_logic_local.save_odmr_data(tag=save_tag)
+    # print(fit_params)
+
+    return odmr_logic_local.odmr_plot_x, odmr_logic_local.odmr_plot_y, fit_params
 
 
 def control_odmr_measurement(qm_dict, odmr_logic_local, start_time):
