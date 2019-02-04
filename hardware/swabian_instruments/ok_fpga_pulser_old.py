@@ -1,12 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Use Swabian Instruments PulseStreamer8/2 as a pulse generator.
-
-Protobuf (pb2) and grpc files generated from pulse_streamer.proto
-file available at https://www.swabianinstruments.com/static/documentation/PulseStreamer/sections/interface.html#grpc-interface.
-
-Regenerate files for an update proto file using the following:
-python3 -m grpc_tools.protoc -I=./ --python_out=. --grpc_python_out=. ./pulse_streamer.proto
+Use OK FPGA as a digital pulse sequence generator.
 
 Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,33 +21,34 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 from core.module import Base, ConfigOption
 from core.util.modules import get_home_dir
+from core.util.modules import get_main_dir
 from interface.pulser_interface import PulserInterface, PulserConstraints
+import okfrontpanel as ok
+import time
+import os
 from collections import OrderedDict
 
-import grpc
-import os
-import hardware.swabian_instruments.pulse_streamer_pb2 as pulse_streamer_pb2
-import dill
 
-class PulseStreamer(Base, PulserInterface):
-    """ Methods to control PulseStreamer.
+class OkFpgaPulser(Base, PulserInterface):
+    """Methods to control Pulse Generator running on OK FPGA.
 
-    Example config for copy-paste:
-
-    pulse_streamer:
-        module.Class: 'swabian_instruments.pulse_streamer.PulseStreamer'
-        pulsestreamer_ip: '192.168.1.100'
-        laser_channel: 0
-        uw_x_channel: 2
-
+    Chan   PIN
+    ----------
+    Ch1    A3
+    Ch2    C5
+    Ch3    D6
+    Ch4    B6
+    Ch5    C7
+    Ch6    B8
+    Ch7    D9
+    Ch8    C9
     """
     _modclass = 'pulserinterface'
     _modtype = 'hardware'
 
-    _pulsestreamer_ip = ConfigOption('pulsestreamer_ip', '192.168.1.100', missing='warn')
-    _laser_channel = ConfigOption('laser_channel', 0, missing='warn')
-    _uw_x_channel = ConfigOption('uw_x_channel', 2, missing='warn')
-
+    fpga_serial = ConfigOption('fpga_serial', missing='error')
+    _fpga_type = ConfigOption('fpga_type', 'XEM6310_LX150', missing='warn')
+ 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
@@ -61,76 +56,78 @@ class PulseStreamer(Base, PulserInterface):
             self.pulsed_file_dir = config['pulsed_file_dir']
 
             if not os.path.exists(self.pulsed_file_dir):
+
                 homedir = get_home_dir()
                 self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
                 self.log.warning('The directory defined in parameter '
                             '"pulsed_file_dir" in the config for '
-                            'PulseStreamer does not exist!\n'
+                            'SequenceGeneratorLogic class does not exist!\n'
                             'The default home directory\n{0}\n will be taken '
                             'instead.'.format(self.pulsed_file_dir))
         else:
             homedir = get_home_dir()
             self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
             self.log.warning('No parameter "pulsed_file_dir" was specified in the config for '
-                             'PulseStreamer as directory for the pulsed files!\nThe default home '
+                             'OkFpgaPulser as directory for the pulsed files!\nThe default home '
                              'directory\n{0}\nwill be taken instead.'.format(self.pulsed_file_dir))
+            self.log.warning(
+                'No parameter "fpga_type" specified in the config!\n'
+                'Possible types are "XEM6310_LX150" or "XEM6310_LX45".\n'
+                'Taking the type "{0}" as default.'.format(self._fpga_type))
 
         self.host_waveform_directory = self._get_dir_for_name('sampled_hardware_files')
 
         self.current_status = -1
-        self.sample_rate = 1e9
-        self.current_loaded_asset = None
-
-        self._channel = grpc.insecure_channel(self._pulsestreamer_ip + ':50051')
+        self.sample_rate = 950e6
+        self.current_loaded_asset = ''
 
     def on_activate(self):
-        """ Establish connection to pulse streamer and tell it to cancel all operations """
-        self.pulse_streamer = pulse_streamer_pb2.PulseStreamerStub(self._channel)
-        self.pulser_off()
-        self.current_status = 0
+        self.current_loaded_asset = ''
+        self.fpga = ok.FrontPanel()
+        self._connect_fpga()
+        self.sample_rate = self.get_sample_rate()
 
     def on_deactivate(self):
-        del self.pulse_streamer
+        self._disconnect_fpga()
 
     def get_constraints(self):
-        """ Retrieve the hardware constrains from the Pulsing device.
+        """
+        Retrieve the hardware constrains from the Pulsing device.
 
-        @return dict: dict with constraints for the sequence generation and GUI
+        @return constraints object: object with pulser constraints as attributes.
 
-        Provides all the constraints (e.g. sample_rate, amplitude,
-        total_length_bins, channel_config, ...) related to the pulse generator
-        hardware to the caller.
-        The keys of the returned dictionary are the str name for the constraints
-        (which are set in this method). No other keys should be invented. If you
-        are not sure about the meaning, look in other hardware files to get an
-        impression. If still additional constraints are needed, then they have
-        to be add to all files containing this interface.
-        The items of the keys are again dictionaries which have the generic
-        dictionary form:
-            {'min': <value>,
-             'max': <value>,
-             'step': <value>,
-             'unit': '<value>'}
+        Provides all the constraints (e.g. sample_rate, amplitude, total_length_bins,
+        channel_config, ...) related to the pulse generator hardware to the caller.
 
-        Only the keys 'activation_config' and differs, since it contain the
-        channel configuration/activation information.
+            SEE PulserConstraints CLASS IN pulser_interface.py FOR AVAILABLE CONSTRAINTS!!!
 
-        If the constraints cannot be set in the pulsing hardware (because it
-        might e.g. has no sequence mode) then write just zero to each generic
-        dict. Note that there is a difference between float input (0.0) and
-        integer input (0).
-        ALL THE PRESENT KEYS OF THE CONSTRAINTS DICT MUST BE ASSIGNED!
+        If you are not sure about the meaning, look in other hardware files to get an impression.
+        If still additional constraints are needed, then they have to be added to the
+        PulserConstraints class.
+
+        Each scalar parameter is an ScalarConstraints object defined in cor.util.interfaces.
+        Essentially it contains min/max values as well as min step size, default value and unit of
+        the parameter.
+
+        PulserConstraints.activation_config differs, since it contain the channel
+        configuration/activation information of the form:
+            {<descriptor_str>: <channel_list>,
+             <descriptor_str>: <channel_list>,
+             ...}
+
+        If the constraints cannot be set in the pulsing hardware (e.g. because it might have no
+        sequence mode) just leave it out so that the default is used (only zeros).
         """
         constraints = PulserConstraints()
 
         # The file formats are hardware specific.
-        constraints.waveform_format = ['pstream']
+        constraints.waveform_format = ['fpga']
         constraints.sequence_format = []
 
-        constraints.sample_rate.min = 1e9
-        constraints.sample_rate.max = 1e9
-        constraints.sample_rate.step = 0
-        constraints.sample_rate.default = 1e9
+        constraints.sample_rate.min = 500e6
+        constraints.sample_rate.max = 950e6
+        constraints.sample_rate.step = 450e6
+        constraints.sample_rate.default = 950e6
 
         constraints.d_ch_low.min = 0.0
         constraints.d_ch_low.max = 0.0
@@ -142,12 +139,10 @@ class PulseStreamer(Base, PulserInterface):
         constraints.d_ch_high.step = 0.0
         constraints.d_ch_high.default = 3.3
 
-        # sample file length max is not well-defined for PulseStreamer, which collates sequential identical pulses into
-        # one. Total number of not-sequentially-identical pulses which can be stored: 1 M.
-        constraints.waveform_length.min = 1
-        constraints.waveform_length.max = 134217728
-        constraints.waveform_length.step = 1
-        constraints.waveform_length.default = 1
+        constraints.sampled_file_length.min = 1024
+        constraints.sampled_file_length.max = 134217728
+        constraints.sampled_file_length.step = 1
+        constraints.sampled_file_length.default = 1024
 
         # the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
         # channels. Here all possible channel configurations are stated, where only the generic
@@ -165,10 +160,8 @@ class PulseStreamer(Base, PulserInterface):
         @return int: error code (0:OK, -1:error)
         """
         # start the pulse sequence
-        self.pulse_streamer.stream(self._sequence)
-        self.log.info('Asset uploaded to PulseStreamer')
-        self.pulse_streamer.startNow(pulse_streamer_pb2.VoidMessage())
-        self.current_status = 1
+        self.fpga.SetWireInValue(0x00, 0x01)
+        self.fpga.UpdateWireIns()
         return 0
 
     def pulser_off(self):
@@ -177,9 +170,8 @@ class PulseStreamer(Base, PulserInterface):
         @return int: error code (0:OK, -1:error)
         """
         # stop the pulse sequence
-        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
-        self.pulse_streamer.constant(pulse_streamer_pb2.PulseMessage(ticks=0, digi=channels, ao0=0, ao1=0))
-        self.current_status = 0
+        self.fpga.SetWireInValue(0x00, 0x00)
+        self.fpga.UpdateWireIns()
         return 0
 
     def upload_asset(self, asset_name=None):
@@ -190,12 +182,13 @@ class PulseStreamer(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self.log.debug('PulseStreamer has no own storage capability.\n"upload_asset" call ignored.')
+        self.log.debug('FPGA pulser has no own storage capability.\n"upload_asset" call ignored.')
         return 0
 
     def load_asset(self, asset_name, load_dict=None):
         """ Loads a sequence or waveform to the specified channel of the pulsing
             device.
+
 
         @param str asset_name: The name of the asset to be loaded
 
@@ -211,6 +204,9 @@ class PulseStreamer(Base, PulserInterface):
                                 i.e. the filename appendix (_Ch1, _Ch2 etc.)
 
         @return int: error code (0:OK, -1:error)
+
+        Unused for digital pulse generators without sequence storage capability
+        (PulseBlaster, FPGA).
         """
         # ignore if no asset_name is given
         if asset_name is None:
@@ -220,50 +216,65 @@ class PulseStreamer(Base, PulserInterface):
         # check if asset exists
         saved_assets = self.get_saved_asset_names()
         if asset_name not in saved_assets:
-            self.log.error('No asset with name "{0}" found for PulseStreamer.\n'
+            self.log.error('No asset with name "{0}" found for FPGA pulser.\n'
                            '"load_asset" call ignored.'.format(asset_name))
             return -1
 
         # get samples from file
-        filepath = os.path.join(self.host_waveform_directory, asset_name + '.pstream')
-        pulse_sequence_raw = dill.load(open(filepath, 'rb'))
+        filepath = os.path.join(self.host_waveform_directory, asset_name + '.fpga')
+        with open(filepath, 'rb') as asset_file:
+            samples = bytearray(asset_file.read())
 
-        pulse_sequence = []
-        for pulse in pulse_sequence_raw:
-            pulse_sequence.append(pulse_streamer_pb2.PulseMessage(ticks=pulse[0], digi=pulse[1], ao0=0, ao1=1))
+        # calculate size of the two bytearrays to be transmitted
+        # the biggest part is tranfered in 1024 byte blocks and the rest is transfered in 32 byte blocks
+        big_bytesize = (len(samples) // 1024) * 1024
+        small_bytesize = len(samples) - big_bytesize
 
-        blank_pulse = pulse_streamer_pb2.PulseMessage(ticks=0, digi=0, ao0=0, ao1=0)
-        laser_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=self._convert_to_bitmask([self._laser_channel]), ao0=0, ao1=0)
-        laser_and_uw_channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
-        laser_and_uw_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=laser_and_uw_channels, ao0=0, ao1=0)
-        self._sequence = pulse_streamer_pb2.SequenceMessage(pulse=pulse_sequence, n_runs=0, initial=laser_on,
-            final=laser_and_uw_on, underflow=blank_pulse, start=1)
+        # try repeatedly to upload the samples to the FPGA RAM
+        # stop if the upload was successful
+        loop_count = 0
+        while True:
+            loop_count += 1
+            # reset FPGA
+            self.fpga.SetWireInValue(0x00, 0x04)
+            self.fpga.UpdateWireIns()
+            self.fpga.SetWireInValue(0x00, 0x00)
+            self.fpga.UpdateWireIns()
+            # upload sequence
+            if big_bytesize != 0:
+                # enable sequence write mode in FPGA
+                self.fpga.SetWireInValue(0x00, (255 << 24) + 2)
+                self.fpga.UpdateWireIns()
+                # write to FPGA DDR2-RAM
+                self.fpga.WriteToBlockPipeIn(0x80, 1024, samples[0:big_bytesize])
+            if small_bytesize != 0:
+                # enable sequence write mode in FPGA
+                self.fpga.SetWireInValue(0x00, (8 << 24) + 2)
+                self.fpga.UpdateWireIns()
+                # write to FPGA DDR2-RAM
+                self.fpga.WriteToBlockPipeIn(0x80, 32,
+                                             samples[big_bytesize:big_bytesize + small_bytesize])
 
+            # check if upload was successful
+            self.fpga.SetWireInValue(0x00, 0x00)
+            self.fpga.UpdateWireIns()
+            # start the pulse sequence
+            self.fpga.SetWireInValue(0x00, 0x01)
+            self.fpga.UpdateWireIns()
+            # wait for 600ms
+            time.sleep(0.6)
+            # get status flags from FPGA
+            self.fpga.UpdateWireOuts()
+            flags = self.fpga.GetWireOutValue(0x20)
+            self.fpga.SetWireInValue(0x00, 0x00)
+            self.fpga.UpdateWireIns()
+            # check if the memory readout works.
+            if flags == 0:
+                self.log.info('Loading of the asset "{0}" to FPGA was successful.\n'
+                              'Upload attempts needed: {1}'.format(asset_name, loop_count))
+                break
         self.current_loaded_asset = asset_name
         return 0
-
-    def load_sequence(self, sequence_name):
-        """ Loads a sequence to the channels of the device in order to be ready for playback.
-        For devices that have a workspace (i.e. AWG) this will load the sequence from the device
-        workspace into the channels.
-        For a device without mass memory this will make the waveform/pattern that has been
-        previously written with self.write_waveform ready to play.
-
-        @param dict|list sequence_name: a dictionary with keys being one of the available channel
-                                        index and values being the name of the already written
-                                        waveform to load into the channel.
-                                        Examples:   {1: rabi_ch1, 2: rabi_ch2} or
-                                                    {1: rabi_ch2, 2: rabi_ch1}
-                                        If just a list of waveform names if given, the channel
-                                        association will be invoked from the channel
-                                        suffix '_ch1', '_ch2' etc.
-
-        @return dict: Dictionary containing the actually loaded waveforms per channel.
-        """
-        self.log.warning('FPGA digital pulse generator has no sequencing capabilities.\n'
-                         'load_sequence call ignored.')
-        return dict()
-
 
     def clear_all(self):
         """ Clears all loaded waveforms from the pulse generators RAM.
@@ -273,10 +284,6 @@ class PulseStreamer(Base, PulserInterface):
         Unused for digital pulse generators without storage capability
         (PulseBlaster, FPGA).
         """
-
-        self.pulser_off()
-        self.__currently_loaded_waveform = ''
-        self.__current_waveform_name = ''
         return 0
 
     def get_status(self):
@@ -315,7 +322,20 @@ class PulseStreamer(Base, PulserInterface):
               for obtaining the actual set value and use that information for
               further processing.
         """
-        self.log.debug('PulseStreamer sample rate cannot be configured')
+        bitfile_name = 'pulsegen_8chnl_'
+        if sample_rate == 950e6:
+            bitfile_name = bitfile_name + '950MHz_' + self._fpga_type.split('_')[1] + '.bit'
+        elif sample_rate == 500e6:
+            bitfile_name = bitfile_name + '500MHz_' + self._fpga_type.split('_')[1] + '.bit'
+        else:
+            self.log.error('Setting "{0:.3e}" as sample rate for FPGA pulse generator is not allowed. '
+                           'Use 950e6 or 500e6 instead.'.format(sample_rate))
+            return -1
+        bitfile_path = os.path.join(get_main_dir(), 'thirdparty', 'qo_fpga', bitfile_name)
+
+        self.sample_rate = sample_rate
+        self.fpga.ConfigureFPGA(bitfile_path)
+        self.log.debug('FPGA pulse generator configured with {0}'.format(bitfile_path))
         return self.sample_rate
 
     def get_analog_level(self, amplitude=None, offset=None):
@@ -435,7 +455,7 @@ class PulseStreamer(Base, PulserInterface):
             low = {}
         if high is None:
             high = {}
-        self.log.warning('PulseStreamer logic level cannot be adjusted!')
+        self.log.warning('FPGA pulse generator logic level cannot be adjusted!')
         return 0
 
     def get_active_channels(self,  ch=None):
@@ -464,21 +484,13 @@ class PulseStreamer(Base, PulserInterface):
             'd_ch8': True}
         return d_ch_dict
 
-    def get_loaded_assets(self):
-        """
-        Retrieve the currently loaded asset names for each active channel of the device.
-        The returned dictionary will have the channel numbers as keys.
-        In case of loaded waveforms the dictionary values will be the waveform names.
-        In case of a loaded sequence the values will be the sequence name appended by a suffix
-        representing the track loaded to the respective channel (i.e. '<sequence_name>_1').
+    def get_loaded_asset(self):
+        """ Retrieve the currently loaded asset name of the device.
 
-        @return (dict, str): Dictionary with keys being the channel number and values being the
-                             respective asset loaded into the channel,
-                             string describing the asset type ('waveform' or 'sequence')
+        @return str: Name of the current asset, that can be either a filename
+                     a waveform, a sequence ect.
         """
-        asset_type = 'waveform' if self.__currently_loaded_waveform else None
-        asset_dict = {chnl_num: self.__currently_loaded_waveform for chnl_num in range(1, 9)}
-        return asset_dict, asset_type
+        return self.current_loaded_asset
 
     def get_uploaded_asset_names(self):
         """ Retrieve the names of all uploaded assets on the device.
@@ -492,57 +504,58 @@ class PulseStreamer(Base, PulserInterface):
         names = []
         return names
 
-    def write_sequence(self, name, sequence_parameters):
+    def get_saved_asset_names(self):
+        """ Retrieve the names of all sampled and saved assets on the host PC.
+        This is no list of the file names.
+
+        @return list: List of all saved asset name strings in the current
+                      directory of the host PC.
         """
-        Write a new sequence on the device memory.
+        file_list = self._get_filenames_on_host()
 
-        @param str name: the name of the waveform to be created/append to
-        @param dict sequence_parameters: dictionary containing the parameters for a sequence
+        saved_assets = []
+        for filename in file_list:
+            if filename.endswith('.fpga'):
+                asset_name = filename.rsplit('.', 1)[0]
+                if asset_name not in saved_assets:
+                    saved_assets.append(asset_name)
+        return saved_assets
 
-        @return: int, number of sequence steps written (-1 indicates failed process)
+    def delete_asset(self, asset_name):
+        """ Delete all files associated with an asset with the passed asset_name from the device memory.
+
+        @param str asset_name: The name of the asset to be deleted
+                               Optionally a list of asset names can be passed.
+
+        @return int: error code (0:OK, -1:error)
+
+        Unused for digital pulse generators without sequence storage capability
+        (PulseBlaster, FPGA).
         """
-        self.log.warning('FPGA digital pulse generator has no sequencing capabilities.\n'
-                         'write_sequence call ignored.')
-        return -1
+        return 0
 
+    def set_asset_dir_on_device(self, dir_path):
+        """ Change the directory where the assets are stored on the device.
 
-    def get_waveform_names(self):
-        """ Retrieve the names of all uploaded waveforms on the device.
+        @param str dir_path: The target directory
 
-        @return list: List of all uploaded waveform name strings in the device workspace.
+        @return int: error code (0:OK, -1:error)
+
+        Unused for digital pulse generators without changeable file structure
+        (PulseBlaster, FPGA).
         """
-        waveform_names = list()
-        if self.__current_waveform_name != '' and self.__current_waveform_name is not None:
-            waveform_names = [self.__current_waveform_name]
-        return waveform_names
+        return 0
 
+    def get_asset_dir_on_device(self):
+        """ Ask for the directory where the hardware conform files are stored on
+            the device.
 
-    def get_sequence_names(self):
-        """ Retrieve the names of all uploaded sequence on the device.
+        @return str: The current file directory
 
-        @return list: List of all uploaded sequence name strings in the device workspace.
+        Unused for digital pulse generators without changeable file structure
+        (PulseBlaster, FPGA).
         """
-        return list()
-
-    def delete_waveform(self, waveform_name):
-        """ Delete the waveform with name "waveform_name" from the device memory.
-
-        @param str waveform_name: The name of the waveform to be deleted
-                                  Optionally a list of waveform names can be passed.
-
-        @return list: a list of deleted waveform names.
-        """
-        return list()
-
-    def delete_sequence(self, sequence_name):
-        """ Delete the sequence with name "sequence_name" from the device memory.
-
-        @param str sequence_name: The name of the sequence to be deleted
-                                  Optionally a list of sequence names can be passed.
-
-        @return list: a list of deleted sequence names.
-        """
-        return list()
+        return ''
 
     def get_interleave(self):
         """ Check whether Interleave is ON or OFF in AWG.
@@ -591,9 +604,10 @@ a
 
         @return int: error code (0:OK, -1:error)
         """
-        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
-        self.pulse_streamer.constant(pulse_streamer_pb2.PulseMessage(ticks=0, digi=channels, ao0=0, ao1=0))
-        self.pulse_streamer.constant(laser_on)
+        self.fpga.SetWireInValue(0x00, 0x04)
+        self.fpga.UpdateWireIns()
+        self.fpga.SetWireInValue(0x00, 0x00)
+        self.fpga.UpdateWireIns()
         return 0
 
     def has_sequence_mode(self):
@@ -602,6 +616,33 @@ a
         @return: bool, True for yes, False for no.
         """
         return False
+
+    def _connect_fpga(self):
+        # connect to FPGA by serial number
+        self.fpga.OpenBySerial(self.fpga_serial)
+        # upload configuration bitfile to FPGA
+        self.set_sample_rate(self.sample_rate)
+
+        # Check connection
+        if not self.fpga.IsFrontPanelEnabled():
+            self.current_status = -1
+            self.log.error('ERROR: FrontPanel is not enabled in FPGA pulse generator!')
+            return -1
+        else:
+            self.current_status = 0
+            self.log.info('FPGA pulse generator connected')
+            return 0
+
+    def _disconnect_fpga(self):
+        """
+        stop FPGA and disconnect
+        """
+        # set FPGA in reset state
+        self.fpga.SetWireInValue(0x00, 0x04)
+        self.fpga.UpdateWireIns()
+        self.current_status = -1
+        del self.fpga
+        return 0
 
     def _get_dir_for_name(self, name):
         """ Get the path to the pulsed sub-directory 'name'.
@@ -619,41 +660,5 @@ a
 
         @return: list, The full filenames of all assets saved on the host PC.
         """
-        filename_list = [f for f in os.listdir(self.host_waveform_directory) if f.endswith('.pstream')]
+        filename_list = [f for f in os.listdir(self.host_waveform_directory) if f.endswith('.fpga')]
         return filename_list
-
-    def _convert_to_bitmask(self, active_channels):
-        """ Convert a list of channels into a bitmask.
-        @param numpy.array active_channels: the list of active channels like
-                            e.g. [0,4,7]. Note that the channels start from 0.
-        @return int: The channel-list is converted into a bitmask (an sequence
-                     of 1 and 0). The returned integer corresponds to such a
-                     bitmask.
-        Note that you can get a binary representation of an integer in python
-        if you use the command bin(<integer-value>). All higher unneeded digits
-        will be dropped, i.e. 0b00100 is turned into 0b100. Examples are
-            bin(0) =    0b0
-            bin(1) =    0b1
-            bin(8) = 0b1000
-        Each bit value (read from right to left) corresponds to the fact that a
-        channel is on or off. I.e. if you have
-            0b001011
-        then it would mean that only channel 0, 1 and 3 are switched to on, the
-        others are off.
-        Helper method for write_pulse_form.
-        """
-        bits = 0     # that corresponds to: 0b0
-        for channel in active_channels:
-            # go through each list element and create the digital word out of
-            # 0 and 1 that represents the channel configuration. In order to do
-            # that a bitwise shift to the left (<< operator) is performed and
-            # the current channel configuration is compared with a bitwise OR
-            # to check whether the bit was already set. E.g.:
-            #   0b1001 | 0b0110: compare elementwise:
-            #           1 | 0 => 1
-            #           0 | 1 => 1
-            #           0 | 1 => 1
-            #           1 | 1 => 1
-            #                   => 0b1111
-            bits = bits | (1<< channel)
-        return bits
