@@ -76,7 +76,7 @@ class SingleShotInterface(metaclass=InterfaceMetaclass):
         pass
 
     @abc.abstractmethod
-    def configure_ssr_counter(self, counts_per_readout=1, countlength=0):
+    def configure_ssr_counter(self, counts_per_readout, countlength):
         """ Configuration of the fast counter.
 
         @param int counts_per_readout: optional, number of readouts for one measurement
@@ -134,7 +134,7 @@ class SingleShotInterface(metaclass=InterfaceMetaclass):
 
 
     @abc.abstractmethod
-    def get_data_trace(self):
+    def get_data_trace(self, normalized=False, charge_state_selection=False, subtract_mean=False):
         """ Polls the current timetrace data from the fast counter.
 
         Return value is a numpy array (dtype = int64).

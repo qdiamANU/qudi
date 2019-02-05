@@ -37,6 +37,7 @@ from logic.generic_logic import GenericLogic
 from qtpy import QtCore
 
 
+
 class PoI:
 
     """
@@ -105,6 +106,8 @@ class PoI:
                                'dimensions.'
                                )
             self._coords_in_sample = [coords[0], coords[1], coords[2]]
+
+
 
     def add_position_to_history(self, position=None):
         """ Adds an explicitly known position+time to the history of the POI.
@@ -206,6 +209,9 @@ class PoiManagerLogic(GenericLogic):
 
     # status vars
     poi_list = StatusVar(default=OrderedDict())
+    poi_trace = []
+    time_list = []
+    abs_time_list = []
     roi_name = StatusVar(default='')
     active_poi = StatusVar(default=None)
 
@@ -480,6 +486,9 @@ class PoiManagerLogic(GenericLogic):
             # Calculate sample shift and add it to the trace of 'sample' POI
             sample_shift = newpos - self.get_poi_position(poikey=poikey)
             sample_shift += self.poi_list['sample'].get_position_history()[-1, :][1:4]
+            self.poi_trace.append(sample_shift)
+            self.time_list.append(time.time())
+            self.abs_time_list.append(datetime.now())
             self.poi_list['sample'].add_position_to_history(position=sample_shift)
 
             # signal POI has been updated (this will cause GUI to redraw)
@@ -596,6 +605,8 @@ class PoiManagerLogic(GenericLogic):
         if self.time_left <= 0:
             self.timer_step = time.time()
             self.optimise_poi(poikey=self._current_poi_key)
+
+
 
     def stop_periodic_refocus(self):
         """ Stops the perodic refocussing of the poi.
@@ -751,6 +762,50 @@ class PoiManagerLogic(GenericLogic):
 
         self.log.debug('ROI saved to:\n{0}'.format(filepath))
         return 0
+
+    def save_poi_history(self):
+        """
+        Save the history of a POI to file
+
+        This isn't actually what is plotted in the GUI, that code is in 'poimangui.py' as '_redraw_sample_shift',
+        ideally the data from that plot should be taken from this file.
+        """
+        # File path and name
+        filepath = self._save_logic.get_path_for_module(module_name='POI_History')
+
+        # We will fill the data OderedDict to send to savelogic
+        data = OrderedDict()
+
+        x_shift_data = []
+        y_shift_data = []
+        z_shift_data = []
+        abs_time = []
+        rel_time = []
+
+        for i in range(len(self.poi_trace)):
+            x_shift_data.append(self.poi_trace[i][0])
+            y_shift_data.append(self.poi_trace[i][1])
+            z_shift_data.append(self.poi_trace[i][2])
+        for i in range(len(self.time_list)):
+            abs_time.append(self.abs_time_list[i])
+            rel_time.append(self.time_list[i]-self.time_list[0])
+
+        data['Absolute Time'] = np.array(abs_time)
+        data['Relative Time'] = np.array(rel_time)
+        data['x'] = np.array(x_shift_data)
+        data['y'] = np.array(y_shift_data)
+        data['z'] = np.array(z_shift_data)
+
+        self._save_logic.save_data(
+            data,
+            filepath=filepath,
+            filelabel=self.roi_name,
+            fmt=['%s', '%.6e', '%.6e', '%.6e', '%.6e']
+        )
+
+        self.log.debug('POI history saved to:\n{0}'.format(filepath))
+        return 0
+
 
     def load_roi_from_file(self, filename=None):
 

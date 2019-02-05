@@ -381,6 +381,8 @@ class MagnetGui(GUIBase):
 
         self._mw.save_ToolBar.addWidget(self._mw.alignment_2d_nametag_LineEdit)
         self._mw.save_Action.triggered.connect(self.save_2d_plots_and_data)
+        self._mw.gaussianfit2d_Action.triggered.connect(self.gaussian_fit_2d)
+        self._mw.actionOptimise_Magnet_Position.triggered.connect(self.optimize_position)
 
         self._mw.run_stop_2d_alignment_Action.triggered.connect(self.run_stop_2d_alignment)
         self._mw.continue_2d_alignment_Action.triggered.connect(self.continue_stop_2d_alignment)
@@ -1558,6 +1560,37 @@ class MagnetGui(GUIBase):
 
         # self._save_logic.
         self._magnet_logic.save_2d_data(filetag, timestamp)
+
+    def gaussian_fit_2d(self):
+        """Fit the magnet scan data with a 2D Gaussian fit"""
+        # Fit the data
+        raw_twoD_gaus_fit_results, twoD_gaus_fit_results = self._magnet_logic.twoD_gaussian_fit()
+        # Print data in textbox.
+
+        self._mw.magnet_fit_results_DisplayWidget.setPlainText(twoD_gaus_fit_results)
+
+    def optimize_position(self):
+        """Optimize magnet position"""
+
+        raw_twoD_gaus_fit_results, twoD_gaus_fit_results = self._magnet_logic.twoD_gaussian_fit()
+
+        old_pos_dict = self._magnet_logic._magnet_device.get_pos()
+
+        xyz_param_dict = {'x': raw_twoD_gaus_fit_results.params['center_x'].value,
+                      'y': raw_twoD_gaus_fit_results.params['center_y'].value, 'z': old_pos_dict.get('z')}
+
+        #xyz_param_dict = {'x': 0.010, 'y': 0.010, 'z': old_pos_dict.get('z')}
+
+        self._magnet_logic.move_abs(xyz_param_dict)
+
+        self.update_roi_from_abs_movement()
+
+        self._mw.magnet_fit_results_DisplayWidget.setPlainText('Magnet position optimised to (x: '+
+                                                               str(raw_twoD_gaus_fit_results.params['center_x'].value)+
+                                                               ', y: '+str(raw_twoD_gaus_fit_results.params['center_y'].value)+
+                                                               ', z: '+str(old_pos_dict.get('z'))+'. Fitting details:'+
+                                                               twoD_gaus_fit_results)
+
 
     def set_measurement_type(self):
         """ According to the selected Radiobox a measurement type will be chosen."""

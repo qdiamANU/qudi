@@ -66,9 +66,6 @@ class FastcomtecSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         self._fastcomtec = self.fastcomtec()
         self._pulsedmeasurementlogic = self.pulsedmeasurementlogic()
 
-        self.charge_state_selection = False
-        self.charge_threshold = 5
-        self.subtract_mean = True
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -153,7 +150,7 @@ class FastcomtecSSRCounterInterfuse(GenericLogic, SingleShotInterface):
 
 
 
-    def get_data_trace(self, normalized):
+    def get_data_trace(self, normalized=False, charge_state_selection=False, subtract_mean=False):
         """ Polls the current timetrace data from the fastcomtec.
 
         Return value is a numpy array (dtype = int64).
@@ -179,16 +176,12 @@ class FastcomtecSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         #ssr_data = raw_data
         self.raw_data = ssr_data
 
-        if not self.charge_state_selection:
+        if not charge_state_selection:
+            charge_signal=np.array([])
             if normalized:
-                # FIXME: here it is important that one laser pulse is on one side respectively
-                data_width = self.raw_data.shape[1]
-                raw_data1 = self.raw_data[:, :int(data_width / 2)]
-                raw_data2 = self.raw_data[:, int(data_width / 2):]
-                return_dict1 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data1)
-                laser1 = return_dict1['laser_counts_arr']
-                return_dict2 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data2)
-                laser2 = return_dict2['laser_counts_arr']
+                return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(ssr_data)
+                laser1 = return_dict['laser_counts_arr']
+                laser2 = return_dict['laser_counts_arr2']
                 self.laser_data = [laser1, laser2]
                 if laser1.any() and laser2.any():
                     tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
@@ -203,8 +196,9 @@ class FastcomtecSSRCounterInterfuse(GenericLogic, SingleShotInterface):
                 if self.laser_data.any():
                     tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
                         self.laser_data)
-                    if self.subtract_mean:
+                    if subtract_mean:
                         tmp_signal = tmp_signal  - np.mean(tmp_signal)
+                        charge_signal = charge_signal - np.mean(charge_signal)
                     else:
                         tmp_signal = tmp_signal #- np.mean(tmp_signal)
                 else:
@@ -215,20 +209,18 @@ class FastcomtecSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             ssr_raw = ssr_data[1::2, :]
             charge_raw = ssr_data[::2, :]
             # extract the orange laser pulses
-            charge_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(charge_raw)
-            charge_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.\
-                analyse_laser_pulses(charge_dict['laser_counts_arr'])
-            # find all the entries which are below the threshold
-            incorrect_charge = np.where(charge_signal < self.charge_threshold)[0]
+            #charge_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(charge_raw)
+            #self.charge_dict=charge_dict
+            #charge_signal, charge_error = self._pulsedmeasurementlogic._pulseanalyzer.\
+            #    analyse_laser_pulses(charge_dict['laser_counts_arr'])
+            #self.charge_signal=charge_signal
+            charge_signal = np.sum(charge_raw, axis=1)
+            ## find all the entries which are below the threshold
+            #incorrect_charge = np.where(charge_signal < self.charge_threshold)[0]
             if normalized:
-                # FIXME: here it is important that one laser pulse is on one side respectively
-                data_width = ssr_raw.shape[1]
-                raw_data1 = ssr_raw[:, :int(data_width / 2)]
-                raw_data2 = ssr_raw[:, int(data_width / 2):]
-                return_dict1 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data1)
-                laser1 = return_dict1['laser_counts_arr']
-                return_dict2 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data2)
-                laser2 = return_dict2['laser_counts_arr']
+                return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(ssr_raw)
+                laser1 = return_dict['laser_counts_arr']
+                laser2 = return_dict['laser_counts_arr2']
                 self.laser_data = [laser1, laser2]
                 if laser1.any() and laser2.any():
                     tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
@@ -243,16 +235,17 @@ class FastcomtecSSRCounterInterfuse(GenericLogic, SingleShotInterface):
                 if self.laser_data.any():
                     tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
                         self.laser_data)
-                    if self.subtract_mean:
+                    if subtract_mean:
                         tmp_signal = tmp_signal  - np.mean(tmp_signal)
+                        charge_signal = charge_signal - np.mean(charge_signal)
                     else:
                         tmp_signal = tmp_signal #- np.mean(tmp_signal)
                 else:
                     tmp_signal = np.zeros(self.laser_data.shape[0])
             # remove all the data points with the wrong charge state
-            tmp_signal = np.delete(tmp_signal, incorrect_charge[:-1], 0)
+            #tmp_signal = np.delete(tmp_signal, incorrect_charge[:-1], 0)
             # get rid of the last point since it is measured with less redouts
-        return tmp_signal[:-1]
+        return tmp_signal[:-1], charge_signal
 
 
 

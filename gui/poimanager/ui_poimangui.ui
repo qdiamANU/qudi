@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>PoiManager</class>
  <widget class="QMainWindow" name="PoiManager">
@@ -22,7 +23,7 @@
    <property name="enabled">
     <bool>true</bool>
    </property>
-   <layout class="QVBoxLayout" name="verticalLayout_3" />
+   <layout class="QVBoxLayout" name="verticalLayout_3"/>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
@@ -30,18 +31,19 @@
      <x>0</x>
      <y>0</y>
      <width>691</width>
-     <height>30</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuMenu">
     <property name="title">
      <string>Menu</string>
     </property>
-    <addaction name="new_roi_Action" />
-    <addaction name="save_roi_Action" />
-    <addaction name="load_roi_Action" />
-    <addaction name="reorient_roi_Action" />
-    <addaction name="actionClose" />
+    <addaction name="new_roi_Action"/>
+    <addaction name="save_roi_Action"/>
+    <addaction name="save_poi_history_Action"/>
+    <addaction name="load_roi_Action"/>
+    <addaction name="reorient_roi_Action"/>
+    <addaction name="actionClose"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -51,18 +53,18 @@
      <property name="title">
       <string>Toolbars</string>
      </property>
-     <addaction name="roi_management_view_Action" />
-     <addaction name="poi_tools_view_Action" />
+     <addaction name="roi_management_view_Action"/>
+     <addaction name="poi_tools_view_Action"/>
     </widget>
-    <addaction name="roi_map_view_Action" />
-    <addaction name="poi_editor_view_Action" />
-    <addaction name="poi_tracker_view_Action" />
-    <addaction name="sample_shift_view_Action" />
-    <addaction name="separator" />
-    <addaction name="menuToolbars" />
+    <addaction name="roi_map_view_Action"/>
+    <addaction name="poi_editor_view_Action"/>
+    <addaction name="poi_tracker_view_Action"/>
+    <addaction name="sample_shift_view_Action"/>
+    <addaction name="separator"/>
+    <addaction name="menuToolbars"/>
    </widget>
-   <addaction name="menuMenu" />
-   <addaction name="menuView" />
+   <addaction name="menuMenu"/>
+   <addaction name="menuView"/>
   </widget>
   <widget class="QToolBar" name="roi_management_ToolBar">
    <property name="windowTitle">
@@ -77,11 +79,11 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="save_roi_Action" />
-   <addaction name="new_roi_Action" />
-   <addaction name="separator" />
-   <addaction name="autofind_pois_Action" />
-   <addaction name="optimize_roi_Action" />
+   <addaction name="save_roi_Action"/>
+   <addaction name="new_roi_Action"/>
+   <addaction name="separator"/>
+   <addaction name="autofind_pois_Action"/>
+   <addaction name="optimize_roi_Action"/>
   </widget>
   <widget class="QDockWidget" name="poi_editor_dockWidget">
    <property name="windowTitle">
@@ -494,7 +496,7 @@
         </widget>
        </item>
        <item>
-        <widget class="QLineEdit" name="roi_name_LineEdit" />
+        <widget class="QLineEdit" name="roi_name_LineEdit"/>
        </item>
       </layout>
      </item>
@@ -772,10 +774,10 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="new_poi_Action" />
-   <addaction name="goto_poi_Action" />
-   <addaction name="refind_poi_Action" />
-   <addaction name="track_poi_Action" />
+   <addaction name="new_poi_Action"/>
+   <addaction name="goto_poi_Action"/>
+   <addaction name="refind_poi_Action"/>
+   <addaction name="track_poi_Action"/>
   </widget>
   <action name="new_roi_Action">
    <property name="icon">
@@ -823,10 +825,13 @@
    <property name="text">
     <string>POI Editor</string>
    </property>
+   <property name="toolTip">
+    <string>Shortcut:Alt+E</string>
+   </property>
    <property name="shortcut">
     <string>Alt+E</string>
    </property>
-  <property name="toolTip"><string>Shortcut:Alt+E</string></property></action>
+  </action>
   <action name="poi_tracker_view_Action">
    <property name="checkable">
     <bool>true</bool>
@@ -837,10 +842,13 @@
    <property name="text">
     <string>POI Tracker</string>
    </property>
+   <property name="toolTip">
+    <string>Shortcut:Alt+T</string>
+   </property>
    <property name="shortcut">
     <string>Alt+T</string>
    </property>
-  <property name="toolTip"><string>Shortcut:Alt+T</string></property></action>
+  </action>
   <action name="sample_shift_view_Action">
    <property name="checkable">
     <bool>true</bool>
@@ -852,7 +860,7 @@
     <string>Sample shift</string>
    </property>
    <property name="toolTip">
-    . Shortcut:Alt+S<string>Display the sample shift. Shortcut:Alt+S</string>
+    <string>Display the sample shift. Shortcut:Alt+S</string>
    </property>
    <property name="shortcut">
     <string>Alt+S</string>
@@ -869,7 +877,7 @@
     <string>ROI Map</string>
    </property>
    <property name="toolTip">
-    . Shortcut:Alt+M<string>Display the ROI Map. Shortcut:Alt+M</string>
+    <string>Display the ROI Map. Shortcut:Alt+M</string>
    </property>
    <property name="shortcut">
     <string>Alt+M</string>
@@ -972,6 +980,15 @@
     <string>Close</string>
    </property>
   </action>
+  <action name="save_poi_history_Action">
+   <property name="icon">
+    <iconset>
+     <normaloff>../../artwork/icons/oxygen/22x22/document-save.png</normaloff>../../artwork/icons/oxygen/22x22/document-save.png</iconset>
+   </property>
+   <property name="text">
+    <string>Save POI History</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>
@@ -985,7 +1002,7 @@
    <header>qtwidgets.scientific_spinbox.h</header>
   </customwidget>
  </customwidgets>
- <resources />
+ <resources/>
  <connections>
   <connection>
    <sender>poi_editor_view_Action</sender>

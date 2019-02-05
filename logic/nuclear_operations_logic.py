@@ -375,7 +375,7 @@ class NuclearOperationsLogic(GenericLogic):
 
         self.sigNextMeasPoint.emit()
 
-    def _set_meas_point(self, num_of_meas_runs, meas_index,  meas_points, meas_param):
+    def _set_meas_point(self, num_of_meas_runs: object, meas_index: object, meas_points: object, meas_param: object) -> object:
         """ Handle the proper setting of the current meas_point and store all
             the additional measurement parameter.
 

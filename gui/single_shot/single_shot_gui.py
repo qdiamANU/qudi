@@ -48,6 +48,19 @@ class SingleShotMainWindow(QtWidgets.QMainWindow):
         self.show()
 
 
+class SingleShotSettingDialog(QtWidgets.QDialog):
+    """ The settings dialog for ODMR measurements.
+    """
+    def __init__(self):
+        # Get the path to the *.ui file
+        this_dir = os.path.dirname(__file__)
+        ui_file = os.path.join(this_dir, 'ui_singleshot_settings.ui')
+
+        # Load it
+        super(SingleShotSettingDialog, self).__init__()
+        uic.loadUi(ui_file, self)
+
+
 
 class SingleShotGui(GUIBase):
     """ Main GUI for the Gated Counting. """
@@ -64,10 +77,13 @@ class SingleShotGui(GUIBase):
     sigDoFit = QtCore.Signal(str)
     sigCounterSettingsChanged = QtCore.Signal(dict)
     sigAnalyzeModeChanged = QtCore.Signal(str)
+    sigSSRModeChanged = QtCore.Signal(str)
     sigNumverBinsChanged = QtCore.Signal(int)
     sigSequenceLengthChanged = QtCore.Signal(float)
     sigAnalysisPeriodChanged = QtCore.Signal(float)
     sigNormalizedChanged = QtCore.Signal(bool)
+    sigChargeStateSelectionChanged = QtCore.Signal(bool)
+    sigSubtractMeanChanged = QtCore.Signal(bool)
     ThresholdChanged = QtCore.Signal(dict)
     sigToggleSSR = QtCore.Signal(bool)
 
@@ -92,6 +108,8 @@ class SingleShotGui(GUIBase):
         self._mw = SingleShotMainWindow()
         self._mw.centralwidget.hide()
         self._mw.setDockNestingEnabled(True)
+
+        self._sd = SingleShotSettingDialog()
 
         self._gp = self._mw.count_trace_PlotWidget
         self._gp.setLabel('left', 'Norm Counts', units='au')
@@ -129,14 +147,12 @@ class SingleShotGui(GUIBase):
         self._mw.hist_bins_Slider.setValue(self.singleshotlogic().num_bins)
         self._mw.sequence_length_DSpinBox.setValue(self.singleshotlogic().sequence_length)
         self._mw.analysis_period_DSpinBox.setValue(self.singleshotlogic().timer_interval)
-        self._mw.normalized_CheckBox.setChecked(self.singleshotlogic().normalized)
+        #self._mw.normalized_CheckBox.setChecked(self.singleshotlogic().normalized)
 
         self._mw.init_threshold0_DSpinBox.setValue(self.singleshotlogic().init_threshold0)
         self._mw.init_threshold1_DSpinBox.setValue(self.singleshotlogic().init_threshold1)
         self._mw.ana_threshold0_DSpinBox.setValue(self.singleshotlogic().ana_threshold0)
         self._mw.ana_threshold1_DSpinBox.setValue(self.singleshotlogic().ana_threshold1)
-
-
 
         #self._mw.action_pull_data.setEnabled(False)
 
@@ -144,6 +160,12 @@ class SingleShotGui(GUIBase):
         self._mw.analyze_mode_ComboBox.addItem('full')
         self._mw.analyze_mode_ComboBox.addItem('bright')
         self._mw.analyze_mode_ComboBox.addItem('dark')
+        self._sd.ssr_mode_ComboBox.addItem('flip_probability')
+        self._sd.ssr_mode_ComboBox.addItem('mapping')
+        #self._sd.ssr_mode_ComboBox.addItem('dark')
+
+        #self._sd.normalized_CheckBox.setChecked(self.singleshotlogic().normalized)
+        #self._sd.chargeStateSelection_CheckBox.setChecked(self.singleshotlogic().charge_state_selection)
 
         # Connecting user interactions
         # set at first the action buttons in the tab
@@ -154,12 +176,13 @@ class SingleShotGui(GUIBase):
         self._mw.count_length_SpinBox.editingFinished.connect(self.ssr_counter_settings_changed)
         self._mw.count_per_readout_SpinBox.editingFinished.connect(self.ssr_counter_settings_changed)
         self._mw.analyze_mode_ComboBox.currentIndexChanged.connect(self.analyze_mode_changed)
+        self._sd.ssr_mode_ComboBox.currentIndexChanged.connect(self.ssr_mode_changed)
 
         self._mw.hist_bins_Slider.valueChanged.connect(self.num_bins_slider_changed)
         self._mw.hist_bins_SpinBox.editingFinished.connect(self.num_bins_changed)
         self._mw.sequence_length_DSpinBox.editingFinished.connect(self.sequence_length_changed)
         self._mw.analysis_period_DSpinBox.editingFinished.connect(self.analysis_period_changed)
-        self._mw.normalized_CheckBox.stateChanged.connect(self.normalized_changed)
+        #self._mw.normalized_CheckBox.stateChanged.connect(self.normalized_changed)
 
         self._mw.init_threshold0_DSpinBox.editingFinished.connect(self.threshold_changed)
         self._mw.init_threshold1_DSpinBox.editingFinished.connect(self.threshold_changed)
@@ -171,6 +194,8 @@ class SingleShotGui(GUIBase):
                                           QtCore.Qt.QueuedConnection)
         self.sigAnalyzeModeChanged.connect(self.singleshotlogic().set_analyze_mode,
                                                QtCore.Qt.QueuedConnection)
+        self.sigSSRModeChanged.connect(self.singleshotlogic().set_ssr_mode,
+                                           QtCore.Qt.QueuedConnection)
         self.sigNumverBinsChanged.connect(self.singleshotlogic().set_number_of_histogram_bins,
                                           QtCore.Qt.QueuedConnection)
         self.sigSequenceLengthChanged.connect(self.singleshotlogic().set_sequence_length,
@@ -179,6 +204,10 @@ class SingleShotGui(GUIBase):
                                               QtCore.Qt.QueuedConnection)
         self.sigNormalizedChanged.connect(self.singleshotlogic().set_normalized,
                                           QtCore.Qt.QueuedConnection)
+        self.sigChargeStateSelectionChanged.connect(self.singleshotlogic().set_charge_state_selection,
+                                          QtCore.Qt.QueuedConnection)
+        self.sigSubtractMeanChanged.connect(self.singleshotlogic().set_subtract_mean,
+                                                    QtCore.Qt.QueuedConnection)
         self.ThresholdChanged.connect(self.singleshotlogic().set_threshold,
                                           QtCore.Qt.QueuedConnection)
         self.sigToggleSSR.connect(self.singleshotlogic().toggle_ssr_measurement,
@@ -192,6 +221,10 @@ class SingleShotGui(GUIBase):
                                                      QtCore.Qt.QueuedConnection)
         self.singleshotlogic().sigSSRCounterSettingsUpdated.connect(self.ssr_counter_settings_updated,
                                                      QtCore.Qt.QueuedConnection)
+        self.singleshotlogic().sigAnalyzeModeUpdated.connect(self.analyze_mode_updated,
+                                                                    QtCore.Qt.QueuedConnection)
+        self.singleshotlogic().sigSSRModeUpdated.connect(self.ssr_mode_updated,
+                                                                    QtCore.Qt.QueuedConnection)
         self.singleshotlogic().sigNumBinsUpdated.connect(self.num_bins_updated,
                                                      QtCore.Qt.QueuedConnection)
         self.singleshotlogic().sigSequenceLengthUpdated.connect(self.sequence_length_updated,
@@ -200,6 +233,10 @@ class SingleShotGui(GUIBase):
                                                                 QtCore.Qt.QueuedConnection)
         self.singleshotlogic().sigNormalizedUpdated.connect(self.normalized_updated,
                                                                 QtCore.Qt.QueuedConnection)
+        self.singleshotlogic().sigChargeStateSelectionUpdated.connect(self.charge_state_selection_updated,
+                                                            QtCore.Qt.QueuedConnection)
+        self.singleshotlogic().sigSubtractMeanUpdated.connect(self.subtract_mean_updated,
+                                                                      QtCore.Qt.QueuedConnection)
         self.singleshotlogic().sigThresholdUpdated.connect(self.threshold_updated,
                                                      QtCore.Qt.QueuedConnection)
         self.singleshotlogic().sigTraceUpdated.connect(self.trace_updated,
@@ -209,10 +246,24 @@ class SingleShotGui(GUIBase):
         self.singleshotlogic().sigFitUpdated.connect(self.fit_updated,
                                                            QtCore.Qt.QueuedConnection)
 
+        # connect settings signals
+        self._mw.action_Settings.triggered.connect(self._menu_settings)
+        self._sd.accepted.connect(self.settings_changed)
+        self._sd.rejected.connect(self.settings_rejected)
+        self._sd.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(
+            self.settings_changed)
+        self.settings_rejected()
+
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
         """
+
+        self._sd.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.disconnect()
+        self._sd.accepted.disconnect()
+        self._sd.rejected.disconnect()
+
+
         self._mw.action_run_stop.triggered.disconnect()
         self._mw.save_measurement_Action.triggered.disconnect()
 
@@ -222,7 +273,6 @@ class SingleShotGui(GUIBase):
         self._mw.hist_bins_SpinBox.editingFinished.disconnect()
         self._mw.sequence_length_DSpinBox.editingFinished.disconnect()
         self._mw.analysis_period_DSpinBox.editingFinished.disconnect()
-        self._mw.normalized_CheckBox.stateChanged.disconnect()
         self._mw.init_threshold0_DSpinBox.editingFinished.disconnect()
         self._mw.init_threshold1_DSpinBox.editingFinished.disconnect()
         self._mw.ana_threshold0_DSpinBox.editingFinished.disconnect()
@@ -231,6 +281,7 @@ class SingleShotGui(GUIBase):
         # Connect the signal
         self.sigCounterSettingsChanged.disconnect()
         self.sigAnalyzeModeChanged.disconnect()
+        self.sigSSRModeChanged.disconnect()
         self.sigNumverBinsChanged.disconnect()
         self.ThresholdChanged.disconnect()
         self.sigToggleSSR.disconnect()
@@ -251,6 +302,10 @@ class SingleShotGui(GUIBase):
         self._mw.show()
         self._mw.activateWindow()
         self._mw.raise_()
+
+    def _menu_settings(self):
+        """ Open the settings menu """
+        self._sd.exec_()
 
 ########################################### Send to Logic #########################################
 
@@ -299,15 +354,16 @@ class SingleShotGui(GUIBase):
         self.sigAnalyzeModeChanged.emit(current_mode)
         return
 
+    def ssr_mode_changed(self):
+        current_mode = self._sd.ssr_mode_ComboBox.currentText()
+        self.sigSSRModeChanged.emit(current_mode)
+        return
 
     def num_bins_changed(self):
         """
         @param int num_bins: Number of bins to be set in the trace.
 
-        This method is executed by both events, the valueChanged of the SpinBox
-        and value changed in the Slider. Until now, there appears no infinite
-        signal loop. It that occur one day, than this method has to be split
-        in two seperate methods.
+        To Do
         """
         num_bins = self._mw.hist_bins_SpinBox.value()
         self.sigNumverBinsChanged.emit(num_bins)
@@ -323,10 +379,7 @@ class SingleShotGui(GUIBase):
         """
         @param int num_bins: Number of bins to be set in the trace.
 
-        This method is executed by both events, the valueChanged of the SpinBox
-        and value changed in the Slider. Until now, there appears no infinite
-        signal loop. It that occur one day, than this method has to be split
-        in two seperate methods.
+        To Do
         """
         num_bins = self._mw.hist_bins_Slider.value()
         self.sigNumverBinsChanged.emit(num_bins)
@@ -345,19 +398,11 @@ class SingleShotGui(GUIBase):
         self.sigAnalysisPeriodChanged.emit(self._mw.analysis_period_DSpinBox.value())
         return
 
-    def normalized_changed(self):
-        self.sigNormalizedChanged.emit(self._mw.normalized_CheckBox.isChecked())
-        return
-
-
     def threshold_changed(self):
         """
         @param int num_bins: Number of bins to be set in the trace.
 
-        This method is executed by both events, the valueChanged of the SpinBox
-        and value changed in the Slider. Until now, there appears no infinite
-        signal loop. It that occur one day, than this method has to be split
-        in two seperate methods.
+        To Do
         """
         threshold_dict = dict()
         threshold_dict['init_threshold0'] = self._mw.init_threshold0_DSpinBox.value()
@@ -365,6 +410,18 @@ class SingleShotGui(GUIBase):
         threshold_dict['ana_threshold0'] = self._mw.ana_threshold0_DSpinBox.value()
         threshold_dict['ana_threshold1'] = self._mw.ana_threshold1_DSpinBox.value()
         self.ThresholdChanged.emit(threshold_dict)
+        return
+
+    def settings_changed(self):
+        self.sigNormalizedChanged.emit(self._sd.normalized_CheckBox.isChecked())
+        self.sigChargeStateSelectionChanged.emit(self._sd.chargeStateSelection_CheckBox.isChecked())
+        self.sigSubtractMeanChanged.emit(self._sd.subtractMean_CheckBox.isChecked())
+        return
+
+    def settings_rejected(self):
+        self._sd.normalized_CheckBox.setChecked(self.singleshotlogic().normalized)
+        self._sd.chargeStateSelection_CheckBox.setChecked(self.singleshotlogic().charge_state_selection)
+        self._sd.subtractMean_CheckBox.setChecked(self.singleshotlogic().subtract_mean)
         return
 
 
@@ -419,15 +476,21 @@ class SingleShotGui(GUIBase):
         self._mw.analyze_mode_ComboBox.blockSignals(False)
         return
 
+    def ssr_mode_updated(self, mode):
+        # block the signals
+        self._sd.ssr_mode_ComboBox.blockSignals(True)
+        index = self._sd.ssr_mode_ComboBox.findText(mode)
+        self._sd.ssr_mode_ComboBox.setCurrentIndex(index)
+        # unblock the signals
+        self._sd.ssr_mode_ComboBox.blockSignals(False)
+        return
+
 
     def num_bins_updated(self, num_bins):
         """
         @param int num_bins: Number of bins to be set in the trace.
 
-        This method is executed by both events, the valueChanged of the SpinBox
-        and value changed in the Slider. Until now, there appears no infinite
-        signal loop. It that occur one day, than this method has to be split
-        in two seperate methods.
+        ToDO
         """
         #block the signals
         self._mw.hist_bins_SpinBox.blockSignals(True)
@@ -459,22 +522,37 @@ class SingleShotGui(GUIBase):
         self._mw.analysis_period_DSpinBox.blockSignals(False)
         return
 
+    #def update_settings(self):
+
     def normalized_updated(self, norm):
         # block the signals
-        self._mw.normalized_CheckBox.blockSignals(True)
-        self._mw.normalized_CheckBox.setChecked(norm)
+        self._sd.normalized_CheckBox.blockSignals(True)
+        self._sd.normalized_CheckBox.setChecked(norm)
         # unblock the signals
-        self._mw.normalized_CheckBox.blockSignals(False)
+        self._sd.normalized_CheckBox.blockSignals(False)
+        return
+
+    def charge_state_selection_updated(self, norm):
+        # block the signals
+        self._sd.chargeStateSelection_CheckBox.blockSignals(True)
+        self._sd.chargeStateSelection_CheckBox.setChecked(norm)
+        # unblock the signals
+        self._sd.chargeStateSelection_CheckBox.blockSignals(False)
+        return
+
+    def subtract_mean_updated(self, norm):
+        # block the signals
+        self._sd.subtractMean_CheckBox.blockSignals(True)
+        self._sd.subtractMean_CheckBox.setChecked(norm)
+        # unblock the signals
+        self._sd.subtractMean_CheckBox.blockSignals(False)
         return
 
     def threshold_updated(self, threshold_dict):
         """
         @param int num_bins: Number of bins to be set in the trace.
 
-        This method is executed by both events, the valueChanged of the SpinBox
-        and value changed in the Slider. Until now, there appears no infinite
-        signal loop. It that occur one day, than this method has to be split
-        in two seperate methods.
+       ToDo
         """
         # block the signals
         self._mw.init_threshold0_DSpinBox.blockSignals(True)
@@ -499,12 +577,14 @@ class SingleShotGui(GUIBase):
         return
 
 
-    def trace_updated(self, x_data, y_data, spin_flip_prob, spin_flip_error,  lost_events):
+    def trace_updated(self, x_data, y_data, spin_flip_prob, spin_flip_error, mapped_state, lost_events, lost_events_percent):
         """ The function that grabs the data and sends it to the plot. """
         self._trace1.setData(x=x_data, y=y_data)
         self._mw.spin_flip_prob_DSpinBox.setValue(spin_flip_prob*100)
         self._mw.spin_flip_error_DSpinBox.setValue(spin_flip_error * 100)
+        self._mw.mapped_state_DSpinBox.setValue(mapped_state * 100)
         self._mw.lost_events_SpinBox.setValue(lost_events)
+        self._mw.lost_events_percent_DSpinBox.setValue(lost_events_percent)
         # autorange the plot
         if len(x_data) > 2:
             self._gp.setXRange(x_data[0], x_data[-1])
@@ -513,13 +593,13 @@ class SingleShotGui(GUIBase):
         return
 
 
-    def results_updated(self, spin_flip_prob, fidelity_left, fidelity_right):
-        """ Update the spin flip probability and the fidelities. """
-
-        self._mw.spin_flip_prob_DSpinBox.setValue(spin_flip_prob*100)
-        self._mw.fidelity_left_DSpinBox.setValue(fidelity_left*100)
-        self._mw.fidelity_right_DSpinBox.setValue(fidelity_right*100)
-        return
+    # def results_updated(self, spin_flip_prob, fidelity_left, fidelity_right):
+    #     """ Update the spin flip probability and the fidelities. """
+    #
+    #     self._mw.spin_flip_prob_DSpinBox.setValue(spin_flip_prob*100)
+    #     self._mw.fidelity_left_DSpinBox.setValue(fidelity_left*100)
+    #     self._mw.fidelity_right_DSpinBox.setValue(fidelity_right*100)
+    #     return
 
     def histogram_updated(self, hist_data):
         """ Update procedure for the histogram to display the new data. """

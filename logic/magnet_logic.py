@@ -1064,7 +1064,7 @@ class MagnetLogic(GenericLogic):
         # return (state[axes[0]] or state[axes[1]] or state[axes[2]]) is (1 or -1)
 
 
-    def _set_meas_point(self, meas_val, add_meas_val, pathway_index, back_map):
+    def _set_meas_point(self, meas_val: object, add_meas_val: object, pathway_index: object, back_map: object) -> object:
 
         # is it point for 1d meas or 2d meas?
 
@@ -1147,6 +1147,21 @@ class MagnetLogic(GenericLogic):
                                           self._optimizer_logic.optim_pos_x,
                                           self._optimizer_logic.optim_pos_y,
                                           self._optimizer_logic.optim_pos_z)
+    def twoD_gaussian_fit(self):
+        count_data = self._2D_data_matrix
+        x_val = self._2D_axis0_data
+        y_val = self._2D_axis1_data
+        fit_x, fit_y = np.meshgrid(x_val, y_val)
+        xy_fit_data = count_data[:, :].ravel()
+        axes = np.empty((len(x_val) * len(y_val), 2))
+        axes = (fit_x.flatten(), fit_y.flatten())
+        result_2D_gaus = self._fit_logic.make_twoDgaussian_fit(
+            xy_axes=axes,
+            data=xy_fit_data,
+            estimator=self._fit_logic.estimate_twoDgaussian_MLE
+        )
+        return result_2D_gaus, result_2D_gaus.fit_report()
+
 
     def _do_alignment_measurement(self):
         """ That is the main method which contains all functions with measurement routines.

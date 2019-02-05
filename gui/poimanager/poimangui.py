@@ -397,6 +397,7 @@ class PoiManagerGui(GUIBase):
         # Toolbar actions
         self._mw.new_roi_Action.triggered.connect(self.make_new_roi)
         self._mw.save_roi_Action.triggered.connect(self.save_roi)
+        self._mw.save_poi_history_Action.triggered.connect(self.save_poi_history)
         self._mw.load_roi_Action.triggered.connect(self.load_roi)
         self._mw.reorient_roi_Action.triggered.connect(self.open_reorient_roi_dialog)
         self._mw.autofind_pois_Action.triggered.connect(self.do_autofind_poi_procedure)
@@ -929,6 +930,11 @@ class PoiManagerGui(GUIBase):
         """ Save ROI to file."""
 
         self._poi_manager_logic.save_poi_map_as_roi()
+
+    def save_poi_history(self):
+        """Save POI history to file"""
+
+        self._poi_manager_logic.save_poi_history()
 
     def load_roi(self):
         """ Load a saved ROI from file."""

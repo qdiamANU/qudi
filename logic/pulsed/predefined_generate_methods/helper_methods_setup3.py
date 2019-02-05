@@ -314,12 +314,12 @@ class HelperMethods(PredefinedGeneratorBase):
         else:
             idle_length = self._adjust_to_samplingrate(wait_length, 2)
 
-        # get the laser and idle elements
-        laser_element = self._get_trigger_element(length=trigger_length, increment=0.0, channels=digital_channel)
+        # get the trigger and idle elements
+        trigger_element = self._get_trigger_element(length=trigger_length, increment=0.0, channels=digital_channel)
         idle_element = self._get_idle_element(length=idle_length, increment=0.0)
 
         block = PulseBlock(name=name)
-        block.append(laser_element)
+        block.append(trigger_element)
         block.append(idle_element)
         created_blocks.append(block)
 
@@ -332,6 +332,69 @@ class HelperMethods(PredefinedGeneratorBase):
         # append ensemble to created ensembles
         created_ensembles.append(block_ensemble)
         return created_blocks, created_ensembles, list()
+
+    ################################## sequence parts ######################################
+
+    def generate_singleshot_readout(self, name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=0.1,
+                                    mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=0.1,
+                                    mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True):
+        """
+
+        """
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+
+        ### prevent granularity problems
+        mw_cnot_rabi_period = self._adjust_to_samplingrate(mw_cnot_rabi_period, 4)
+
+        # get mw pi pulse block
+        mw_pi_element = self._get_multiple_mw_element(length=mw_cnot_rabi_period / 2,
+                                                      increment=0.0,
+                                                      amps=mw_cnot_amplitude,
+                                                      freqs=mw_cnot_frequency,
+                                                      phases=mw_cnot_phase)
+
+        trigger_element = self._get_sync_element()
+
+        readout_element = self._get_readout_element()
+        block = PulseBlock(name=name)
+        block.append(mw_pi_element)
+        block.append(trigger_element)
+        block.extend(readout_element)
+
+        if ssr_normalise:
+            time_between_trigger = self.laser_length + self.wait_time + self.laser_delay
+            if time_between_trigger > self.laser_length * 1.4:
+                wait = time_between_trigger - self.laser_length * 1.4
+                extra_waiting_element = self._get_idle_element(length=wait * 1.2, increment=0)
+            mw_pi_element2 = self._get_multiple_mw_element(length=mw_cnot_rabi_period / 2,
+                                                           increment=0.0,
+                                                           amps=mw_cnot_amplitude2,
+                                                           freqs=mw_cnot_frequency2,
+                                                           phases=mw_cnot_phase2)
+            waiting_element = self._get_idle_element(length=self.laser_length + 200e-9, increment=0)
+
+            if self.laser_length + self.wait_time + self.laser_delay > self.laser_length * 1.4:
+                block.append(extra_waiting_element)
+                #
+            block.append(mw_pi_element2)
+            block.append(trigger_element)
+            block.append(waiting_element)
+            block.extend(readout_element)
+        created_blocks.append(block)
+        # Create block ensemble
+        block_ensemble = PulseBlockEnsemble(name=name, rotating_frame=False)
+        block_ensemble.append((block.name, 0))
+        # add metadata to invoke settings
+        block_ensemble = self._add_metadata_to_settings(block_ensemble, created_blocks=list(),
+                                                        controlled_variable=[0],
+                                                        counting_length=self.laser_length * 1.8 if ssr_normalise
+                                                                  else self.laser_length * 1.4)
+        # append ensemble to created ensembles
+        created_ensembles.append(block_ensemble)
+
+        return created_blocks, created_ensembles, created_sequences
 
 
 
@@ -376,6 +439,131 @@ class HelperMethods(PredefinedGeneratorBase):
         created_ensembles.append(block_ensemble)
         return created_blocks, created_ensembles, created_sequences
 
+    def generate_multiple_mw_pulse(self, name='MW_pulse', tau=1e-6, microwave_amplitude=1.0,
+                                   microwave_frequency=1e6, microwave_phase=0.0):
+
+        # In sequence mode there is a minimum waveform length of 4800 sample. If the pulse is to short add an
+        # extra idle time before the pulse to take that into account
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+        ### prevent granularity problems
+        tau = self._adjust_to_samplingrate(tau, 4)
+
+        mw_element = self._get_multiple_mw_element(length=tau,
+                                                   increment=0.0,
+                                                   amps=microwave_amplitude,
+                                                   freqs=microwave_frequency,
+                                                   phases=microwave_phase)
+
+        # Create PulseBlock object
+        block = PulseBlock(name=name)
+        if tau * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
+            length_idle = self.minimum_number_of_samples / self.pulse_generator_settings['sample_rate'] - tau
+            idle_element = self._get_idle_element(length=length_idle, increment=0.0)
+            block.append(idle_element)
+
+        block.append(mw_element)
+        created_blocks.append(block)
+
+        # Create block ensemble
+        block_ensemble = PulseBlockEnsemble(name=name, rotating_frame=False)
+        block_ensemble.append((block.name, 0))
+        # add metadata to invoke settings
+        block_ensemble = self._add_metadata_to_settings(block_ensemble, created_blocks=created_blocks, alternating=False)
+        # append ensemble to created ensembles
+        created_ensembles.append(block_ensemble)
+        return created_blocks, created_ensembles, created_sequences
+
+    def generate_single_xy8_s3(self, name='XY8', rabi_period=20e-9, tau=500e-9, microwave_amplitude=0.1,
+                               microwave_frequency=2.8e9, xy8N=1, ylast=False):
+
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+        ### prevent granularity problems
+        rabi_period = self._adjust_to_samplingrate(rabi_period, 8)
+        tau = self._adjust_to_samplingrate(tau, 4)
+
+        # get pihalf element
+        pihalf_element = self._get_mw_element(length=rabi_period / 4,
+                                              increment=0.0,
+                                              amp=microwave_amplitude,
+                                              freq=microwave_frequency,
+                                              phase=0.0)
+        if ylast:
+            pihalf_y_element = self._get_mw_element(length=rabi_period / 4,
+                                                    increment=0.0,
+                                                    amp=microwave_amplitude,
+                                                    freq=microwave_frequency,
+                                                    phase=90.0)
+
+        # get pi elements
+        pix_element = self._get_mw_element(length=rabi_period / 2,
+                                           increment=0.0,
+                                           amp=microwave_amplitude,
+                                           freq=microwave_frequency,
+                                           phase=0.0)
+
+        piy_element = self._get_mw_element(length=rabi_period / 2,
+                                           increment=0.0,
+                                           amp=microwave_amplitude,
+                                           freq=microwave_frequency,
+                                           phase=90.0)
+
+        tauhalf_element = self._get_idle_element(length=tau / 2 - rabi_period / 4, increment=0.0)
+        tau_element = self._get_idle_element(length=tau - rabi_period / 2, increment=0.0)
+
+        # create XY8-N block element list
+        block = PulseBlock(name=name)
+        # In sequence mode there is a minimum waveform length of 4800 sample. If the pulse is to short add an
+        # extra idle time before the pulse to take that into account
+        if (tau * 8 * xy8N) * self.pulse_generator_settings['sample_rate'] < self.minimum_number_of_samples:
+            length_idle = 4800 / self.pulse_generator_settings['sample_rate'] - (tau * 8 * xy8N)
+            idle_element_extra = self._get_idle_element(length=length_idle, increment=0.0)
+            block.append(idle_element_extra)
+        # actual XY8-N sequence
+        block.append(pihalf_element)
+        block.append(tauhalf_element)
+        for n in range(xy8N):
+            block.append(pix_element)
+            block.append(tau_element)
+            block.append(piy_element)
+            block.append(tau_element)
+            block.append(pix_element)
+            block.append(tau_element)
+            block.append(piy_element)
+            block.append(tau_element)
+            block.append(piy_element)
+            block.append(tau_element)
+            block.append(pix_element)
+            block.append(tau_element)
+            block.append(piy_element)
+            block.append(tau_element)
+            block.append(pix_element)
+            if n != xy8N - 1:
+                block.append(tau_element)
+        block.append(tauhalf_element)
+        if ylast:
+            block.append(pihalf_y_element)
+        else:
+            block.append(pihalf_element)
+
+        created_blocks.append(block)
+
+        # Create block ensemble
+        block_ensemble = PulseBlockEnsemble(name=name, rotating_frame=True)
+        block_ensemble.append((block.name, 0))
+
+        # add metadata to invoke settings
+        block_ensemble = self._add_metadata_to_settings(block_ensemble, created_blocks=created_blocks, alternating=False)
+
+        # append ensemble to created ensembles
+        created_ensembles.append(block_ensemble)
+        return created_blocks, created_ensembles, created_sequences
+
+
+################################################## RF methods ###################################
 
 
     def _chopped_rf_pulse(self, name, rf_duration, rf_amp, rf_freq, rf_phase):

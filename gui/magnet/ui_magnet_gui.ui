@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>984</width>
-    <height>722</height>
+    <width>1208</width>
+    <height>1052</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -1004,8 +1004,8 @@ contrast alignment</string>
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>984</width>
-     <height>21</height>
+     <width>1208</width>
+     <height>38</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuMenu">
@@ -1014,6 +1014,8 @@ contrast alignment</string>
     </property>
     <addaction name="magnet_settings_Action"/>
     <addaction name="close_Action"/>
+    <addaction name="gaussianfit2d_Action"/>
+    <addaction name="actionOptimise_Magnet_Position"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -1292,6 +1294,16 @@ contrast alignment</string>
    </property>
    <property name="toolTip">
     <string>Continue or Stop a 2D alignment</string>
+   </property>
+  </action>
+  <action name="gaussianfit2d_Action">
+   <property name="text">
+    <string>2D Gaussian Fit</string>
+   </property>
+  </action>
+  <action name="actionOptimise_Magnet_Position">
+   <property name="text">
+    <string>Optimize Magnet Position</string>
    </property>
   </action>
  </widget>

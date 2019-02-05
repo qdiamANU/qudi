@@ -60,9 +60,13 @@ class SingleShotLogic(GenericLogic):
     ana_threshold0 = StatusVar(default=0)
     ana_threshold1 = StatusVar(default=0)
     analyze_mode = StatusVar(default='full')
+    ssr_mode = StatusVar(default='flip_probability')
     sequence_length = StatusVar(default=1)
     analysis_period = StatusVar(default=5)
     normalized = StatusVar(default=False)
+    charge_state_selection = StatusVar(default=False)
+    subtract_mean = StatusVar(default=True)
+
 
     # measurement timer settings
     timer_interval = StatusVar(default=5)
@@ -71,7 +75,8 @@ class SingleShotLogic(GenericLogic):
     # ssr measurement settings
     _number_of_ssr_readouts = StatusVar(default=1000)
     _controlled_variable = StatusVar(default=list(range(50)))
-    _normalized = StatusVar(default=False)
+    # _normalized = StatusVar(default=False)
+    # _charge_state_selection  = StatusVar(default=False)
 
     # Container to store measurement information about the currently loaded sequence
     _ssr_measurement_information = StatusVar(default=dict())
@@ -98,9 +103,12 @@ class SingleShotLogic(GenericLogic):
     sigSequenceLengthUpdated = QtCore.Signal(float)
     sigAnalysisPeriodUpdated = QtCore.Signal(float)
     sigNormalizedUpdated = QtCore.Signal(bool)
+    sigChargeStateSelectionUpdated = QtCore.Signal(bool)
+    sigSubtractMeanUpdated = QtCore.Signal(bool)
     sigAnalyzeModeUpdated = QtCore.Signal(str)
+    sigSSRModeUpdated = QtCore.Signal(str)
     sigThresholdUpdated = QtCore.Signal(dict)
-    sigTraceUpdated = QtCore.Signal(np.ndarray, np.ndarray, float, float, int)
+    sigTraceUpdated = QtCore.Signal(np.ndarray, np.ndarray, float, float, float, int, float)
     sigHistogramUpdated = QtCore.Signal(np.ndarray)
     sigFitUpdated = QtCore.Signal(dict)
 
@@ -124,15 +132,20 @@ class SingleShotLogic(GenericLogic):
         # measurement data
         self.time_axis = np.zeros(25)
         self.trace = np.zeros(25)
+        self.charge_threshold = 0
         self.hist_data = list([np.linspace(1,25,25),np.ones(24)])
         self.laser_data = np.zeros((10, 20), dtype='int64')
         self.raw_data = np.zeros((10, 20), dtype='int64')
         self.spin_flip_prob = 0
-        self.error_flip_prob = 0
+        self.spin_flip_error = 0
+        self.mapped_state = 0
         self.lost_events = 0
+        self.lost_events_percent = 0
+
 
         self._saved_raw_data = OrderedDict()  # temporary saved raw data
         self._recalled_raw_data_tag = None  # the currently recalled raw data dict key
+        self._recalled_charge_data_tag = None  # the currently recalled raw data dict key
 
         # Paused measurement flag
         self.__is_paused = False
@@ -185,6 +198,7 @@ class SingleShotLogic(GenericLogic):
 
         # recalled saved raw data dict key
         self._recalled_raw_data_tag = None
+        self._recalled_charge_data_tag = None
 
         # Connect internal signals
         self.sigStartTimer.connect(self.__analysis_timer.start, QtCore.Qt.QueuedConnection)
@@ -312,6 +326,8 @@ class SingleShotLogic(GenericLogic):
         if self.module_state() == 'idle':
             if 'analyze_mode' in settings_dict:
                 self.set_analyze_mode(settings_dict['analyze_mode'])
+            if 'ssr_mode' in settings_dict:
+                self.set_ssr_mode(settings_dict['ssr_mode'])
             if 'num_bins' in settings_dict:
                 self.set_number_of_histogram_bins(settings_dict['num_bins'])
             if 'sequence_length' in settings_dict:
@@ -322,6 +338,13 @@ class SingleShotLogic(GenericLogic):
                 self.set_normalized(bool(settings_dict['ssr_normalise']))
             if 'threshold_dict' in settings_dict:
                 self.set_threshold(settings_dict['threshold_dict'])
+            if 'charge_state_selection' in settings_dict:
+                self.set_charge_state_selection(settings_dict['charge_state_selection'])
+            if 'charge_threshold' in settings_dict:
+                self.set_charge_threshold(settings_dict['charge_threshold'])
+            if 'subtract_mean' in settings_dict:
+                self.set_subtract_mean(bool(settings_dict['subtract_mean']))
+
         else:
             self.log.warning('SSR measurement is running. CAnnot change parameters')
         return
@@ -379,6 +402,17 @@ class SingleShotLogic(GenericLogic):
         self.sigAnalyzeModeUpdated.emit(mode)
         return
 
+    def get_analyze_mode(self):
+        return self.analyze_mode
+
+    def set_ssr_mode(self, mode):
+        self.ssr_mode = mode
+        self.sigSSRModeUpdated.emit(mode)
+        return
+
+    def get_ssr_mode(self):
+        return self.ssr_mode
+
 
     def set_number_of_histogram_bins(self, num_bins):
         self.num_bins = num_bins
@@ -418,7 +452,6 @@ class SingleShotLogic(GenericLogic):
     def get_analysis_period(self):
         return self.timer_interval
 
-
     def set_normalized(self, norm):
         self.normalized = norm
         self.sigNormalizedUpdated.emit(norm)
@@ -427,6 +460,30 @@ class SingleShotLogic(GenericLogic):
     def get_normalized(self):
         return self.normalized
 
+    def set_charge_state_selection(self, mode):
+        self.charge_state_selection = mode
+        self.sigChargeStateSelectionUpdated.emit(mode)
+        return
+
+    def get_charge_state_selection(self):
+        return self.charge_state_selection
+
+    def set_charge_threshold(self, threshold):
+        self.charge_threshold = threshold
+        #self.sigChargeStateSelectionUpdated.emit(mode)
+        return
+
+    def get_charge_threshold(self):
+        return self.charge_threshold
+
+    def set_subtract_mean(self, sub):
+        self.subtract_mean = sub
+        self.singleshotreadoutcounter().subtract_mean = sub
+        self.sigSubtractMeanUpdated.emit(sub)
+        return
+
+    def get_subtract_mean(self):
+        return self.subtract_mean
 
     def set_threshold(self, threshold_dict):
         if 'init_threshold0' in threshold_dict:
@@ -468,19 +525,22 @@ class SingleShotLogic(GenericLogic):
             self.__elapsed_time = time.time() - self.__start_time
 
             # Get counter raw data (including recalled raw data from previous measurement)
-            self.trace= self._get_raw_data()
+            self.trace, self.charge_state = self._get_raw_data()
 
             self.time_axis = np.arange(1, len(self.trace) + 1) * self.sequence_length
 
             # compute spin flip probabilities
             try:
-                self.spin_flip_prob, self.error_flip_prob, self.lost_events = self.analyze_flip_probability()
+                self.analyze_ssr()
             except:
-                #self.log.warning('Computation of spin flip rate failed')
-                self.spin_flip_prob, self.error_flip_prob, self.lost_events = 0, 0, 0
+                self.log.warning('Analysation of time traced failed')
+                self.spin_flip_prob, self.error_flip_prob, self.spin_flip_error, self.mapped_state, \
+                    self.lost_events, self.lost_events_percent = 0, 0, 0, 0, 0, 0
 
             # update the trace in GUI
-            self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob, self.spin_flip_error, self.lost_events)
+            self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob,
+                                      self.spin_flip_error, self.mapped_state, self.lost_events,
+                                      self.lost_events_percent)
 
 
             # compute and fit histogram
@@ -496,14 +556,18 @@ class SingleShotLogic(GenericLogic):
         :return numpy.ndarray: The count data (1D for ungated, 2D for gated counter)
         """
         # get raw data from ssr counter
-        ssr_data = netobtain(self.singleshotreadoutcounter().get_data_trace(self.normalized))
+        ssr_data, charge_data = netobtain(self.singleshotreadoutcounter().get_data_trace(self.normalized,
+                                                                                         self.charge_state_selection,
+                                                                                         self.subtract_mean))
 
         # add old raw data from previous measurements if necessary
         if self._saved_raw_data.get(self._recalled_raw_data_tag) is not None:
             if not ssr_data.any():
                 ssr_data = self._saved_raw_data[self._recalled_raw_data_tag]
+                charge_data = self._saved_raw_data[self._recalled_charge_data_tag]
             elif self._saved_raw_data[self._recalled_raw_data_tag].shape == ssr_data.shape:
                 ssr_data = self._saved_raw_data[self._recalled_raw_data_tag] + ssr_data
+                charge_data = self._saved_raw_data[self._recalled_charge_data_tag] + charge_data
             else:
                 pass
                 #self.log.warning('Recalled raw data has not the same shape as current data.'
@@ -511,19 +575,13 @@ class SingleShotLogic(GenericLogic):
         if not ssr_data.any():
             #self.log.warning('Only zeros received from ssr counter!')
             ssr_data = np.zeros(ssr_data.shape, dtype='int64')
-        return ssr_data
+            charge_data = []
+        return ssr_data, charge_data
 
 
+    def analyze_ssr(self):
 
-    def analyze_flip_probability(self):
-        """
-        Method which calculates the histogram, the fidelity and the flip probability of a time trace.
-        :return:
-        """
-
-        # calculate the flip probability
-        no_flip = 0.0
-        flip = 0.0
+        ## Compare the data to the threshold
         # find all indices in the trace-array, where the value is above init_threshold[1]
         init_high = np.where(self.trace[:-1] >= self.init_threshold1)[0]
         # find all indices in the trace-array, where the value is below init_threshold[0]
@@ -533,22 +591,54 @@ class SingleShotLogic(GenericLogic):
         # find all indices in the trace-array, where the value is below ana_threshold[0]
         ana_low = np.where(self.trace < self.ana_threshold0)[0]
 
+        incorrect_charge = np.where(self.charge_state < self.charge_threshold)[0]
+
+        if self.ssr_mode == 'flip_probability':
+            amount_analyzed_data \
+                = self.analyze_ssr_flip_probability(init_high, init_low, ana_high, ana_low, incorrect_charge)
+
+        elif self.ssr_mode == 'mapping':
+            amount_analyzed_data = self.analyze_ssr_mapping(init_high, init_low, incorrect_charge)
+
+        else:
+            self.log.error('Unknown analysis mode')
+            return
+
+        # the number of lost events is given by the length of the time_trace minus the number of analyzed data points
+        self.lost_events = len(self.trace) - 1 - (amount_analyzed_data)
+        self.lost_events_percent = self.lost_events / len(self.trace) * 100
+        return
+        #return self.spin_flip_prob, self.spin_flip_error, self.lost_events, self.lost_events_percent
+
+
+    def analyze_ssr_flip_probability(self, init_high, init_low, ana_high, ana_low, incorrect_charge):
+        """
+        Method which calculates the histogram, the fidelity and the flip probability of a time trace.
+        :return:
+        """
+
+        # calculate the flip probability
+        no_flip = 0.0
+        flip = 0.0
+
         if self.analyze_mode == 'bright' or self.analyze_mode == 'full':
             # analyze the trace where the data were the nuclear was initalized into one direction
             for index in init_high:
-                # check if the following data point is in the analysis array
-                if index + 1 in ana_high:
-                    no_flip = no_flip + 1
-                elif index + 1 in ana_low:
-                    flip = flip + 1
+                if (index and index + 1) not in incorrect_charge:
+                    # check if the following data point is in the analysis array
+                    if index + 1 in ana_high:
+                        no_flip = no_flip + 1
+                    elif index + 1 in ana_low:
+                        flip = flip + 1
         if self.analyze_mode == 'dark' or self.analyze_mode == 'full':
             # repeat the same if the nucleus was initalized into the other array
             for index in init_low:
-                # check if the following data point is in the analysis array
-                if index + 1 in ana_high:
-                    flip = flip + 1
-                elif index + 1 in ana_low:
-                    no_flip = no_flip + 1
+                if (index and index + 1) not in incorrect_charge:
+                    # check if the following data point is in the analysis array
+                    if index + 1 in ana_high:
+                        flip = flip + 1
+                    elif index + 1 in ana_low:
+                        no_flip = no_flip + 1
 
         # the flip probability is given by the number of flips divided by the total number of analyzed data points
         if (flip + no_flip) == 0:
@@ -559,13 +649,23 @@ class SingleShotLogic(GenericLogic):
             self.spin_flip_prob = flip / (flip + no_flip)
             self.spin_flip_error = np.sqrt((flip*(1-self.spin_flip_prob)**2+no_flip*self.spin_flip_prob**2)\
                                    /(flip + no_flip-1)/(flip + no_flip))
-        # the number of lost events is given by the length of the time_trace minus the number of analyzed data points
-        self.lost_events = len(self.trace) - 1 - (flip + no_flip)
+        amount_analyzed_data = flip + no_flip
 
-        return self.spin_flip_prob, self.spin_flip_error, self.lost_events
-
+        return amount_analyzed_data
 
 
+    def analyze_ssr_mapping(self, high, low, incorrect_charge):
+        # remove all the data with the incorrect charge state
+        self.dark_states = [x for x in low if x not in incorrect_charge]
+        self.bright_states = [x for x in high if x not in incorrect_charge]
+        # compute the probability to be in the bright state
+        if (len(self.bright_states) + len(self.dark_states)) != 0:
+            self.mapped_state = len(self.bright_states) / (len(self.bright_states) + len(self.dark_states))
+        else:
+            self.mapped_state = 0
+        # return the amount of analyzed data
+        amount_analyzed_data = len(self.bright_states) + len(self.dark_states)
+        return amount_analyzed_data
 
 
     def calculate_histogram(self, custom_bin_arr=None):
@@ -811,7 +911,10 @@ class SingleShotLogic(GenericLogic):
 
         data = OrderedDict()
         data['time'] = np.array(self.time_axis)
-        data['Norm. Counts'] = np.array(self.trace)
+        if self.normalized:
+            data['Norm. Counts'] = np.array(self.trace)
+        else:
+            data['Counts'] =   np.array(self.trace)
 
         # write the parameters:
         parameters = OrderedDict()
@@ -831,8 +934,12 @@ class SingleShotLogic(GenericLogic):
         # The position of the text annotation is controlled with the
         # relative offset in x direction
         rel_offset = 0.02
-        ax1.text(1.00 + rel_offset, 0.99, 'spin flip prob.: ' + str(round(self.spin_flip_prob * 100, 2)),
-                 verticalalignment='top', horizontalalignment='left', transform=ax1.transAxes, fontsize=12)
+        if self.analyze_mode == 'mapping':
+            ax1.text(1.00 + rel_offset, 0.99, 'mapping prob.: ' + str(round(self.mapped_state * 100, 2)),
+                     verticalalignment='top', horizontalalignment='left', transform=ax1.transAxes, fontsize=12)
+        else:
+            ax1.text(1.00 + rel_offset, 0.99, 'spin flip prob.: ' + str(round(self.spin_flip_prob * 100, 2)),
+                     verticalalignment='top', horizontalalignment='left', transform=ax1.transAxes, fontsize=12)
         ax1.set_xlabel('time [s]')
         ax1.set_ylabel('norm. intensity')
         try:
@@ -866,8 +973,10 @@ class SingleShotLogic(GenericLogic):
 
             ax2.text(1.00 + rel_offset, 0.99, entry_text,
                      verticalalignment='top', horizontalalignment='left', transform=ax2.transAxes, fontsize=12)
-
-            ax2.set_xlabel('norm. intensity')
+            if self.normalized:
+                ax2.set_xlabel('norm. intensity')
+            else:
+                ax2.set_xlabel('counts')
             ax2.set_ylabel('occurence')
 
             fig.tight_layout()
