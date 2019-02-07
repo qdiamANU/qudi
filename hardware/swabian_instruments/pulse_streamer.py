@@ -25,10 +25,11 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from core.module import Base, ConfigOption
+from core.module import Base, ConfigOption, StatusVar
 from core.util.modules import get_home_dir
 from interface.pulser_interface import PulserInterface, PulserConstraints
 from collections import OrderedDict
+import numpy as np
 
 import grpc
 import os
@@ -54,38 +55,24 @@ class PulseStreamer(Base, PulserInterface):
     _laser_channel = ConfigOption('laser_channel', 0, missing='warn')
     _uw_x_channel = ConfigOption('uw_x_channel', 2, missing='warn')
 
+    __current_waveform = StatusVar(name='current_waveform', default=np.zeros(32, dtype='uint8'))
+    __current_waveform_name = StatusVar(name='current_waveform_name', default='')
+    __sample_rate = StatusVar(name='sample_rate', default=1e9)
+
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
-        if 'pulsed_file_dir' in config.keys():
-            self.pulsed_file_dir = config['pulsed_file_dir']
-
-            if not os.path.exists(self.pulsed_file_dir):
-                homedir = get_home_dir()
-                self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-                self.log.warning('The directory defined in parameter '
-                            '"pulsed_file_dir" in the config for '
-                            'PulseStreamer does not exist!\n'
-                            'The default home directory\n{0}\n will be taken '
-                            'instead.'.format(self.pulsed_file_dir))
-        else:
-            homedir = get_home_dir()
-            self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-            self.log.warning('No parameter "pulsed_file_dir" was specified in the config for '
-                             'PulseStreamer as directory for the pulsed files!\nThe default home '
-                             'directory\n{0}\nwill be taken instead.'.format(self.pulsed_file_dir))
-
-        self.host_waveform_directory = self._get_dir_for_name('sampled_hardware_files')
-
-        self.current_status = -1
-        self.sample_rate = 1e9
-        self.current_loaded_asset = None
+        self.__current_status = -1
+        self.__currently_loaded_waveform = ''  # loaded and armed waveform name
+        self.__samples_written = 0
 
         self._channel = grpc.insecure_channel(self._pulsestreamer_ip + ':50051')
 
     def on_activate(self):
         """ Establish connection to pulse streamer and tell it to cancel all operations """
         self.pulse_streamer = pulse_streamer_pb2.PulseStreamerStub(self._channel)
+        self.__samples_written = 0
+        self.__currently_loaded_waveform = ''
         self.pulser_off()
         self.current_status = 0
 
@@ -124,8 +111,6 @@ class PulseStreamer(Base, PulserInterface):
         constraints = PulserConstraints()
 
         # The file formats are hardware specific.
-        constraints.waveform_format = ['pstream']
-        constraints.sequence_format = []
 
         constraints.sample_rate.min = 1e9
         constraints.sample_rate.max = 1e9
@@ -153,8 +138,8 @@ class PulseStreamer(Base, PulserInterface):
         # channels. Here all possible channel configurations are stated, where only the generic
         # names should be used. The names for the different configurations can be customary chosen.
         activation_config = OrderedDict()
-        activation_config['all'] = ['d_ch1', 'd_ch2', 'd_ch3', 'd_ch4', 'd_ch5', 'd_ch6', 'd_ch7',
-                                    'd_ch8']
+        activation_config['all'] = {'d_ch1', 'd_ch2', 'd_ch3', 'd_ch4', 'd_ch5', 'd_ch6', 'd_ch7',
+                                    'd_ch8'}
         constraints.activation_config = activation_config
 
         return constraints
@@ -242,6 +227,45 @@ class PulseStreamer(Base, PulserInterface):
         self.current_loaded_asset = asset_name
         return 0
 
+    def load_waveform(self, load_dict):
+        """ Loads a waveform to the specified channel of the pulsing device.
+
+        @param dict|list load_dict: a dictionary with keys being one of the available channel
+                                    index and values being the name of the already written
+                                    waveform to load into the channel.
+                                    Examples:   {1: rabi_ch1, 2: rabi_ch2} or
+                                                {1: rabi_ch2, 2: rabi_ch1}
+                                    If just a list of waveform names if given, the channel
+                                    association will be invoked from the channel
+                                    suffix '_ch1', '_ch2' etc.
+
+                                        {1: rabi_ch1, 2: rabi_ch2}
+                                    or
+                                        {1: rabi_ch2, 2: rabi_ch1}
+
+                                    If just a list of waveform names if given,
+                                    the channel association will be invoked from
+                                    the channel suffix '_ch1', '_ch2' etc. A
+                                    possible configuration can be e.g.
+
+                                        ['rabi_ch1', 'rabi_ch2', 'rabi_ch3']
+
+        @return dict: Dictionary containing the actually loaded waveforms per
+                      channel.
+
+        For devices that have a workspace (i.e. AWG) this will load the waveform
+        from the device workspace into the channel. For a device without mass
+        memory, this will make the waveform/pattern that has been previously
+        written with self.write_waveform ready to play.
+
+        Please note that the channel index used here is not to be confused with the number suffix
+        in the generic channel descriptors (i.e. 'd_ch1', 'a_ch1'). The channel index used here is
+        highly hardware specific and corresponds to a collection of digital and analog channels
+        being associated to a SINGLE wavfeorm asset.
+        """
+
+        pass
+
     def load_sequence(self, sequence_name):
         """ Loads a sequence to the channels of the device in order to be ready for playback.
         For devices that have a workspace (i.e. AWG) this will load the sequence from the device
@@ -302,7 +326,7 @@ class PulseStreamer(Base, PulserInterface):
         Do not return a saved sample rate in a class variable, but instead
         retrieve the current sample rate directly from the device.
         """
-        return self.sample_rate
+        return self.__sample_rate
 
     def set_sample_rate(self, sample_rate):
         """ Set the sample rate of the pulse generator hardware.
@@ -316,7 +340,7 @@ class PulseStreamer(Base, PulserInterface):
               further processing.
         """
         self.log.debug('PulseStreamer sample rate cannot be configured')
-        return self.sample_rate
+        return self.__sample_rate
 
     def get_analog_level(self, amplitude=None, offset=None):
         """ Retrieve the analog amplitude and offset of the provided channels.
@@ -491,6 +515,67 @@ class PulseStreamer(Base, PulserInterface):
         """
         names = []
         return names
+
+    def write_waveform(self, name, analog_samples, digital_samples, is_first_chunk, is_last_chunk,
+                       total_number_of_samples):
+        """
+        Write a new waveform or append samples to an already existing waveform on the device memory.
+        The flags is_first_chunk and is_last_chunk can be used as indicator if a new waveform should
+        be created or if the write process to a waveform should be terminated.
+
+        NOTE: All sample arrays in analog_samples and digital_samples must be of equal length!
+
+        @param str name: the name of the waveform to be created/append to
+        @param dict analog_samples: keys are the generic analog channel names (i.e. 'a_ch1') and
+                                    values are 1D numpy arrays of type float32 containing the
+                                    voltage samples.
+        @param dict digital_samples: keys are the generic digital channel names (i.e. 'd_ch1') and
+                                     values are 1D numpy arrays of type bool containing the marker
+                                     states.
+        @param bool is_first_chunk: Flag indicating if it is the first chunk to write.
+                                    If True this method will create a new empty wavveform.
+                                    If False the samples are appended to the existing waveform.
+        @param bool is_last_chunk:  Flag indicating if it is the last chunk to write.
+                                    Some devices may need to know when to close the appending wfm.
+        @param int total_number_of_samples: The number of sample points for the entire waveform
+                                            (not only the currently written chunk)
+
+        @return (int, list): Number of samples written (-1 indicates failed process) and list of
+                             created waveform names
+        """
+
+        if analog_samples:
+            self.log.error('Swabian Instruments pulse streamer is currently only digital and does not support waveform '
+                           'generation with analog samples.')
+            return -1, list()
+        if not digital_samples:
+            if total_number_of_samples > 0:
+                self.log.warning('No samples handed over for waveform generation.')
+                return -1, list()
+            else:
+                self.__current_waveform_name = ''
+                return 0, list()
+        print(type(digital_samples))
+        print(len(digital_samples))
+        print(len(digital_samples['d_ch7']))
+        print(digital_samples['d_ch3'])
+        print(digital_samples)
+        #channel_number = digital_samples.shape[0]
+        return -1
+
+        if channel_number != 8:
+            self.log.error('Pulse streamer needs 8 digital channels. {0} is not allowed!'
+                           ''.format(channel_number))
+            return -1
+
+
+
+        # Convert numpy array to bytearray
+        self.__current_waveform = bytearray(self.__current_waveform.tobytes())
+
+        # increment the current write index
+        self.__samples_written += chunk_length
+        return chunk_length, [self.__current_waveform_name]
 
     def write_sequence(self, name, sequence_parameters):
         """
