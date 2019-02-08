@@ -178,54 +178,6 @@ class PulseStreamer(Base, PulserInterface):
         self.log.debug('PulseStreamer has no own storage capability.\n"upload_asset" call ignored.')
         return 0
 
-    def load_asset(self, asset_name, load_dict=None):
-        """ Loads a sequence or waveform to the specified channel of the pulsing
-            device.
-
-        @param str asset_name: The name of the asset to be loaded
-
-        @param dict load_dict:  a dictionary with keys being one of the
-                                available channel numbers and items being the
-                                name of the already sampled
-                                waveform/sequence files.
-                                Examples:   {1: rabi_Ch1, 2: rabi_Ch2}
-                                            {1: rabi_Ch2, 2: rabi_Ch1}
-                                This parameter is optional. If none is given
-                                then the channel association is invoked from
-                                the sequence generation,
-                                i.e. the filename appendix (_Ch1, _Ch2 etc.)
-
-        @return int: error code (0:OK, -1:error)
-        """
-        # ignore if no asset_name is given
-        if asset_name is None:
-            self.log.warning('"load_asset" called with asset_name = None.')
-            return 0
-
-        # check if asset exists
-        saved_assets = self.get_saved_asset_names()
-        if asset_name not in saved_assets:
-            self.log.error('No asset with name "{0}" found for PulseStreamer.\n'
-                           '"load_asset" call ignored.'.format(asset_name))
-            return -1
-
-        # get samples from file
-        filepath = os.path.join(self.host_waveform_directory, asset_name + '.pstream')
-        pulse_sequence_raw = dill.load(open(filepath, 'rb'))
-
-        pulse_sequence = []
-        for pulse in pulse_sequence_raw:
-            pulse_sequence.append(pulse_streamer_pb2.PulseMessage(ticks=pulse[0], digi=pulse[1], ao0=0, ao1=1))
-
-        blank_pulse = pulse_streamer_pb2.PulseMessage(ticks=0, digi=0, ao0=0, ao1=0)
-        laser_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=self._convert_to_bitmask([self._laser_channel]), ao0=0, ao1=0)
-        laser_and_uw_channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
-        laser_and_uw_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=laser_and_uw_channels, ao0=0, ao1=0)
-        self._sequence = pulse_streamer_pb2.SequenceMessage(pulse=pulse_sequence, n_runs=0, initial=laser_on,
-            final=laser_and_uw_on, underflow=blank_pulse, start=1)
-
-        self.current_loaded_asset = asset_name
-        return 0
 
     def load_waveform(self, load_dict):
         """ Loads a waveform to the specified channel of the pulsing device.
@@ -263,8 +215,37 @@ class PulseStreamer(Base, PulserInterface):
         highly hardware specific and corresponds to a collection of digital and analog channels
         being associated to a SINGLE wavfeorm asset.
         """
+        if isinstance(load_dict, list):
+            waveforms = list(set(load_dict))
+        elif isinstance(load_dict, dict):
+            waveforms = list(set(load_dict.values()))
+        else:
+            self.log.error('Method load_waveform expects a list of waveform names or a dict.')
+            return self.get_loaded_assets()[0]
 
-        pass
+        if len(waveforms) != 1:
+            self.log.error('FPGA pulser expects exactly one waveform name for load_waveform.')
+            return self.get_loaded_assets()[0]
+
+        waveform = waveforms[0]
+        if waveform != self.__current_waveform_name:
+            self.log.error('No waveform by the name "{0}" generated for FPGA pulser.\n'
+                           'Only one waveform at a time can be held.'.format(waveform))
+            return self.get_loaded_assets()[0]
+
+        pulse_sequence = []
+        for pulse in self.__current_waveform:
+            pulse_sequence.append(pulse_streamer_pb2.PulseMessage(ticks=pulse[0], digi=pulse[1], ao0=0, ao1=0))
+
+        blank_pulse = pulse_streamer_pb2.PulseMessage(ticks=0, digi=0, ao0=0, ao1=0)
+        laser_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=self._convert_to_bitmask([self._laser_channel]), ao0=0,
+                                                   ao1=0)
+        laser_and_uw_channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel])
+        laser_and_uw_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=laser_and_uw_channels, ao0=0, ao1=0)
+        self._sequence = pulse_streamer_pb2.SequenceMessage(pulse=pulse_sequence, n_runs=0, initial=laser_on,
+                                                            final=laser_and_uw_on, underflow=blank_pulse, start=1)
+
+        return self.get_loaded_assets()
 
     def load_sequence(self, sequence_name):
         """ Loads a sequence to the channels of the device in order to be ready for playback.
@@ -555,27 +536,69 @@ class PulseStreamer(Base, PulserInterface):
             else:
                 self.__current_waveform_name = ''
                 return 0, list()
-        print(type(digital_samples))
-        print(len(digital_samples))
-        print(len(digital_samples['d_ch7']))
-        print(digital_samples['d_ch3'])
-        print(digital_samples)
-        #channel_number = digital_samples.shape[0]
-        return -1
+
+        self.__current_waveform_name = name
+        channel_number = len(digital_samples.keys())
+        _digital_samples = np.array([digital_samples[x] for x in sorted(digital_samples.keys())])
+        _digital_samples = np.transpose(_digital_samples)
+
 
         if channel_number != 8:
             self.log.error('Pulse streamer needs 8 digital channels. {0} is not allowed!'
                            ''.format(channel_number))
-            return -1
 
+        # fetch locations where digital channel states change, and eliminate duplicates
+        new_channel_indices = np.where(_digital_samples[:-1, :] != _digital_samples[1:, :])[0]
+        new_channel_indices = np.unique(new_channel_indices)
 
+        # add in indices for the start and end of the sequence to simplify iteration
+        new_channel_indices = np.insert(new_channel_indices, 0, [-1])
+        new_channel_indices = np.insert(new_channel_indices, new_channel_indices.size, [_digital_samples.shape[0] - 1])
 
-        # Convert numpy array to bytearray
-        self.__current_waveform = bytearray(self.__current_waveform.tobytes())
+        pulses = []
+        for new_channel_index in range(1, new_channel_indices.size):
+            pulse = [new_channel_indices[new_channel_index] - new_channel_indices[new_channel_index - 1],
+                     self._convert_to_bitmask(_digital_samples[new_channel_indices[new_channel_index - 1] + 1, :])]
+            pulses.append(pulse)
 
-        # increment the current write index
-        self.__samples_written += chunk_length
-        return chunk_length, [self.__current_waveform_name]
+        self.__current_waveform = pulses
+        return total_number_of_samples, [self.__current_waveform_name]
+
+    def _convert_to_bitmask(self, active_channels):
+        """ Convert a list of channels into a bitmask.
+        @param numpy.array active_channels: the list of active channels like
+                            e.g. [0,4,7]. Note that the channels start from 0.
+        @return int: The channel-list is converted into a bitmask (an sequence
+                     of 1 and 0). The returned integer corresponds to such a
+                     bitmask.
+        Note that you can get a binary representation of an integer in python
+        if you use the command bin(<integer-value>). All higher unneeded digits
+        will be dropped, i.e. 0b00100 is turned into 0b100. Examples are
+            bin(0) =    0b0
+            bin(1) =    0b1
+            bin(8) = 0b1000
+        Each bit value (read from right to left) corresponds to the fact that a
+        channel is on or off. I.e. if you have
+            0b001011
+        then it would mean that only channel 0, 1 and 3 are switched to on, the
+        others are off.
+        Helper method for write_pulse_form.
+        """
+        bits = 0     # that corresponds to: 0b0
+        for channel in active_channels:
+            # go through each list element and create the digital word out of
+            # 0 and 1 that represents the channel configuration. In order to do
+            # that a bitwise shift to the left (<< operator) is performed and
+            # the current channel configuration is compared with a bitwise OR
+            # to check whether the bit was already set. E.g.:
+            #   0b1001 | 0b0110: compare elementwise:
+            #           1 | 0 => 1
+            #           0 | 1 => 1
+            #           0 | 1 => 1
+            #           1 | 1 => 1
+            #                   => 0b1111
+            bits = bits | (1<< channel)
+        return bits
 
     def write_sequence(self, name, sequence_parameters):
         """
