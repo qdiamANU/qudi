@@ -265,11 +265,11 @@ class ODMRGui(GUIBase):
         self._mw.do_fit_PushButton.clicked.connect(self.do_fit)
 
         # additional stuff for AWG-microwave-combo
-        self._sd.number_of_loops_spinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.number_of_samples_spinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.awg_offset_frequency_doubleSpinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.awg_amplitude_doubleSpinBox.editingFinished.connect(self.change_awg_params)
-        self._sd.awg_sample_rate_doubleSpinBox.editingFinished.connect(self.change_awg_params)
+        #self._sd.number_of_loops_spinBox.editingFinished.connect(self.change_awg_params)
+        #self._sd.number_of_samples_spinBox.editingFinished.connect(self.change_awg_params)
+        #self._sd.awg_offset_frequency_doubleSpinBox.editingFinished.connect(self.change_awg_params)
+        #self._sd.awg_amplitude_doubleSpinBox.editingFinished.connect(self.change_awg_params)
+        #self._sd.awg_sample_rate_doubleSpinBox.editingFinished.connect(self.change_awg_params)
 
         # Control/values-changed signals to logic
         self.sigCwMwOn.connect(self._odmr_logic.mw_cw_on, QtCore.Qt.QueuedConnection)
