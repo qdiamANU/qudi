@@ -70,9 +70,205 @@ class SSRPredefinedGeneratorS3(HelperMethods):
     normalised_safety = 1.8
 
 
+    # def generate_ajh_test_sequence(self, name='ajh_test_sequence', tau_start=1.0e-6, tau_step=1.0e-6, num_of_points=2,
+    #                       laser_name='laser_wait', laser_length=0.4e-6, wait_length=1.0e-6,
+    #                       rf_cnot_name='RF', rf_cnot_freq=2.0e6, rf_cnot_amp=0.2, rf_cnot_duration=3.0e-6, rf_cnot_phase=0,
+    #                       ssr_name='SSR', mw_cnot_rabi_period=1.0e-6, mw_cnot_amplitude=2.0, mw_cnot_frequency=5.0e6,
+    #                       mw_cnot_phase=0, mw_cnot_amplitude2=1.0, mw_cnot_frequency2=7.5e6,
+    #                       mw_cnot_phase2=0, ssr_normalise=False, counts_per_readout=3, sync_gate_name='sync_gate',
+    #                       rf_channel='a_ch2'):
+
+    def generate_ajh_test_sequence(self, name='SSR', mw_cnot_rabi_period=2e-6, mw_cnot_amplitude=2.0,
+        mw_cnot_frequency=5e6, mw_cnot_phase=0, mw_cnot_amplitude2=2.0,
+        mw_cnot_frequency2=7.5e6, mw_cnot_phase2=0, ssr_normalise=False,
+        counts_per_readout=3, laser_init_length=3.0e-6, wait_init_length=1.5e-6,
+        wait_ssr_length=1.0e-6, n_reps = 100):
+        """
+        Initialise and perform SSR. Intended use is to create nuclear spin time traces for e.g. magnet alignment
+        - currently only works for NV with a single qubit (nitrogen nuclear spin). To adapt for more qubits, would
+        need to perform multi-frequency CNOT gate
+
+        :param name:
+        :param mw_cnot_rabi_period:
+        :param mw_cnot_amplitude:
+        :param mw_cnot_frequency:
+        :param mw_cnot_phase:
+        :param mw_cnot_amplitude2:
+        :param mw_cnot_frequency2:
+        :param mw_cnot_phase2:◙
+        :param ssr_normalise:
+        :param counts_per_readout:
+        :param laser_init_length:
+        :param wait_init_length:
+        :param wait_ssr_length:
+        :return:
+        """
+
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+
+        # single_ssr_readout_time = laser_init_length + wait_init_length + \
+        #                           counts_per_readout*(mw_cnot_rabi_period/2 + ssr['laser_length'] + ssr['wait_time'])
+        single_ssr_readout_time = 1  # fixme: change to actual time
+        time_array = np.array(range(n_reps))*single_ssr_readout_time
+
+        ### create pulse elements ##############################
+
+        # Add the laser initialization
+        laser_name = 'laser_wait_init'
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_laser_wait(name=laser_name, laser_length=laser_init_length, wait_length=wait_init_length,
+                                     trigger=False)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        laser_wait_list = [laser_name, seq_param]
+
+        # Add SSR 'sync' trigger
+        sync_gate_name = 'sync_gate'
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_trigger(name=sync_gate_name, tau=1e-7, digital_channel=self.sync_channel)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        sync_list = [sync_gate_name, seq_param]
+
+        # Add SSR readout mw/laser pulses and 'gate' trigger
+        ssr_name = 'SSR'
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_singleshot_readout(name=ssr_name, mw_cnot_rabi_period=mw_cnot_rabi_period,
+                                             mw_cnot_amplitude=mw_cnot_amplitude,
+                                             mw_cnot_frequency=mw_cnot_frequency,
+                                             mw_cnot_phase=mw_cnot_phase,
+                                             mw_cnot_amplitude2=mw_cnot_amplitude2,
+                                             mw_cnot_frequency2=mw_cnot_frequency2,
+                                             mw_cnot_phase2=mw_cnot_phase2,
+                                             ssr_normalise=ssr_normalise)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({'repetitions': counts_per_readout - 1})
+        ssr_list = [ssr_name, seq_param]
+
+        ### Arrange pulse elements into a Sequence ##############################
+
+        # arrange the individual blocks in the correct order
+        element_list = list()
+        for ii in range(n_reps):
+            element_list.append(laser_wait_list.copy())
+            element_list.append(sync_list.copy())
+            element_list.append(ssr_list.copy())
+        # make sequence continuous
+        element_list = self._make_sequence_continous(element_list)
+        sequence = PulseSequence(name=name, ensemble_list=element_list, rotating_frame=False)
+
+        self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+                                       controlled_variable=time_array, units=('s', ''), number_of_lasers=n_reps,
+                                       labels=('Time', 'Spin flip probability'),
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
+        created_sequences.append(sequence)
+        return created_blocks, created_ensembles, created_sequences
+
+    def generate_just_ssr(self, name='Just-SSR', mw_cnot_rabi_period=2e-6, mw_cnot_amplitude=2.0,
+        mw_cnot_frequency=5e6, mw_cnot_phase=0, mw_cnot_amplitude2=2.0,
+        mw_cnot_frequency2=7.5e6, mw_cnot_phase2=0, ssr_normalise=False,
+        counts_per_readout=3, laser_init_length=3.0e-6, wait_init_length=1.5e-6,
+        wait_ssr_length=1.0e-6, laser_ssr_length=500e-9):
+        """
+        Initialise and perform SSR. Intended use is to create nuclear spin time traces for e.g. magnet alignment
+        - only a single SSR loop written to AWG. Need to loop playback and stop measurement using timer
+        - currently only works for NV with a single qubit (nitrogen nuclear spin). To adapt for more qubits, would
+        need to perform multi-frequency CNOT gate
+
+        :param name:
+        :param mw_cnot_rabi_period:
+        :param mw_cnot_amplitude:
+        :param mw_cnot_frequency:
+        :param mw_cnot_phase:
+        :param mw_cnot_amplitude2:
+        :param mw_cnot_frequency2:
+        :param mw_cnot_phase2:
+        :param ssr_normalise:
+        :param counts_per_readout:
+        :param laser_init_length:
+        :param wait_init_length:
+        :param wait_ssr_length:
+        :return:
+        """
+        n_reps=1
+
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+        para_dict = locals()
+
+        single_ssr_readout_time = 1  # todo: AJH 18/3/2019 - not sure if time_array is used at all
+        time_array = np.array(range(n_reps))*single_ssr_readout_time
+
+        ### create pulse elements ##############################
+
+        # Add the laser initialization
+        laser_name = 'laser_wait_init'
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_laser_wait(name=laser_name, laser_length=laser_init_length, wait_length=wait_init_length,
+                                     trigger=False)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        laser_wait_list = [laser_name, seq_param]
+
+        # Add SSR 'sync' trigger
+        sync_gate_name = 'sync_gate'
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_trigger(name=sync_gate_name, tau=1e-7, digital_channel=self.sync_channel)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        sync_list = [sync_gate_name, seq_param]
+
+        # Add SSR readout mw/laser pulses and 'gate' trigger
+        ssr_name = 'SSR'
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_singleshot_readout(name=ssr_name, mw_cnot_rabi_period=mw_cnot_rabi_period,
+                                             mw_cnot_amplitude=mw_cnot_amplitude,
+                                             mw_cnot_frequency=mw_cnot_frequency,
+                                             mw_cnot_phase=mw_cnot_phase,
+                                             mw_cnot_amplitude2=mw_cnot_amplitude2,
+                                             mw_cnot_frequency2=mw_cnot_frequency2,
+                                             mw_cnot_phase2=mw_cnot_phase2,
+                                             ssr_normalise=ssr_normalise,
+                                             wait_ssr_length=wait_ssr_length,
+                                             laser_ssr_length=laser_ssr_length)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({'repetitions': counts_per_readout - 1})
+        ssr_list = [ssr_name, seq_param]
+
+        ### Arrange pulse elements into a Sequence ##############################
+
+        # arrange the individual blocks in the correct order
+        element_list = list()
+        for ii in range(n_reps):
+            element_list.append(laser_wait_list.copy())
+            element_list.append(sync_list.copy())
+            element_list.append(ssr_list.copy())
+        # make sequence continuous
+        element_list = self._make_sequence_continous(element_list)
+        sequence = PulseSequence(name=para_dict['name'], ensemble_list=element_list, rotating_frame=False)
+
+        self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+                                       controlled_variable=time_array, units=('s', ''), number_of_lasers=n_reps,
+                                       labels=('Time', 'Spin flip probability'),
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
+        created_sequences.append(sequence)
+        return created_blocks, created_ensembles, created_sequences
+
     def generate_singleshot_readout(self, name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=0.1,
                                     mw_cnot_frequency=2.8e9, mw_cnot_phase = 0, mw_cnot_amplitude2=0.1,
-                                    mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True):
+                                    mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True,
+                                    wait_ssr_length=1.0e-6, laser_ssr_length=500e-9):
         """
 
         """
@@ -91,34 +287,32 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                                       freqs=mw_cnot_frequency,
                                                       phases=mw_cnot_phase)
 
-        trigger_element = self._get_sync_element()
-
-        readout_element = self._get_readout_element()
+        readout_element1 = self._get_readout_element(wait_time=wait_ssr_length, length=laser_ssr_length, trigger=True)
         block = PulseBlock(name=name)
         block.append(mw_pi_element)
-        block.append(trigger_element)
-        block.extend(readout_element)
-
+        block.extend(readout_element1)
 
         if ssr_normalise:
+
+            readout_element2 = self._get_readout_element(wait_time=wait_ssr_length, length=laser_ssr_length, trigger=False)
+
             time_between_trigger = self.laser_length + self.wait_time + self.laser_delay
-            if time_between_trigger > self.laser_length * self.non_normalised_safety:
-                wait = time_between_trigger - self.laser_length * self.non_normalised_safety
-                extra_waiting_element = self._get_idle_element(length=wait*1.2, increment=0)
+            # if time_between_trigger > self.laser_length * self.non_normalised_safety:
+            #     wait = time_between_trigger - self.laser_length * self.non_normalised_safety
+            #     extra_waiting_element = self._get_idle_element(length=wait*1.2, increment=0)
             mw_pi_element2 = self._get_multiple_mw_element(length=mw_cnot_rabi_period/2,
                                                            increment=0.0,
                                                            amps=mw_cnot_amplitude2,
                                                            freqs=mw_cnot_frequency2,
                                                            phases=mw_cnot_phase2)
-            waiting_element = self._get_idle_element(length=self.laser_length + 200e-9, increment=0)
+            # waiting_element = self._get_idle_element(length=self.laser_length + 200e-9, increment=0)
 
-            if self.laser_length + self.wait_time + self.laser_delay > self.laser_length * self.non_normalised_safety:
-                block.append(extra_waiting_element)
+            # if self.laser_length + self.wait_time + self.laser_delay > self.laser_length * self.non_normalised_safety:
+            #     block.append(extra_waiting_element)
 #
             block.append(mw_pi_element2)
-            block.append(trigger_element)
-            block.append(waiting_element)
-            block.extend(readout_element)
+            # block.append(waiting_element)
+            block.extend(readout_element2)
         created_blocks.append(block)
         # Create block ensemble
         block_ensemble = PulseBlockEnsemble(name=name, rotating_frame=False)
@@ -126,7 +320,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         # add metadata to invoke settings
         block_ensemble = self._add_metadata_to_settings(block_ensemble, created_blocks=list(), controlled_variable = [0],
                                         counting_length = self.laser_length * self.normalised_safety if ssr_normalise
-                                                         else self.laser_length * self.non_normalised_safety)
+                                                         else laser_ssr_length * self.non_normalised_safety)
         # append ensemble to created ensembles
         created_ensembles.append(block_ensemble)
 
@@ -134,12 +328,14 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
 ############################################# SSR experiments ################################################
 
-    def generate_ssr_rabi(self, name='SSR-Rabi', tau_start=1.0e-9, tau_step=1.0e-9, num_of_points=50,
-                          laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6,
-                          rf_cnot_name='RF', rf_cnot_freq=1.0e6, rf_cnot_amp=0.1, rf_cnot_duration=100e-6, rf_cnot_phase=0,
-                          ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=1.0, mw_cnot_frequency=2.8e9,
-                          mw_cnot_phase=0, mw_cnot_amplitude2=1.0, mw_cnot_frequency2=2.8e9,
-                          mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000):
+    def generate_ssr_rabi(self, name='SSR-Rabi', tau_start=1.0e-6, tau_step=1.0e-6, num_of_points=2,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9,
+                          rf_cnot_name='RF', rf_cnot_freq=2.0e6, rf_cnot_amp=0.2, rf_cnot_duration=3.0e-6, rf_cnot_phase=0,
+                          ssr_name='SSR', mw_cnot_rabi_period=1.0e-6, mw_cnot_amplitude=2.0, mw_cnot_frequency=5.0e6,
+                          mw_cnot_phase=0, mw_cnot_amplitude2=1.0, mw_cnot_frequency2=7.5e6,
+                          mw_cnot_phase2=0, ssr_normalise=False, counts_per_readout=3, sync_gate_name='sync_gate',
+                          rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -152,7 +348,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         for number, tau in enumerate(tau_array):
             name_tmp = name + '_' + str(number)
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_single_mw_pulse(name = name_tmp, tau=tau,
+                self.generate_single_mw_pulse(name=name_tmp, tau=tau,
                                                  microwave_amplitude=self.microwave_amplitude,
                                                  microwave_frequency=self.microwave_frequency, microwave_phase=0.0)
             created_blocks += created_blocks_tmp
@@ -166,18 +362,20 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=tau_array, units=('s', ''), number_of_lasers=num_of_points,
                                        labels=('Tau', 'Spin flip probability'),
-                                       counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
 
     def generate_ssr_rabi_mapping(self, name='SSR-Rabi', tau_start=1.0e-9, tau_step=1.0e-9, num_of_points=50,
-                          laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9,
                           rf_cnot_name='RF', rf_cnot_freq=1.0e6, rf_cnot_amp=0.1, rf_cnot_duration=100e-6, rf_cnot_phase=0,
-                          ssr_name='SSR', mw_cnot_name = 'MW-CNOT', mw_cnot_rabi_period=20e-9,
+                          ssr_name='SSR', mw_cnot_name='MW-CNOT', mw_cnot_rabi_period=20e-9,
                           mw_cnot_amplitude=1.0, mw_cnot_frequency=2.8e9,
                           mw_cnot_phase=0, mw_cnot_amplitude2=1.0, mw_cnot_frequency2=2.8e9,
-                          mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000):
+                          mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000, sync_gate_name='sync_gate',
+                          rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -186,11 +384,11 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
         # generate the Rabi pieces
         tau_array = tau_start + np.arange(num_of_points) * tau_step
-        para_list=list()
+        para_list = list()
         for number, tau in enumerate(tau_array):
             name_tmp = name + '_' + str(number)
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_single_mw_pulse(name = name_tmp, tau=tau,
+                self.generate_single_mw_pulse(name=name_tmp, tau=tau,
                                                  microwave_amplitude=self.microwave_amplitude,
                                                  microwave_frequency=self.microwave_frequency, microwave_phase=0.0)
             created_blocks += created_blocks_tmp
@@ -204,19 +402,21 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=tau_array, units=('s', ''), number_of_lasers=num_of_points,
                                        labels=('Tau', 'Spin flip probability'),
-                                       counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
 
 
 
     def generate_ssr_echo(self, name='SSR-Echo', tau_start=1.0e-9, tau_step=1.0e-9, num_of_points=50,
-                         laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9,
                          rf_cnot_name='RF', rf_cnot_freq=1.0e6, rf_cnot_amp=0.1, rf_cnot_duration=100e-6, rf_cnot_phase=0,
                          ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=0.1, mw_cnot_frequency=2.8e9,
                          mw_cnot_phase=0, mw_cnot_amplitude2=0.1, mw_cnot_frequency2=2.8e9,
-                         mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000):
+                         mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000, sync_gate_name='sync_gate',
+                          rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -229,7 +429,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         for number, tau in enumerate(tau_array):
             name_tmp = name + '_' + str(number)
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_single_echo_s3(name = name_tmp, tau=tau, microwave_amplitude=self.microwave_amplitude,
+                self.generate_single_echo_s3(name=name_tmp, tau=tau, microwave_amplitude=self.microwave_amplitude,
                                             microwave_frequency=self.microwave_frequency, rabi_period=self.rabi_period)
             created_blocks += created_blocks_tmp
             created_ensembles += created_ensembles_tmp
@@ -242,18 +442,20 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=2*tau_array, units=('s', ''), number_of_lasers=num_of_points,
                                        labels=('Tau', 'Spin flip probability'),
-                                       counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
 
 
     def generate_ssr_xy8(self, name='SSR-XY8', tau_start=1.0e-9, tau_step=1.0e-9, num_of_points=50, xy8N=1, ylast=False,
-                         laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9,
                          rf_cnot_name='RF', rf_cnot_freq=1.0e6, rf_cnot_amp=0.1, rf_cnot_duration=100e-6, rf_cnot_phase=0,
                          ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=0.1, mw_cnot_frequency=2.8e9,
                          mw_cnot_phase=0, mw_cnot_amplitude2=0.1, mw_cnot_frequency2=2.8e9,
-                         mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000):
+                         mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000, sync_gate_name='sync_gate',
+                          rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -280,18 +482,20 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=tau_array, units=('s', ''), number_of_lasers=num_of_points,
                                        labels=('Tau', 'Spin flip probability'),
-                                       counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
 
 
     def generate_ssr_xy8_Nsweep(self, name='SSR-XY8_Nsweep', tau=1.0e-6, N_start = 1, N_step=1.0e-9, num_of_points=50,
-                                ylast=False, laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6,
+                                ylast=False, laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9,
                                 rf_cnot_name='RF', rf_cnot_freq=1.0e6, rf_cnot_amp=0.1, rf_cnot_duration=100e-6,
                                 rf_cnot_phase=0, ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=0.1,
                                 mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=0.1,
-                                mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000):
+                                mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True, counts_per_readout=1000,
+                                sync_gate_name='sync_gate', rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -319,8 +523,8 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                        controlled_variable=N_array*8*tau, units=('s', ''),
                                        number_of_lasers=num_of_points,
                                        labels=('Interaction time', 'Spin flip probability'),
-                                       counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
 
@@ -332,9 +536,9 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
         created_sequences = list()
         # generate initialization, rf control, and ssr_readout)
-        created_blocks_tmp, created_ensembles_tmp, laser_wait_list, rf_list1, rf_list2, ssr_list = \
-            self._initalize_rf_ssr(laser_name=para_dict['laser_name'], laser_length=para_dict['laser_length'],
-                                   wait_length=para_dict['wait_length'], rf_cnot_name=para_dict['rf_cnot_name'],
+        created_blocks_tmp, created_ensembles_tmp, laser_wait_list, rf_list1, rf_list2, sync_list, ssr_list = \
+            self._initalize_rf_ssr(laser_name=para_dict['laser_name'], laser_init_length=para_dict['laser_init_length'],
+                                   wait_init_length=para_dict['wait_init_length'], rf_cnot_name=para_dict['rf_cnot_name'],
                                    rf_cnot_duration=para_dict['rf_cnot_duration'], rf_cnot_amp=para_dict['rf_cnot_amp'],
                                    rf_cnot_freq=para_dict['rf_cnot_freq'], rf_cnot_phase=para_dict['rf_cnot_phase'],
                                    ssr_name=para_dict['ssr_name'], mw_cnot_rabi_period=para_dict['mw_cnot_rabi_period'],
@@ -345,7 +549,11 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                    mw_cnot_frequency2=para_dict['mw_cnot_frequency2'],
                                    mw_cnot_phase2=para_dict['mw_cnot_phase2'],
                                    ssr_normalise=para_dict['ssr_normalise'],
-                                   counts_per_readout=para_dict['counts_per_readout'])
+                                   counts_per_readout=para_dict['counts_per_readout'],
+                                   sync_gate_name=para_dict['sync_gate_name'],
+                                   rf_channel=para_dict['rf_channel'],
+                                   wait_ssr_length=para_dict['wait_ssr_length'],
+                                   laser_ssr_length=para_dict['laser_ssr_length'])
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
 
@@ -356,9 +564,14 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             element_list.append(para_list[ii])
             element_list.append(rf_list1.copy())
             element_list.append(rf_list2.copy())
+            element_list.append(sync_list.copy())
             element_list.append(ssr_list.copy())
-        # make sequence continous+
+        # make sequence continuous
         element_list = self._make_sequence_continous(element_list)
+        # print('_standard_ssr: rf_list1 = {}'.format(rf_list1))
+        # print('_standard_ssr: rf_list2 = {}'.format(rf_list2))
+        # print('_standard_ssr: ssr_list = {}'.format(ssr_list))
+        # print('_standard_ssr: element_list = {}'.format(element_list))
         sequence = PulseSequence(name=para_dict['name'], ensemble_list=element_list, rotating_frame=False)
 
         return created_blocks, created_ensembles, sequence
@@ -368,9 +581,9 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
         created_sequences = list()
         # generate initialization, rf control, and ssr_readout)
-        created_blocks_tmp, created_ensembles_tmp, laser_wait_list, mw_cnot_list, rf_list1, rf_list2, ssr_list = \
-            self._initalize_rf_ssr_mapping(laser_name=para_dict['laser_name'], laser_length=para_dict['laser_length'],
-                                   wait_length=para_dict['wait_length'], rf_cnot_name=para_dict['rf_cnot_name'],
+        created_blocks_tmp, created_ensembles_tmp, laser_wait_list, mw_cnot_list, rf_list1, rf_list2, sync_list, ssr_list = \
+            self._initalize_rf_ssr_mapping(laser_name=para_dict['laser_name'], laser_init_length=para_dict['laser_init_length'],
+                                   wait_init_length=para_dict['wait_init_length'], rf_cnot_name=para_dict['rf_cnot_name'],
                                    rf_cnot_duration=para_dict['rf_cnot_duration'], rf_cnot_amp=para_dict['rf_cnot_amp'],
                                    rf_cnot_freq=para_dict['rf_cnot_freq'], rf_cnot_phase=para_dict['rf_cnot_phase'],
                                    ssr_name=para_dict['ssr_name'], mw_cnot_name=para_dict['mw_cnot_name'],
@@ -394,8 +607,9 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             element_list.append(mw_cnot_list.copy())
             element_list.append(rf_list1.copy())
             element_list.append(rf_list2.copy())
+            element_list.append(sync_list.copy())
             element_list.append(ssr_list.copy())
-        # make sequence continous+
+        # make sequence continuous+
         element_list = self._make_sequence_continous(element_list)
         sequence = PulseSequence(name=para_dict['name'], ensemble_list=element_list, rotating_frame=False)
 
@@ -407,12 +621,13 @@ class SSRPredefinedGeneratorS3(HelperMethods):
     #################################### Nuclear control methods ###################################
 
     def generate_ssr_nuclear_odmr(self, name='Nuclear-ODMR', freq_start=1.0e6, freq_step=1.0e3, num_of_points=50,
-                                  laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6, initial_pi_pulse=False,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9, initial_pi_pulse=False,
                                   rf_duration=1.0e6, rf_amp=0.1, rf_phase=0,
                                   ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=1.0,
                                   mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=1.0,
                                   mw_cnot_frequency2=2.8e9,  mw_cnot_phase2=0, ssr_normalise=True,
-                                  counts_per_readout=1000):
+                                  counts_per_readout=1000, sync_gate_name='sync_gate', rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -426,7 +641,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             name_tmp = name + '_' + str(number)
             created_blocks_tmp, created_ensembles_tmp, list1, list2 = \
                 self._chopped_rf_pulse(name = name_tmp, rf_duration=rf_duration, rf_amp=rf_amp,
-                                       rf_freq=freq, rf_phase=rf_phase)
+                                       rf_freq=freq, rf_phase=rf_phase, rf_channel=rf_channel)
             created_blocks += created_blocks_tmp
             created_ensembles += created_ensembles_tmp
             para_list.append([list1, list2])
@@ -436,19 +651,20 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=freq_array, units=('Hz', ''), number_of_lasers=num_of_points,
-                                       labels = ('Frequency', 'Spin flip probability'),
-                                       counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                       labels=('Frequency', 'Spin flip probability'),
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
 
     def generate_ssr_nuclear_rabi(self, name='Nuclear-Rabi', tau_start=1.0e-9, tau_step=1.0e-9, num_of_points=50,
-                                  laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6, initial_pi_pulse=False,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9, initial_pi_pulse=False,
                                   rf_freq=1.0e6, rf_amp=0.1, rf_phase=0,
                                   ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=1.0,
                                   mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=1.0,
                                   mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True,
-                                  counts_per_readout=1000):
+                                  counts_per_readout=1000, sync_gate_name='sync_gate', rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -462,7 +678,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             name_tmp = name + '_' + str(number)
             created_blocks_tmp, created_ensembles_tmp, list1, list2 = \
                 self._chopped_rf_pulse(name = name_tmp, rf_duration=tau, rf_amp=rf_amp,
-                                       rf_freq=rf_freq, rf_phase=rf_phase)
+                                       rf_freq=rf_freq, rf_phase=rf_phase, rf_channel=rf_channel)
             created_blocks += created_blocks_tmp
             created_ensembles += created_ensembles_tmp
             para_list.append([list1, list2])
@@ -472,20 +688,21 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating = False, laser_ignore_list = list(),
                                     controlled_variable = tau_array, units=('s', ''), number_of_lasers = num_of_points,
-                                    counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                    counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
 
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
 
 
     def generate_ssr_contrast(self, name='SSR-contrast',
-                                  laser_name='laser_wait', laser_length=1e-6, wait_length=1e-6, initial_pi_pulse=False,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9, initial_pi_pulse=False,
                                   rf_cnot_duration=100e-6, rf_cnot_freq=1.0e6, rf_cnot_amp=0.1, rf_cnot_phase=0,
                                   ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=1.0,
                                   mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=1.0,
                                   mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True,
-                                  counts_per_readout=1000):
+                                  counts_per_readout=1000, sync_gate_name='sync_gate', rf_channel='a_ch2'):
 
         created_blocks = list()
         created_ensembles = list()
@@ -499,7 +716,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             name_tmp = name + '_' + str(number)
             created_blocks_tmp, created_ensembles_tmp, list1, list2 = \
                 self._chopped_rf_pulse(name = name_tmp, rf_duration=tau, rf_amp=rf_cnot_amp,
-                                       rf_freq=rf_cnot_freq, rf_phase=rf_cnot_phase)
+                                       rf_freq=rf_cnot_freq, rf_phase=rf_cnot_phase, rf_channel=rf_channel)
             created_blocks += created_blocks_tmp
             created_ensembles += created_ensembles_tmp
             para_list.append([list1, list2])
@@ -509,8 +726,8 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=tau_array, units=('s', ''), number_of_lasers=2,
-                                       counting_length=self.laser_length * self.normalised_safety if ssr_normalise
-                                       else self.laser_length * self.non_normalised_safety)
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
 
         created_sequences.append(sequence)
         return created_blocks, created_ensembles, created_sequences
@@ -521,10 +738,12 @@ class SSRPredefinedGeneratorS3(HelperMethods):
     def _nuclear_manipulation(self, created_blocks, created_ensembles, para_list, para_dict):
 
         # generate initialization, rf control, and ssr_readout)
-        created_blocks_tmp, created_ensembles_tmp, laser_wait_list, ssr_list = \
-            self._initialize_ssr(laser_name=para_dict['laser_name'], laser_length=para_dict['laser_length'],
-                                   wait_length=para_dict['wait_length'], initial_pi_pulse=para_dict['initial_pi_pulse'],
-                                   ssr_name=para_dict['ssr_name'], mw_cnot_rabi_period=para_dict['mw_cnot_rabi_period'],
+        created_blocks_tmp, created_ensembles_tmp, laser_wait_list, sync_list, ssr_list = \
+            self._initialize_ssr(laser_name=para_dict['laser_name'], laser_init_length=para_dict['laser_init_length'],
+                                   wait_init_length=para_dict['wait_init_length'],
+                                   initial_pi_pulse=para_dict['initial_pi_pulse'],
+                                   ssr_name=para_dict['ssr_name'],
+                                   mw_cnot_rabi_period=para_dict['mw_cnot_rabi_period'],
                                    mw_cnot_amplitude=para_dict['mw_cnot_amplitude'],
                                    mw_cnot_frequency=para_dict['mw_cnot_frequency'],
                                    mw_cnot_phase=para_dict['mw_cnot_phase'],
@@ -532,7 +751,9 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                    mw_cnot_frequency2=para_dict['mw_cnot_frequency2'],
                                    mw_cnot_phase2=para_dict['mw_cnot_phase2'],
                                    ssr_normalise=para_dict['ssr_normalise'],
-                                   counts_per_readout=para_dict['counts_per_readout'])
+                                   counts_per_readout=para_dict['counts_per_readout'],
+                                   wait_ssr_length=para_dict['wait_ssr_length'],
+                                   laser_ssr_length=para_dict['laser_ssr_length'])
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
 
@@ -542,10 +763,9 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             element_list.append(laser_wait_list.copy())
             element_list.append(para_list[ii][0])
             element_list.append(para_list[ii][1])
+            element_list.append(sync_list.copy())
             element_list.append(ssr_list.copy())
-        # make sequence continous+
-        element_list = self._make_sequence_continous(element_list)
-        # make sequence continous+
+        # make sequence continuous
         element_list = self._make_sequence_continous(element_list)
 
         sequence = PulseSequence(name=para_dict['name'], ensemble_list=element_list, rotating_frame=False)
@@ -556,19 +776,20 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
 ############################################ Helper methods ##################################################
 
-
-    def _initalize_rf_ssr(self, laser_name, laser_length, wait_length, rf_cnot_name, rf_cnot_duration,
+    def _initalize_rf_ssr(self, laser_name, laser_init_length, wait_init_length, rf_cnot_name, rf_cnot_duration,
                           rf_cnot_amp, rf_cnot_freq, rf_cnot_phase,
                           ssr_name, mw_cnot_rabi_period, mw_cnot_amplitude, mw_cnot_frequency, mw_cnot_phase,
                           mw_cnot_amplitude2, mw_cnot_frequency2, mw_cnot_phase2, ssr_normalise,
-                          counts_per_readout):
+                          counts_per_readout, sync_gate_name='sync_gate', rf_channel='a_ch2',
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9):
 
         created_blocks = list()
         created_ensembles = list()
 
         # Add the laser initialization
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-            self.generate_laser_wait(name=laser_name, laser_length=laser_length, wait_length=wait_length)
+            self.generate_laser_wait(name=laser_name, laser_length=laser_init_length,
+                                     wait_length=wait_init_length, trigger=False)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         seq_param = self._customize_seq_para({})
@@ -577,41 +798,51 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         # Add RF pulse
         created_blocks_tmp, created_ensembles_tmp, rf_list1, rf_list2 = \
             self._chopped_rf_pulse(name=rf_cnot_name, rf_duration=rf_cnot_duration, rf_amp=rf_cnot_amp,
-                                   rf_freq=rf_cnot_freq, rf_phase=rf_cnot_phase)
+                                   rf_freq=rf_cnot_freq, rf_phase=rf_cnot_phase, rf_channel=rf_channel)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
 
-        # Add SSR
+        # Add SSR 'sync' trigger
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_trigger(name=sync_gate_name, tau=1e-7, digital_channel=self.sync_channel)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        sync_list = [sync_gate_name, seq_param]
+
+        # Add SSR readout mw/laser pulses and 'gate' trigger
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
             self.generate_singleshot_readout(name=ssr_name, mw_cnot_rabi_period=mw_cnot_rabi_period,
-                                             mw_cnot_amplitude=mw_cnot_amplitude,
-                                             mw_cnot_frequency=mw_cnot_frequency,
-                                             mw_cnot_phase=mw_cnot_phase,
-                                             mw_cnot_amplitude2=mw_cnot_amplitude2,
-                                             mw_cnot_frequency2=mw_cnot_frequency2,
-                                             mw_cnot_phase2=mw_cnot_phase2,
-                                             ssr_normalise=ssr_normalise)
+                                         mw_cnot_amplitude=mw_cnot_amplitude,
+                                         mw_cnot_frequency=mw_cnot_frequency,
+                                         mw_cnot_phase=mw_cnot_phase,
+                                         mw_cnot_amplitude2=mw_cnot_amplitude2,
+                                         mw_cnot_frequency2=mw_cnot_frequency2,
+                                         mw_cnot_phase2=mw_cnot_phase2,
+                                         ssr_normalise=ssr_normalise,
+                                         wait_ssr_length=wait_ssr_length,
+                                         laser_ssr_length=laser_ssr_length)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         seq_param = self._customize_seq_para({'repetitions': counts_per_readout-1})
         ssr_list = [ssr_name, seq_param]
 
-        return created_blocks, created_ensembles, laser_wait_list, rf_list1, rf_list2, ssr_list
+        return created_blocks, created_ensembles, laser_wait_list, rf_list1, rf_list2, sync_list, ssr_list
 
-
-    def _initalize_rf_ssr_mapping(self, laser_name, laser_length, wait_length, rf_cnot_name, rf_cnot_duration,
+    def _initalize_rf_ssr_mapping(self, laser_name, laser_init_length, wait_init_length, rf_cnot_name, rf_cnot_duration,
                                   rf_cnot_amp, rf_cnot_freq, rf_cnot_phase,
                                   ssr_name, mw_cnot_name, mw_cnot_rabi_period, mw_cnot_amplitude,
                                   mw_cnot_frequency, mw_cnot_phase,
                                   mw_cnot_amplitude2, mw_cnot_frequency2, mw_cnot_phase2, ssr_normalise,
-                                  counts_per_readout):
+                                  counts_per_readout, sync_gate_name='sync_gate', rf_channel='a_ch2',
+                                  wait_ssr_length=1.0e-6, laser_ssr_length=500e-9):
 
         created_blocks = list()
         created_ensembles = list()
 
         # Add the laser initialization
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-            self.generate_laser_wait(name=laser_name, laser_length=laser_length, wait_length=wait_length)
+            self.generate_laser_wait(name=laser_name, laser_length=laser_init_length, wait_length=wait_init_length)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         seq_param = self._customize_seq_para({})
@@ -632,9 +863,17 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         # Add RF pulse
         created_blocks_tmp, created_ensembles_tmp, rf_list1, rf_list2 = \
             self._chopped_rf_pulse(name=rf_cnot_name, rf_duration=rf_cnot_duration, rf_amp=rf_cnot_amp,
-                                   rf_freq=rf_cnot_freq, rf_phase=rf_cnot_phase)
+                                   rf_freq=rf_cnot_freq, rf_phase=rf_cnot_phase, rf_channel=rf_channel)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
+
+        # Add SSR 'sync' trigger
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_trigger(name=sync_gate_name, tau=1e-7, digital_channel=self.sync_channel)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        sync_list = [sync_gate_name, seq_param]
 
         # Add SSR
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
@@ -645,35 +884,45 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                              mw_cnot_amplitude2=mw_cnot_amplitude2,
                                              mw_cnot_frequency2=mw_cnot_frequency2,
                                              mw_cnot_phase2=mw_cnot_phase2,
-                                             ssr_normalise=ssr_normalise)
+                                             ssr_normalise=ssr_normalise,
+                                             wait_ssr_length=wait_ssr_length,
+                                             laser_ssr_length=laser_ssr_length)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         seq_param = self._customize_seq_para({'repetitions': counts_per_readout-1})
         ssr_list = [ssr_name, seq_param]
 
-        return created_blocks, created_ensembles, laser_wait_list, mw_cnot_list, rf_list1, rf_list2, ssr_list
+        return created_blocks, created_ensembles, laser_wait_list, mw_cnot_list, rf_list1, rf_list2, sync_list, ssr_list
 
 
-    def _initialize_ssr(self, laser_name, laser_length, wait_length, initial_pi_pulse, ssr_name, mw_cnot_rabi_period,
+    def _initialize_ssr(self, laser_name, laser_init_length, wait_init_length, initial_pi_pulse, ssr_name, mw_cnot_rabi_period,
                         mw_cnot_amplitude, mw_cnot_frequency, mw_cnot_phase, mw_cnot_amplitude2, mw_cnot_frequency2,
-                        mw_cnot_phase2, ssr_normalise, counts_per_readout):
+                        mw_cnot_phase2, ssr_normalise, counts_per_readout, sync_gate_name='sync_gate',
+                        wait_ssr_length=1.0e-6, laser_ssr_length=500e-9):
 
         created_blocks = list()
         created_ensembles = list()
         if not initial_pi_pulse:
             # Add just laser initialization
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_laser_wait(name=laser_name, laser_length=laser_length, wait_length=wait_length)
+                self.generate_laser_wait(name=laser_name, laser_length=laser_init_length, wait_length=wait_init_length)
         else:
             # Add an additional MW pi-pulse to initalize the NV into -1 or +1
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_laser_wait_pipulse(name=laser_name, laser_length=laser_length,  wait_length=wait_length)
+                self.generate_laser_wait_pipulse(name=laser_name, laser_length=laser_init_length,  wait_length=wait_init_length)
 
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         seq_param = self._customize_seq_para({})
         laser_wait_list = [laser_name, seq_param]
 
+        # Add SSR 'sync' trigger
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_trigger(name=sync_gate_name, tau=1e-7, digital_channel=self.sync_channel)
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        sync_list = [sync_gate_name, seq_param]
 
         # Add SSR
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
@@ -684,13 +933,15 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                              mw_cnot_amplitude2=mw_cnot_amplitude2,
                                              mw_cnot_frequency2=mw_cnot_frequency2,
                                              mw_cnot_phase2=mw_cnot_phase2,
-                                             ssr_normalise=ssr_normalise)
+                                             ssr_normalise=ssr_normalise,
+                                             wait_ssr_length=wait_ssr_length,
+                                             laser_ssr_length=laser_ssr_length)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         seq_param = self._customize_seq_para({'repetitions': counts_per_readout-1})
         ssr_list = [ssr_name, seq_param]
 
-        return created_blocks, created_ensembles, laser_wait_list, ssr_list
+        return created_blocks, created_ensembles, laser_wait_list, sync_list, ssr_list
 
 
 ##########################################         Helper methods     ##########################################

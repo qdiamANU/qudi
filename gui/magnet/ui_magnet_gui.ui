@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1208</width>
-    <height>1052</height>
+    <height>1057</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -50,63 +50,6 @@
           </property>
           <property name="singleStep">
            <double>0.100000000000000</double>
-          </property>
-         </widget>
-        </item>
-        <item row="2" column="1">
-         <widget class="ScienDSpinBox" name="alignment_2d_cb_high_centiles_DSpinBox">
-          <property name="maximumSize">
-           <size>
-            <width>80</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <property name="suffix">
-           <string>%</string>
-          </property>
-          <property name="decimals">
-           <number>3</number>
-          </property>
-          <property name="maximum">
-           <double>100.000000000000000</double>
-          </property>
-          <property name="singleStep">
-           <double>0.010000000000000</double>
-          </property>
-          <property name="value">
-           <double>100.000000000000000</double>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="0" rowspan="10">
-         <widget class="PlotWidgetModified" name="alignment_2d_GraphicsView">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-         </widget>
-        </item>
-        <item row="4" column="1">
-         <widget class="ScienDSpinBox" name="alignment_2d_cb_low_centiles_DSpinBox">
-          <property name="maximumSize">
-           <size>
-            <width>80</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <property name="suffix">
-           <string>%</string>
-          </property>
-          <property name="decimals">
-           <number>3</number>
-          </property>
-          <property name="maximum">
-           <double>100.000000000000000</double>
-          </property>
-          <property name="singleStep">
-           <double>0.010000000000000</double>
           </property>
          </widget>
         </item>
@@ -921,6 +864,79 @@ contrast alignment</string>
           </item>
          </layout>
         </item>
+        <item row="2" column="1">
+         <widget class="ScienDSpinBox" name="alignment_2d_cb_high_centiles_DSpinBox">
+          <property name="maximumSize">
+           <size>
+            <width>80</width>
+            <height>16777215</height>
+           </size>
+          </property>
+          <property name="suffix">
+           <string>%</string>
+          </property>
+          <property name="decimals">
+           <number>3</number>
+          </property>
+          <property name="maximum">
+           <double>100.000000000000000</double>
+          </property>
+          <property name="singleStep">
+           <double>0.010000000000000</double>
+          </property>
+          <property name="value">
+           <double>100.000000000000000</double>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="0" rowspan="10">
+         <widget class="PlotWidgetModified" name="alignment_2d_GraphicsView">
+          <property name="enabled">
+           <bool>true</bool>
+          </property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>807</height>
+           </size>
+          </property>
+         </widget>
+        </item>
+        <item row="8" column="1">
+         <widget class="QLabel" name="pos_label">
+          <property name="text">
+           <string>(axis0, axis1):</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="ScienDSpinBox" name="alignment_2d_cb_low_centiles_DSpinBox">
+          <property name="maximumSize">
+           <size>
+            <width>80</width>
+            <height>16777215</height>
+           </size>
+          </property>
+          <property name="suffix">
+           <string>%</string>
+          </property>
+          <property name="decimals">
+           <number>3</number>
+          </property>
+          <property name="maximum">
+           <double>100.000000000000000</double>
+          </property>
+          <property name="singleStep">
+           <double>0.010000000000000</double>
+          </property>
+         </widget>
+        </item>
         <item row="3" column="1">
          <widget class="PlotWidget" name="alignment_2d_cb_GraphicsView">
           <property name="maximumSize">
@@ -938,19 +954,6 @@ contrast alignment</string>
           </property>
           <property name="checked">
            <bool>false</bool>
-          </property>
-          <attribute name="buttonGroup">
-           <string notr="true">buttonGroup</string>
-          </attribute>
-         </widget>
-        </item>
-        <item row="6" column="1">
-         <widget class="QRadioButton" name="alignment_2d_centiles_RadioButton">
-          <property name="text">
-           <string>Centiles</string>
-          </property>
-          <property name="checked">
-           <bool>true</bool>
           </property>
           <attribute name="buttonGroup">
            <string notr="true">buttonGroup</string>
@@ -979,18 +982,17 @@ contrast alignment</string>
           </property>
          </widget>
         </item>
-        <item row="8" column="1">
-         <widget class="QLabel" name="pos_label">
+        <item row="6" column="1">
+         <widget class="QRadioButton" name="alignment_2d_centiles_RadioButton">
           <property name="text">
-           <string>(axis0, axis1):</string>
+           <string>Centiles</string>
           </property>
-         </widget>
-        </item>
-        <item row="9" column="1">
-         <widget class="QLabel" name="pos_show">
-          <property name="text">
-           <string>(?, ?)</string>
+          <property name="checked">
+           <bool>true</bool>
           </property>
+          <attribute name="buttonGroup">
+           <string notr="true">buttonGroup</string>
+          </attribute>
          </widget>
         </item>
        </layout>
@@ -1005,7 +1007,7 @@ contrast alignment</string>
      <x>0</x>
      <y>0</y>
      <width>1208</width>
-     <height>38</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuMenu">
@@ -1038,6 +1040,13 @@ contrast alignment</string>
     <layout class="QGridLayout" name="gridLayout_5">
      <item row="0" column="1">
       <layout class="QGridLayout" name="move_rel_GridLayout">
+       <item row="0" column="1">
+        <widget class="QDoubleSpinBox" name="move_rel_axis0_DoubleSpinBox">
+         <property name="suffix">
+          <string/>
+         </property>
+        </widget>
+       </item>
        <item row="0" column="3">
         <widget class="QPushButton" name="move_rel_axis0_p_PushButton">
          <property name="maximumSize">
@@ -1048,13 +1057,6 @@ contrast alignment</string>
          </property>
          <property name="text">
           <string>+</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="1">
-        <widget class="QDoubleSpinBox" name="move_rel_axis0_DoubleSpinBox">
-         <property name="suffix">
-          <string/>
          </property>
         </widget>
        </item>

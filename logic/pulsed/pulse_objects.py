@@ -1161,7 +1161,7 @@ class PredefinedGeneratorBase:
         """
         return self._get_trigger_element(length=50e-9, increment=0, channels=self.sync_channel)
 
-    def _get_mw_element(self, length, increment, amp=None, freq=None, phase=None):
+    def _get_mw_element(self, length, increment, amp=None, freq=None, phase=None, channel=None):
         """
         Creates a MW pulse PulseBlockElement
 
@@ -1173,16 +1173,21 @@ class PredefinedGeneratorBase:
 
         @return: PulseBlockElement, the generated MW element
         """
+        if channel is not None and channel is not 'none':
+            microwave_channel = channel
+        else:
+            microwave_channel = self.microwave_channel
+
         if self.microwave_channel.startswith('d'):
             mw_element = self._get_trigger_element(
                 length=length,
                 increment=increment,
-                channels=self.microwave_channel)
+                channels=microwave_channel)
         else:
             mw_element = self._get_idle_element(
                 length=length,
                 increment=increment)
-            mw_element.pulse_function[self.microwave_channel] = SamplingFunctions.Sin(
+            mw_element.pulse_function[microwave_channel] = SamplingFunctions.Sin(
                 amplitude=amp,
                 frequency=freq,
                 phase=phase)
@@ -1266,11 +1271,21 @@ class PredefinedGeneratorBase:
                 voltage=self.analog_trigger_voltage)
         return mw_laser_element
 
-    def _get_readout_element(self):
+    def _get_readout_element(self, wait_time=None, length=None, trigger=True):
 
-        waiting_element = self._get_idle_element(length=self.wait_time, increment=0)
-        laser_element = self._get_laser_gate_element(length=self.laser_length, increment=0)
-        delay_element = self._get_delay_gate_element()
+        if wait_time is None:
+            wait_time = self.wait_time
+        if length is None:
+            length = self.laser_length
+
+        waiting_element = self._get_idle_element(length=wait_time, increment=0)
+        if trigger:
+            laser_element = self._get_laser_gate_element(length=length, increment=0)
+            delay_element = self._get_delay_gate_element()
+        else:
+            laser_element = self._get_laser_element(length=length, increment=0)
+            delay_element = self._get_delay_element()
+
         return laser_element, delay_element, waiting_element
 
     def _add_trigger(self, created_blocks, block_ensemble):

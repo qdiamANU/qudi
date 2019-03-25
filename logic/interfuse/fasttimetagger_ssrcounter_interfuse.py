@@ -68,6 +68,8 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         self._fastcounter = self.fastcounter()
         self._pulsedmeasurementlogic = self.pulsedmeasurementlogic()
 
+        self.next_channel = 3  # todo: define externally
+
         # self.charge_state_selection = False
         # self.charge_threshold = 5
         # self.subtract_mean = True
@@ -92,25 +94,31 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         constraints = self._fastcounter.get_constraints()
         return constraints
 
+    def configure_ssr_counter(self, histogram_length_s, n_steps_controlled_variable, bin_width_s, rollover=True):
+        """ Configuration of the fast counter for SSR. Counter must be gated
 
-    def configure_ssr_counter(self, counts_per_readout, countlength):
-        """ Configuration of the fast counter.
+        @param float histogram_length_s: length of counts histogram for one readout, in seconds.
+            Should be slightly longer than readout laser pulse duration
+        @param int n_steps_controlled_variable: number of required histograms, equal to the number of
+            steps in the controlled variable (e.g. MW frequency) sweep
 
-        from ssr_counter interface, may be out of date:
-        @param int counts_per_readout: optional, number of readouts for one measurement
-        @param int cycles: countlength, number of measurements
-
-        @return tuple(binwidth_s, record_length_s, preset, cycles, sequences ):
+        @return tuple(binwidth_s, gate_length_s, number_of_gates):
                     binwidth_s: float the actual set binwidth in seconds
-                    gate_length_s: the actual record length in seconds
-                    preset: number of readout per measurement
-                    cycles: number of measurements
-                    sequences: number of sequences
+                    gate_length_s: the actual set gate length in seconds
+                    number_of_gates: the number of gated, which are accepted
+                    rollover: True = keep counting until stopped. Once histogram is filled, rollover to start of
+                        histogram and add to counts already there. Generally, want rollover=True.
+                        Want rollover=False for e.g. just-SSR measurements
         """
-        # self._fastcounter.configure_ssr_counter(counts_per_readout, countlength)
-        # self._fastcounter.configure(bin_width_s, record_length_s, number_of_gates=0)
-        self.counts_per_readout = counts_per_readout
-        self.countlength = countlength
+
+        print('tt configure ssr')
+        self._fastcounter.configure(bin_width_s=bin_width_s,
+                                    record_length_s=histogram_length_s,
+                                    number_of_gates=n_steps_controlled_variable,
+                                    next_channel=self.next_channel,
+                                    rollover=rollover)
+
+        return (bin_width_s, histogram_length_s, n_steps_controlled_variable)
 
     def get_status(self):
         """ Get the status of the position
@@ -163,12 +171,10 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         """
 
         raw_data = netobtain(self._fastcounter.get_data_trace())
-        print('netobtain raw_data = {}, type = {}'.format(raw_data, type(raw_data)))
-        # #LOCALFIX Andrew
-        # raw_data = self._fastcounter.get_data_trace()
-        # print('raw_data = {}, type = {}'.format(raw_data, type(raw_data)))
+        self.raw_data = raw_data
 
-        # remove all zeros at the end
+        # remove all zeros at the end - useful for analysing data during acquisition, where some fastcounter
+        # histogram rows may still be unfilled
         # first find all rows with only zeros
         data_size = np.where(~raw_data.any(axis=1))[0]
         # if there are no empty rows at the end (meaning the last row is not empty), delete nothing
@@ -181,8 +187,7 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             first_row = max(test)
             # delete the empty rows
             ssr_data = np.delete(raw_data, data_size[first_row:], 0)
-        #ssr_data = np.delete(raw_data, data_size, 0)
-        #ssr_data = raw_data
+
         self.raw_data = ssr_data
 
         if not charge_state_selection:
@@ -190,16 +195,22 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             if normalized:
                 print('normalised, not self.charge_state_selection')
                 return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(ssr_data)
-                laser1 = return_dict['laser_counts_arr']
-                laser2 = return_dict['laser_counts_arr2']
+                laser1 = return_dict['laser_counts_arr0']
+                laser2 = return_dict['laser_counts_arr1']
+
                 self.laser_data = [laser1, laser2]
                 if laser1.any() and laser2.any():
                     tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
                     tmp_signal2, tmp_error2 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser2)
                     tmp_signal = (tmp_signal1 - tmp_signal2) / (tmp_signal1 + tmp_signal2)
+                    nan_indices = np.isnan(tmp_signal)
+                    tmp_signal[nan_indices] = 0
+
+                    # print('tmp_signal1 = {}'.format(tmp_signal1))
+                    # print('tmp_signal2 = {}'.format(tmp_signal2))
                 else:
                     tmp_signal = np.zeros(self.laser_data.shape[0])
-                #
+
                 # # FIXME: here it is important that one laser pulse is on one side respectively
                 # data_width = self.raw_data.shape[1]
                 # print('data_width = {}'.format(data_width))
@@ -216,7 +227,9 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             else:
                 print('not normalised')
                 return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(self.raw_data)
-                self.laser_data = return_dict['laser_counts_arr']
+                # print('return_dict = {}'.format(return_dict))
+                self.laser_data = return_dict['laser_counts_arr0']
+                # print('self.laser_data.shape = {}'.format(self.laser_data.shape))
                 # analyze pulses and get data points for signal array.
                 if self.laser_data.any():
                     tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
@@ -228,9 +241,13 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
                         tmp_signal = tmp_signal #- np.mean(tmp_signal)
                 else:
                     tmp_signal = np.zeros(self.laser_data.shape[0])
-                    # get rid of the last point since it is measured with less redouts
+                    # get rid of the last point since it is measured with less readouts
+                # print('Indices: laser1 = {}:{}'.format(return_dict['laser_indices_rising'],
+                #                                        return_dict['laser_indices_falling']))
+
+            # print('tmp_signal = {}'.format(tmp_signal))
         else:
-            # seperate the charge state and the ssr data
+            # separate the charge state and the ssr data
             ssr_raw = ssr_data[1::2, :]
             charge_raw = ssr_data[::2, :]
             # extract the orange laser pulses
@@ -244,18 +261,22 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             # incorrect_charge = np.where(charge_signal < self.charge_threshold)[0]
             if normalized:
                 return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(ssr_raw)
-                laser1 = return_dict['laser_counts_arr']
-                laser2 = return_dict['laser_counts_arr2']
+                laser1 = return_dict['laser_counts_arr0']
+                laser2 = return_dict['laser_counts_arr1']
+                print('laser1.shape = {}'.format(self.laser1.shape))
+                print('laser2.shape = {}'.format(self.laser2.shape))
                 self.laser_data = [laser1, laser2]
                 if laser1.any() and laser2.any():
                     tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
                     tmp_signal2, tmp_error2 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser2)
                     tmp_signal = (tmp_signal1 - tmp_signal2) / (tmp_signal1 + tmp_signal2)
+                    nan_indices = np.isnan(tmp_signal)
+                    tmp_signal[nan_indices] = 0
                 else:
                     tmp_signal = np.zeros(self.laser_data.shape[0])
             else:
                 return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(ssr_raw)
-                self.laser_data = return_dict['laser_counts_arr']
+                self.laser_data = return_dict['laser_counts_arr0']
                 # analyze pulses and get data points for signal array.
                 if self.laser_data.any():
                     tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
@@ -269,9 +290,16 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
                     tmp_signal = np.zeros(self.laser_data.shape[0])
             # remove all the data points with the wrong charge state
             # tmp_signal = np.delete(tmp_signal, incorrect_charge[:-1], 0)
-            # get rid of the last point since it is measured with less redouts
-        print('tmp_signal[:-1] = {}'.format(tmp_signal[:-1]))
-        print('charge_signal = {}'.format(charge_signal))
+            # get rid of the last point since it is measured with less readouts (Ulm - not checked at ANU)
+            # fixme Andrew 18/3/2019: pretty sure the last data point is fine... if anything, the first
+            # data point should be removed, as we don't pre-polarise the nuclear spin
+
+        # LOCALFIX Andrew: for debugging purposes:
+        print('tmp_signal[:-1] shape = {}'.format(tmp_signal[:-1].shape))
+        # print('charge_signal = {}, shape = {}'.format(charge_signal, charge_signal.shape))
+        self.tmp_signal = tmp_signal # LOCALFIX Andrew 12/2/19: included to enable plotting of tmp_signal from jupyter script
+        self.return_dict = return_dict
+
         return tmp_signal[:-1], charge_signal
 
 

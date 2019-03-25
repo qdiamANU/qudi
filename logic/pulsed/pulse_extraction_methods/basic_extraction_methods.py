@@ -28,6 +28,8 @@ from scipy.signal import argrelextrema
 
 class BasicPulseExtractor(PulseExtractorBase):
     """
+    The default extraction method for gated/ungated counters is the first gated/ungated function below
+    - these should be gated_conv_deriv and ungated_conv_deriv, as checked on 25/3/2019
 
     """
     def __init__(self, *args, **kwargs):
@@ -386,7 +388,7 @@ class BasicPulseExtractor(PulseExtractorBase):
 
     def gated_conv_deriv2(self, count_data, conv_std_dev = 20):
         """
-        Detects the rising flanks in the gated timetrace data and extracts just two laser pulses.
+        Detects the rising flanks in the gated timetrace data and extracts exactly two laser pulses.
 
         @param numpy.ndarray count_data:    2D array, the raw timetrace data from a gated fast counter,
                                             dimensions: 0: gate number, 1: time bin
@@ -406,10 +408,24 @@ class BasicPulseExtractor(PulseExtractorBase):
 
 
         # get indices of rising and falling flank
+        # assume first rising and falling edges correspond to first laser pulse
         rising_ind = argrelextrema(conv_deriv, np.greater)[0][0]
         falling_ind = argrelextrema(conv_deriv, np.less)[0][0]
-        rising_ind2 = argrelextrema(conv_deriv, np.greater)[0][1]
-        falling_ind2 = argrelextrema(conv_deriv, np.less)[0][1]
+        # assume second rising and falling edges correspond to second laser pulse
+        # rising_ind2 = argrelextrema(conv_deriv, np.greater)[0][1]
+        # falling_ind2 = argrelextrema(conv_deriv, np.less)[0][1]
+        extracted_laser_duration = falling_ind - rising_ind
+        i = 1
+        rising_ind2 = 0
+        while rising_ind2 < (len(timetrace_sum) - 2*extracted_laser_duration):
+            i += 1
+            rising_ind2 = argrelextrema(conv_deriv, np.greater)[0][i]
+            falling_ind2 = argrelextrema(conv_deriv, np.less)[0][i]
+
+        print('gated_conv_deriv2: i={}'.format(i))
+
+        # print('gated_conv_deriv2: rising edges = {}'.format(argrelextrema(conv_deriv, np.greater)[0]))
+        # print('gated_conv_deriv2: falling edges = {}'.format(argrelextrema(conv_deriv, np.less)[0]))
 
         # If gaussian smoothing or derivative failed, the returned array only
         # contains zeros. Check for that and return also only zeros to indicate a
@@ -420,15 +436,18 @@ class BasicPulseExtractor(PulseExtractorBase):
             # slice the data array to cut off anything but laser pulses
             laser_arr = count_data[:, rising_ind:falling_ind]
             laser_arr2 = count_data[:, rising_ind2:falling_ind2]
+            print('gated_conv_deriv2 error')
 
         # Create return dictionary
         return_dict = dict()
-        return_dict['laser_counts_arr'] = laser_arr.astype(int)
-        return_dict['laser_counts_arr2'] = laser_arr2.astype(int)
-        return_dict['laser_indices_rising'] = rising_ind
-        return_dict['laser_indices_falling'] = falling_ind
-        return_dict['laser_indices_rising2'] = rising_ind2
-        return_dict['laser_indices_falling2'] = falling_ind2
+        return_dict['laser_counts_arr0'] = laser_arr.astype(int)
+        return_dict['laser_counts_arr1'] = laser_arr2.astype(int)
+        return_dict['laser_indices_rising0'] = rising_ind
+        return_dict['laser_indices_falling0'] = falling_ind
+        return_dict['laser_indices_rising1'] = rising_ind2
+        return_dict['laser_indices_falling1'] = falling_ind2
+        # return_dict['rising_edges'] = argrelextrema(conv_deriv, np.greater)[0]
+        # return_dict['falling_edges'] = argrelextrema(conv_deriv, np.less)[0]
 
         return return_dict
 
@@ -472,12 +491,82 @@ class BasicPulseExtractor(PulseExtractorBase):
 
         # Create return dictionary
         return_dict = dict()
-        return_dict['laser_counts_arr'] = laser_arr.astype(int)
-        return_dict['laser_counts_arr2'] = laser_arr2.astype(int)
-        return_dict['laser_indices_rising'] = rising_ind
-        return_dict['laser_indices_falling'] = falling_ind
-        return_dict['laser_indices_rising2'] = rising_ind2
-        return_dict['laser_indices_falling2'] = falling_ind2
+        return_dict['laser_counts_arr0'] = laser_arr.astype(int)
+        return_dict['laser_counts_arr1'] = laser_arr2.astype(int)
+        return_dict['laser_indices_rising0'] = rising_ind
+        return_dict['laser_indices_falling0'] = falling_ind
+        return_dict['laser_indices_rising1'] = rising_ind2
+        return_dict['laser_indices_falling1'] = falling_ind2
 
         return return_dict
+
+    def gated_absolute_timing(self, count_data, extraction_settings=dict()):
+        """
+        Uses the pulse control timing to extract laser pulses without the need for edge detection
+
+        @param count_data: raw data from the fast_counter. For gated counts, should be a 2D np.array of 1D timetraces
+        @param extraction_settings: Dictionary containing:
+                                        num_laser_pulses - number of laser pulses per 1D timetrace
+                                        rising_edge{N} - the rising edge of the Nth laser pulse (starts at N=0)
+                                        falling_edge{N} - the falling edge of the Nth laser pulse (starts at N=0)
+        @return_dict:   Dictionary with extracted laser pulses of the timetrace as well as the indices used for
+                        the effective rising and falling flanks
+
+        reason for using dict() as default parameter for extraction_settings:
+        the function pulse_extractor._get_extraction_method_kwargs checks the kwargs type to be passed to an extraction
+        method against the default parameter type. The simplest solution was to use an empty dictionary
+        """
+
+        # Extract laser pulses and create return dictionary
+        return_dict = dict()
+
+        if 'num_laser_pulses' not in extraction_settings:
+            extraction_settings['num_laser_pulses'] = 1
+            rising_ind = extraction_settings['laser_indices_rising']
+            falling_ind = extraction_settings['laser_indices_falling']
+            extracted_pulse = count_data[:, rising_ind:falling_ind]
+
+            return_dict['laser_counts_arr'] = extracted_pulse.astype(int)
+            return_dict['laser_indices_rising'] = rising_ind
+            return_dict['laser_indices_falling'] = falling_ind
+
+        # if extraction_settings['num_laser_pulses'] == 1:
+        #     rising_ind = extraction_settings['laser_indices_rising']
+        #     falling_ind = extraction_settings['laser_indices_falling']
+        #     extracted_pulse = count_data[:, rising_ind:falling_ind]
+        #
+        #     return_dict['laser_counts_arr'] = extracted_pulse.astype(int)
+        #     return_dict['laser_indices_rising'] = rising_ind
+        #     return_dict['laser_indices_falling'] = falling_ind
+
+        else:
+            for ii in range(extraction_settings['num_laser_pulses']):
+                rising_ind = extraction_settings['laser_indices_rising{}'.format(ii)]
+                falling_ind = extraction_settings['laser_indices_falling{}'.format(ii)]
+                extracted_pulse = count_data[:, rising_ind:falling_ind]
+
+                return_dict['laser_counts_arr{}'.format(ii)] = extracted_pulse.astype(int)
+                return_dict['laser_indices_rising{}'.format(ii)] = rising_ind
+                return_dict['laser_indices_falling{}'.format(ii)] = falling_ind
+
+        return return_dict
+
+    def ungated_absolute_timing(self, count_data, extraction_settings):
+        """
+        Uses the pulse control timing to extract laser pulses without the need for edge detection
+
+        todo: NOT YET IMPLEMENTED
+
+        @param count_data: raw data from the fast_counter. For gated counts, should be a 2D np.array of 1D timetraces
+        @param extraction_settings: Dictionary containing:
+                                        num_laser_pulses - number of laser pulses per 1D timetrace
+                                        rising_edge{N} - the rising edge of the Nth laser pulse (starts at N=0)
+                                        falling_edge{N} - the falling edge of the Nth laser pulse (starts at N=0)
+        @return_dict:   Dictionary with extracted laser pulses of the timetrace as well as the indices used for
+                        the effective rising and falling flanks
+        """
+
+        self.log.error('absolute_timing pulse extraction method not yet implemented for ungated counters')
+
+        return -1
 

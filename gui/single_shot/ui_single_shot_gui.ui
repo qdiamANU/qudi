@@ -35,7 +35,15 @@
     <addaction name="actionRestore_Default"/>
     <addaction name="actionClose"/>
    </widget>
+   <widget class="QMenu" name="menu_Options">
+    <property name="title">
+     <string>Options</string>
+    </property>
+    <addaction name="action_Settings"/>
+    <addaction name="action_FitSettings"/>
+   </widget>
    <addaction name="menuView"/>
+   <addaction name="menu_Options"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
@@ -176,6 +184,9 @@
              <height>16777215</height>
             </size>
            </property>
+           <property name="decimals">
+            <number>3</number>
+           </property>
            <property name="minimum">
             <double>-999999999.000000000000000</double>
            </property>
@@ -195,6 +206,9 @@
              <height>16777215</height>
             </size>
            </property>
+           <property name="decimals">
+            <number>3</number>
+           </property>
            <property name="minimum">
             <double>-999999999.000000000000000</double>
            </property>
@@ -213,6 +227,9 @@
              <width>60</width>
              <height>16777215</height>
             </size>
+           </property>
+           <property name="decimals">
+            <number>3</number>
            </property>
            <property name="minimum">
             <double>-999999999.000000000000000</double>
@@ -234,7 +251,7 @@
             </size>
            </property>
            <property name="decimals">
-            <number>2</number>
+            <number>3</number>
            </property>
            <property name="minimum">
             <double>-999999999.000000000000000</double>
@@ -263,7 +280,7 @@
             </size>
            </property>
            <property name="text">
-            <string>Fidelity (left/rigth)</string>
+            <string>Fidelity (left/right)</string>
            </property>
           </widget>
          </item>
@@ -408,6 +425,19 @@
            </property>
           </widget>
          </item>
+         <item row="2" column="2">
+          <widget class="QDoubleSpinBox" name="lost_events_percent_DSpinBox">
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+           <property name="buttonSymbols">
+            <enum>QAbstractSpinBox::NoButtons</enum>
+           </property>
+           <property name="suffix">
+            <string>%</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item row="1" column="0">
@@ -508,6 +538,13 @@
          </property>
         </widget>
        </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_3">
+         <property name="text">
+          <string>Count per Readout (#)</string>
+         </property>
+        </widget>
+       </item>
        <item row="1" column="1">
         <widget class="QSpinBox" name="count_length_SpinBox">
          <property name="sizePolicy">
@@ -539,34 +576,8 @@
          </property>
         </widget>
        </item>
-       <item row="2" column="0">
-        <widget class="QLabel" name="label_3">
-         <property name="text">
-          <string>Count per Readout (#)</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="1">
-        <widget class="QDoubleSpinBox" name="spin_flip_prob_DSpinBox">
-         <property name="enabled">
-          <bool>true</bool>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>100</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="autoFillBackground">
-          <bool>false</bool>
-         </property>
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="buttonSymbols">
-          <enum>QAbstractSpinBox::NoButtons</enum>
-         </property>
-        </widget>
+       <item row="0" column="5">
+        <widget class="QComboBox" name="fit_methods_ComboBox"/>
        </item>
        <item row="2" column="1">
         <widget class="QSpinBox" name="count_per_readout_SpinBox">
@@ -597,10 +608,32 @@
          </property>
         </widget>
        </item>
-       <item row="0" column="4">
-        <widget class="QComboBox" name="fit_methods_ComboBox"/>
+       <item row="5" column="1">
+        <widget class="QDoubleSpinBox" name="spin_flip_prob_DSpinBox">
+         <property name="enabled">
+          <bool>true</bool>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="autoFillBackground">
+          <bool>false</bool>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="buttonSymbols">
+          <enum>QAbstractSpinBox::NoButtons</enum>
+         </property>
+         <property name="suffix">
+          <string>%</string>
+         </property>
+        </widget>
        </item>
-       <item row="1" column="2" rowspan="4" colspan="3">
+       <item row="1" column="2" rowspan="4" colspan="4">
         <widget class="QTextEdit" name="fit_param_TextEdit">
          <property name="sizePolicy">
           <sizepolicy hsizetype="MinimumExpanding" vsizetype="Expanding">
@@ -616,13 +649,6 @@
          </property>
         </widget>
        </item>
-       <item row="4" column="0">
-        <widget class="QLabel" name="label_11">
-         <property name="text">
-          <string>Analyze mode</string>
-         </property>
-        </widget>
-       </item>
        <item row="5" column="0">
         <widget class="QLabel" name="label_5">
          <property name="text">
@@ -630,20 +656,10 @@
          </property>
         </widget>
        </item>
-       <item row="0" column="2">
-        <widget class="QLabel" name="label_4">
+       <item row="4" column="0">
+        <widget class="QLabel" name="label_11">
          <property name="text">
-          <string>Fit Parameters</string>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="1">
-        <widget class="QComboBox" name="analyze_mode_ComboBox">
-         <property name="maximumSize">
-          <size>
-           <width>100</width>
-           <height>16777215</height>
-          </size>
+          <string>Analyze mode</string>
          </property>
         </widget>
        </item>
@@ -661,15 +677,11 @@
          <property name="buttonSymbols">
           <enum>QAbstractSpinBox::NoButtons</enum>
          </property>
+         <property name="suffix">
+          <string>%</string>
+         </property>
          <property name="decimals">
           <number>4</number>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="2">
-        <widget class="QLabel" name="label_12">
-         <property name="text">
-          <string>Spin flip error</string>
          </property>
         </widget>
        </item>
@@ -677,6 +689,30 @@
         <widget class="QLabel" name="label_2">
          <property name="text">
           <string>Savetag</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QComboBox" name="analyze_mode_ComboBox">
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="2">
+        <widget class="QLabel" name="label_4">
+         <property name="text">
+          <string>Fit Parameters</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="2">
+        <widget class="QLabel" name="label_12">
+         <property name="text">
+          <string>Flip error:</string>
          </property>
         </widget>
        </item>
@@ -693,10 +729,26 @@
          </property>
         </widget>
        </item>
+       <item row="5" column="5">
+        <widget class="QDoubleSpinBox" name="mapped_state_DSpinBox">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="buttonSymbols">
+          <enum>QAbstractSpinBox::NoButtons</enum>
+         </property>
+         <property name="suffix">
+          <string>%</string>
+         </property>
+         <property name="decimals">
+          <number>4</number>
+         </property>
+        </widget>
+       </item>
        <item row="5" column="4">
-        <widget class="QCheckBox" name="normalized_CheckBox">
+        <widget class="QLabel" name="label_17">
          <property name="text">
-          <string>normalized?</string>
+          <string>Mapped state:</string>
          </property>
         </widget>
        </item>
@@ -757,6 +809,16 @@
    </property>
    <property name="toolTip">
     <string>Pulls the data from ssr counter</string>
+   </property>
+  </action>
+  <action name="action_Settings">
+   <property name="text">
+    <string>Settings</string>
+   </property>
+  </action>
+  <action name="action_FitSettings">
+   <property name="text">
+    <string>Fit Settings</string>
    </property>
   </action>
  </widget>

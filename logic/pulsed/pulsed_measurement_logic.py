@@ -650,11 +650,17 @@ class PulsedMeasurementLogic(GenericLogic):
         @param kwargs:
         @return:
         """
+        # self.log.error('set_extraction_settings, settings dict = {}, kwargs={}'.format(settings_dict, kwargs))
+
         # Determine complete settings dictionary
         if not isinstance(settings_dict, dict):
             settings_dict = kwargs
         else:
             settings_dict.update(kwargs)
+
+        # If no extraction method provided, set to default extraction method:
+        if 'method' not in settings_dict:
+            settings_dict['method'] = 'conv_deriv'
 
         # Use threadlock to update settings during a running measurement
         with self._threadlock:
@@ -844,7 +850,6 @@ class PulsedMeasurementLogic(GenericLogic):
                 # Turn off fast counter
                 self.fast_counter_off()
                 # Turn off pulse generator
-                self.pulse_generator_off()
                 self.pulse_generator_off()
                 # Turn off microwave source
                 if self.__use_ext_microwave:

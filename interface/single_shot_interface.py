@@ -76,19 +76,32 @@ class SingleShotInterface(metaclass=InterfaceMetaclass):
         pass
 
     @abc.abstractmethod
-    def configure_ssr_counter(self, counts_per_readout, countlength):
-        """ Configuration of the fast counter.
+    # def configure_ssr_counter(self, counts_per_readout, countlength):
+    #     """ Configuration of the fast counter.
+    #
+    #     @param int counts_per_readout: optional, number of readouts for one measurement
+    #     @param int cycles: countlength, number of measurements
+    #
+    #
+    #     @return tuple(binwidth_s, record_length_s, preset, cycles, sequences ):
+    #                 binwidth_s: float the actual set binwidth in seconds
+    #                 gate_length_s: the actual record length in seconds
+    #                 preset: number of readout per measurement
+    #                 cycles: number of measurements
+    #                 sequences: number of sequences
+    #     """
+    def configure_ssr_counter(self, histogram_length_s, n_steps_controlled_variable):
+        """ Configuration of the fast counter for SSR. Counter must be gated
 
-        @param int counts_per_readout: optional, number of readouts for one measurement
-        @param int cycles: countlength, number of measurements
+        @param float histogram_length_s: length of counts histogram for one readout, in seconds.
+            Should be slightly longer than readout laser pulse duration
+        @param int n_steps_controlled_variable: number of required histograms, equal to the number of
+            steps in the controlled variable (e.g. MW frequency) sweep
 
-
-        @return tuple(binwidth_s, record_length_s, preset, cycles, sequences ):
+        @return tuple(binwidth_s, gate_length_s, number_of_gates):
                     binwidth_s: float the actual set binwidth in seconds
-                    gate_length_s: the actual record length in seconds
-                    preset: number of readout per measurement
-                    cycles: number of measurements
-                    sequences: number of sequences
+                    gate_length_s: the actual set gate length in seconds
+                    number_of_gates: the number of gated, which are accepted
         """
         pass
 

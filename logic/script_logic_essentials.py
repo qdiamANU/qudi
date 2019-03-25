@@ -33,12 +33,12 @@ except NameError:
 # static hardware parameters:
 # these will be overwritten by any parameters defined in qm_dict
 setup = OrderedDict()
-setup['gated'] = False
+setup['gated'] = True
 setup['sampling_freq'] = pulsedmasterlogic.pulse_generator_settings['sample_rate']
-setup['bin_width'] = 3.2e-9
+setup['bin_width_s'] = 1.0e-9
 setup['wait_time'] = 1.0e-6
-setup['laser_delay'] = 510e-9
-setup['laser_safety'] = 200e-9
+setup['laser_delay'] = 150.0e-9
+setup['laser_safety'] = 150.0e-9
 
 if setup['gated']:
     setup['sync_channel'] = 'd_ch2'
@@ -50,12 +50,12 @@ else:
 setup['laser_channel'] = 'd_ch1'
 
 setup['laser_length'] = 3e-6
-setup['trigger_length'] = 20e-9
+setup['trigger_length'] = 20.0e-9
 
-setup['delay_length'] = 450e-9
-
-setup['channel_amp'] = 1.0
+setup['channel_amp'] = 4.0
 setup['microwave_channel'] = 'a_ch1'
+setup['rf_channel'] = 'a_ch2'  # parameter currently unused
+setup['rf_amplitude'] = 0.5  # parameter currently unused
 setup['optimize_channel'] = '/Dev1/PFI9'
 
 setup['readout_end'] = 0.5e-6
@@ -64,7 +64,7 @@ setup['max_tau'] = 1e-3
 setup['max_tau_start'] = 1e-3
 setup['max_rabi_period'] = 1e-3
 setup['min_microwave_frequency'] = 1
-setup['max_microwave_amplitude'] = 2
+setup['max_microwave_amplitude'] = 2.0
 
 setup['measurement_time'] = 600
 setup['optimize_time'] = 300
@@ -79,7 +79,10 @@ setup['ext_microwave_frequency'] = 1
 
 
 def do_experiment(experiment, qm_dict, meas_type, meas_info, generate_new=True, save_tag='',
-                                load_tag='', sleep_time = 0.2):
+                                load_tag='', sleep_time=0.2):
+
+    # want to only control AWG output amplitude via sine wave amplitudes, so set AWG channel amplitudes to maximum
+    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().set_analog_level({'a_ch1': 4.0, 'a_ch2': 4.0})
 
     # add information necessary for measurement type
     qm_dict = meas_info(experiment, qm_dict)
@@ -148,25 +151,27 @@ def prepare_qm(experiment, qm_dict,  generate_new = True):
         qm_dict['sequence_length'] = \
             pulsedmasterlogic.get_ensemble_info(pulsedmasterlogic.saved_pulse_block_ensembles[qm_dict['name']])[0]
     else:
+        # sequence length is the length of the entire AWG playback
+        # i.e. it is NOT the length of one step of a measurement
         qm_dict['sequence_length'] = \
             pulsedmasterlogic.get_sequence_info(pulsedmasterlogic.saved_pulse_sequences[qm_dict['name']])[0]
     # Set the parameters
     set_parameters(qm_dict)
     return qm_dict
 
-
 def customise_setup(dictionary):
     #final_dict = dictionary
     for key in setup.keys():
         if key not in dictionary.keys():
             dictionary[key] = setup[key]
-    # get a subdictionary with the generation parameters and set them
+    # get a subdictionary with the generation parameters and set them  todo: check how this is different to set_parameters()
     subdict = dict([(key, dictionary.get(key)) for key in pulsedmasterlogic.generation_parameters if key in dictionary])
     pulsedmasterlogic.set_generation_parameters(subdict)
     return dictionary
 
 def generate_sample_upload(experiment, qm_dict):
     qm_dict = customise_setup(qm_dict)
+    # print('generate_sample_upload: qm_dict = {}'.format(qm_dict))
     if not qm_dict['sequence_mode']:
         # make sure a previous ensemble is deleted
         pulsedmasterlogic.delete_block_ensemble(qm_dict['name'])
@@ -175,10 +180,10 @@ def generate_sample_upload(experiment, qm_dict):
         except:
             pulsedmasterlogic.log.error('Generation failed')
             return cause_an_error
-        time.sleep(0.2)
+        time.sleep(0.01)
         # sample the ensemble
-        while pulsedmasterlogic.status_dict['predefined_generation_busy']: time.sleep(0.2)
-        print(qm_dict['name'])
+        while pulsedmasterlogic.status_dict['predefined_generation_busy']: time.sleep(0.01)
+        # print('qm_dict[name] = {}, saved pulse ensembles = {}'.format(qm_dict['name'], pulsedmasterlogic.saved_pulse_block_ensembles))
         if qm_dict['name'] not in pulsedmasterlogic.saved_pulse_block_ensembles: cause_an_error
         pulsedmasterlogic.sample_ensemble(qm_dict['name'], True)
     else:
@@ -187,13 +192,14 @@ def generate_sample_upload(experiment, qm_dict):
             pulsedmasterlogic.delete_sequence(qm_dict['name'])
             # generate the ensemble or sequence
             try:
-                pulsedmasterlogic.generate_predefined_sequence(experiment, qm_dict.copy())
+                pulsedmasterlogic.generate_predefined_sequence(experiment, qm_dict.copy())  # generate_predefined_sequence(predefined_sequence_name, kwargs_dict)
             except:
                 pulsedmasterlogic.log.error('Generation failed')
                 return cause_an_error
             # sample the sequence
-            time.sleep(0.2)
-            while pulsedmasterlogic.status_dict['predefined_generation_busy']: time.sleep(0.2)
+            time.sleep(0.01)
+            while pulsedmasterlogic.status_dict['predefined_generation_busy']: time.sleep(0.01)
+            # print('qm_dict[name] = {}'.format(qm_dict['name']))
             if qm_dict['name'] not in pulsedmasterlogic.saved_pulse_sequences: cause_an_error
             pulsedmasterlogic.sample_sequence(qm_dict['name'], True)
         else:
@@ -243,7 +249,9 @@ def load_into_channel(name, sequence_mode):
 
 
 def set_parameters(qm_dict):
-
+    ''' AJH 24/2/2019: Sets the pulsed logic measurement parameters, I think?
+    I.e. this enables 'invoke settings' in the pulsed GUI?
+    '''
     if not qm_dict['sequence_mode']:
         qm_dict['params'] = pulsedmasterlogic.saved_pulse_block_ensembles.get(qm_dict['name']).measurement_information
     else:
@@ -260,7 +268,7 @@ def set_parameters(qm_dict):
 def perform_measurement(qm_dict, meas_type, load_tag='', save_tag='', analysis_interval = None, measurement_time=None,
                         optimize_time=None, freq_optimize_time=None):
     # FIXME: add the possibility to load previous data saved under load_tag
-    laser_off(pulser_on = False)
+    # laser_off(pulser_on = False)
     pulsedmasterlogic.do_fit('No Fit')
     # save parameters into memory_dict
     memory_dict[qm_dict['name']] = qm_dict.copy()
@@ -273,7 +281,6 @@ def perform_measurement(qm_dict, meas_type, load_tag='', save_tag='', analysis_i
         qm_dict['freq_optimize_time'] = freq_optimize_time
     if analysis_interval is not None:
         qm_dict['analysis_interval'] = analysis_interval
-
 
     ################ Start and perform the measurement #################
     user_terminated = meas_type(qm_dict)
@@ -294,7 +301,7 @@ def conventional_measurement(qm_dict):
         #pulsedmasterlogic.set_extraction_settings({'method': 'threshold'})
         pulsedmasterlogic.set_ext_microwave_settings(frequency=qm_dict['ext_microwave_frequency'], power=qm_dict['ext_microwave_power'],
                                                      use_ext_microwave=True)
-        pulsedmasterlogic.toggle_ext_microwave(True)
+        # pulsedmasterlogic.toggle_ext_microwave(True)  # todo: AJH 26/2/19 - I think this is redundant?
     # perform measurement
     pulsedmasterlogic.toggle_pulsed_measurement(True)
     while not pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.5)
@@ -309,17 +316,35 @@ def conventional_measurement(qm_dict):
 def set_up_conventional_measurement(qm_dict):
     # fixme: commented out change_sweep_mode, set_delay_start, change_save_mode as these functions aren't implemented for TimeTagger
     #pulsedmeasurementlogic.fastcounter().change_sweep_mode(False)
-    pulsedmasterlogic.set_fast_counter_settings({'bin_width': qm_dict['bin_width'],
+    pulsedmasterlogic.set_fast_counter_settings({'bin_width': qm_dict['bin_width_s'],
                                                  'record_length': qm_dict['params']['counting_length']})
     time.sleep(0.2)
-    # add sequence length to measurement dictionary
-    #pulsedmasterlogic.set_extraction_settings({'method': 'gated_conv_deriv'})
-    #pulsedmasterlogic.set_extraction_settings(
-    #    {'method': 'gated_conv_deriv', 'delay': setup['laser_delay'], 'safety': setup['laser_safety']})
+
+    # pulse extraction settings for first (or only) laser pulse
+    laser_count_gate_width = qm_dict['laser_length'] + qm_dict['laser_safety']
+    laser_time_rising0 = qm_dict['laser_delay']
+    laser_time_falling0 = laser_count_gate_width + laser_time_rising0
+
+    # convert timing into units of fastcounter bins and store in settings dictionary
+    extraction_settings_dict = dict()
+    extraction_settings_dict['num_laser_pulses'] = 1
+    extraction_settings_dict['laser_indices_rising0'] = int(laser_time_rising0 / qm_dict['bin_width_s'])
+    extraction_settings_dict['laser_indices_falling0'] = int(laser_time_falling0 / qm_dict['bin_width_s'])
+
+    # # send extraction settings to pulsed master logic (and on to pulsed_measurement_logic)
+    # pulsedmasterlogic.set_extraction_settings({'method': 'absolute_timing',
+    #                                            'extraction_settings': extraction_settings_dict})
+
+
+    pulsedmasterlogic.set_extraction_settings(
+       {'method': 'conv_deriv', 'delay': setup['laser_delay'], 'safety': setup['laser_safety']})
+    # pulsedmasterlogic.set_extraction_settings(
+    #     {'method': 'gated_conv_deriv', 'delay': setup['laser_delay'], 'safety': setup['laser_safety']})
+
+
+
     pulsedmasterlogic.set_analysis_settings({'method': 'mean_norm', 'signal_start': 0, 'signal_end': 500e-9,
                                              'norm_start': 1.8e-6, 'norm_end': 2.8e-6})
-    #pulsedmeasurementlogic.fastcounter().set_delay_start(0)
-    #pulsedmeasurementlogic.fastcounter().change_save_mode(0)
     return
 
 
@@ -330,11 +355,14 @@ def control_measurement(qm_dict, analysis_method=None):
     freq_optimize_real_time = start_time
     real_update_time = start_time
 
+    # get name of current measurement waveform on AWG, before overwriting for optimisation measurements
     awg = pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator()
+    awg_asset_name = awg.current_loaded_assets['AWG']
+    awg_asset_type = awg.current_loaded_assets_type
 
-    print('control_measurement')
     while True:
-        time.sleep(2)
+        time.sleep(0.1)
+        # singleshotlogic.log.error('run time = {}'.format(time.time() - start_time))
         if qm_dict['measurement_time'] is not None:
             if (time.time() - start_time) > qm_dict['measurement_time']:
                 user_terminated = False
@@ -345,30 +373,23 @@ def control_measurement(qm_dict, analysis_method=None):
         ##################### optimize position #######################
         if qm_dict['optimize_time'] is not None:
             if time.time() - optimize_real_time > qm_dict['optimize_time']:
-                # get name of current measurement waveform on AWG, before overwriting for optimisation measurement
-                awg_asset_name = awg.current_loaded_assets['AWG']
-                awg_asset_type = awg.current_loaded_assets_type
+                # release pulser from 'running'
                 pulsedmeasurementlogic.pause_pulsed_measurement()
                 print('paused measurement time = {}'.format(time.time()))
-                # release pulser from 'running'
                 additional_time = optimize_position()
-                start_time = start_time + additional_time
-                if awg_asset_type == 'waveform':
-                    additional_time = _reload_awg_waveform(awg_asset_name)
-                elif awg_asset_type == 'sequence':
-                    additional_time = _reload_awg_sequence(awg_asset_name)
-                else:
-                    print('error: incorrect awg asset type!')
-                    return cause_an_error
-                start_time = start_time + additional_time
+                start_time += additional_time
+                additional_time = _reload_awg(awg_asset_name, awg_asset_type)
+                start_time += additional_time
                 pulsedmeasurementlogic.continue_pulsed_measurement()
                 optimize_real_time = time.time()
                 print('continuing measurement time = {}'.format(time.time()))
         ####################### optimize frequency ####################
         if qm_dict['freq_optimize_time'] is not None:
             if time.time() - freq_optimize_real_time > qm_dict['freq_optimize_time']:
+                pulsedmeasurementlogic.pause_pulsed_measurement()
                 additional_time = optimize_frequency_during_experiment(opt_dict=optimize_freq_dict, qm_dict=qm_dict)
-                start_time = start_time + additional_time
+                start_time += additional_time
+                pulsedmeasurementlogic.continue_pulsed_measurement()
                 freq_optimize_real_time = time.time()
 
         ####################### analyze data ######################
@@ -407,25 +428,6 @@ def perform_measurement_on_condition(qm_dict):
     #save_parameters(save_tag='Condition', save_dict=qm_dict)
     #return pulsedmasterlogic.fit_container
     return fit_data, fit_result
-
-# NO LONGER NEEDED - MERGED WITH CONVENTIONAL MEASUREMENT
-# def external_mw_measurement(qm_dict):
-#     #set up
-#     set_up_conventional_measurement(qm_dict)
-#     #pulsedmasterlogic.set_extraction_settings({'method': 'threshold'})
-#     pulsedmasterlogic.set_ext_microwave_settings(frequency=qm_dict['mw_frequency'], power=qm_dict['mw_power'],
-#                                                  use_ext_microwave=True)
-#     pulsedmasterlogic.toggle_ext_microwave(True)
-#     # perform measurement
-#     pulsedmasterlogic.toggle_pulsed_measurement(True)
-#     while not pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.5)
-#     user_terminated = control_measurement(qm_dict, analysis_method=None)
-#     pulsedmasterlogic.toggle_pulsed_measurement(False)
-#     while pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.5)
-#     pulsedmasterlogic.toggle_ext_microwave(False)
-#     return user_terminated
-
-
 
 #########################################  Save methods ############################################
 
@@ -502,32 +504,33 @@ def save_parameters(save_tag='', save_dict=None):
 
 def optimize_position():
     # FIXME: Add the option to pause pulsed measurement during position optimization
-    laser_on()
+    """
+
+    similar to that used in e.g. magnet logic
+    """
+
     time_start_optimize = time.time()
-    #pulsedmeasurementlogic.fast_counter_pause()
-    nicard.digital_channel_switch(setup['optimize_channel'], mode=True)
-    # perform refocus
-    scannerlogic.stop_scanning()
-    crosshair_pos = scannerlogic.get_position()
-    optimizerlogic.start_refocus(initial_pos=crosshair_pos)
-    while optimizerlogic.module_state() == 'idle':
-        time.sleep(0.2)
+
+    curr_pos = scannerlogic.get_position()
+    optimizerlogic.start_refocus(curr_pos, caller_tag='script_logic')
+
+    # check just the state of the optimizer
     while optimizerlogic.module_state() != 'idle':
-        time.sleep(0.2)
-    scannerlogic.set_position('optimizer', x=optimizerlogic.optim_pos_x, y=optimizerlogic.optim_pos_y,
+        time.sleep(0.1)
+
+    # use the position to move the scanner
+    scannerlogic.set_position('script_logic',
+                              x=optimizerlogic.optim_pos_x,
+                              y=optimizerlogic.optim_pos_y,
                               z=optimizerlogic.optim_pos_z, a=0.0)
-    time.sleep(0.5)
-    # switch off laser
-    nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
-    # pulsedmeasurementlogic.fast_counter_continue()
+
     time_stop_optimize = time.time()
-    laser_off()
     additional_time = (time_stop_optimize - time_start_optimize)
     return additional_time
 
 def optimize_position_return_position():
     # FIXME: Add the option to pause pulsed measurement during position optimization
-    laser_on()
+
     time_start_optimize = time.time()
     #pulsedmeasurementlogic.fast_counter_pause()
     nicard.digital_channel_switch(setup['optimize_channel'], mode=True)
@@ -546,14 +549,14 @@ def optimize_position_return_position():
     nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
     # pulsedmeasurementlogic.fast_counter_continue()
     time_stop_optimize = time.time()
-    laser_off()
+    # laser_off()
     additional_time = (time_stop_optimize - time_start_optimize)
     return optimizerlogic.optim_pos_x, optimizerlogic.optim_pos_y, optimizerlogic.optim_pos_z
 
 def optimize_poi(poi):
     # FIXME: Add the option to pause pulsed measurement during position optimization
     print(poi)
-    laser_on()
+    # laser_on()
     time_start_optimize = time.time()
     #pulsedmeasurementlogic.fast_counter_pause()
     nicard.digital_channel_switch(setup['optimize_channel'], mode=True)
@@ -570,40 +573,36 @@ def optimize_poi(poi):
     nicard.digital_channel_switch(setup['optimize_channel'], mode=False)
     # pulsedmeasurementlogic.fast_counter_continue()
     time_stop_optimize = time.time()
-    laser_off()
+    # laser_off()
     additional_time = (time_stop_optimize - time_start_optimize)
     return additional_time
 
 
 
-def laser_on(pulser_on=True):
-    # Turns on the laser. If pulser_on the pulser is not stopped
-    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_on(setup['laser_channel'])
-    return
+# def laser_on(pulser_on=True):
+#     # Turns on the laser. If pulser_on the pulser is not stopped
+#     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_on(setup['laser_channel'])
+#     return
+#
+# def laser_off(pulser_on=False):
+#     # Switches off the laser trigger from awg
+#     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_off()
+#     return
 
-def laser_off(pulser_on=False):
-    # Switches off the laser trigger from awg
-    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_off()
-    return
-
-def _reload_awg_waveform(name):
+def _reload_awg(name, asset_type):
     """
-    @param str name: name of AWG waveform to reload
+    @param str name: name of AWG asset to reload
+    @param str asset_type: waveform or sequence
     @return float additional_time: time taken
     """
     time_start_load = time.time()
-    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_waveform(name)
-    time_stop_load = time.time()
-    additional_time = (time_stop_load - time_start_load)
-    return additional_time
-
-def _reload_awg_sequence(name):
-    """
-    @param str name: name of AWG waveform to reload
-    @return float additional_time: time taken
-    """
-    time_start_load = time.time()
-    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_sequence(name)
+    if asset_type == 'waveform':
+        pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_waveform(name)
+    elif asset_type == 'sequence':
+        pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().load_sequence(name)
+    else:
+        print('_reload_awg: asset type ({}) not recognised'.format(asset_type))
+        cause_an_error
     time_stop_load = time.time()
     additional_time = (time_stop_load - time_start_load)
     return additional_time
@@ -613,7 +612,7 @@ def _reload_awg_sequence(name):
 
 
 def optimize_frequency_during_experiment(opt_dict, qm_dict):
-    # FIXME: Add the moment only working for conventional measurements
+    # FIXME: Add the moment only working for conventional measurements - need to implement data stashing for SSR
     time_start_optimize = time.time()
 
     if 'freq_optimization_method' not in opt_dict:
@@ -622,26 +621,30 @@ def optimize_frequency_during_experiment(opt_dict, qm_dict):
 
     # stop pulsed measurement and stash raw data
     pulsedmasterlogic.toggle_pulsed_measurement(False, qm_dict['name'])
-    #pulsedmasterlogic.toggle_pulsed_measurement(False)
     while pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
+
     # set the frequency optimization interval to None
     opt_dict['freq_optimize_time'] = None
+
     # generate sequence, upload it, set the parameters and run optimization experiment
-    do_experiment(experiment=opt_dict['freq_optimization_method'], qm_dict=opt_dict, meas_type=conventional_measurement,
+    do_experiment(experiment=opt_dict['freq_optimization_method'], qm_dict=opt_dict, meas_type=opt_dict['meas_type'],
+                  meas_info=add_conventional_information,
                   generate_new=opt_dict['generate_new'], save_tag = opt_dict['save_tag'])
+
     # perform a final fit
     fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['optimize_fit_method'])
+
     # update the specified parameters
     for key in opt_dict['parameters2update']:
         qm_dict[opt_dict['parameters2update'][key]] = fit_result.best_values[key]
+
     # generate, sample and upload the new sequence
     prepare_qm(experiment=qm_dict['experiment'], qm_dict=qm_dict, generate_new=True)
     pulsedmasterlogic.do_fit('No Fit')
-    # restart experiment and use stashed data
+
     pulsedmasterlogic.toggle_pulsed_measurement(True, qm_dict['name'])
-    #pulsedmeasurementlogic.toggle_pulsed_measurement(True, qm_dict['name'])
-    #pulsedmasterlogic.toggle_pulsed_measurement(True)
     while not pulsedmasterlogic.status_dict['measurement_running']: time.sleep(0.2)
+
     return time.time()-time_start_optimize
 
 
@@ -652,14 +655,12 @@ def optimize_frequency(opt_dict):
         return -1
 
     # generate sequence, upload it, set the parameters and run optimization experiment
-    # LOCALFIX Prithvi: Fixing do_experiment to have the correct number of calls
     do_experiment(experiment=opt_dict['mw_optimization_method'], qm_dict=opt_dict, meas_type=opt_dict['meas_type'],
                   meas_info=opt_dict['meas_info'], generate_new=opt_dict['optimize_generate_new'],
                   save_tag = opt_dict['save_tag'])
-    #do_experiment(experiment=opt_dict['mw_optimization_method'], meas_type=opt_dict['meas_type'],
-    #              generate_new=opt_dict['optimize_generate_new'], save_tag = opt_dict['save_tag'])
     # perform a final fit
     fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['optimize_fit_method'])
+
     # FIXME:
     # generate, sample and upload the new sequence
     return fit_result

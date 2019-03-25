@@ -27,7 +27,9 @@ import numpy as np
 import re
 import scipy.ndimage as ndimage
 import scipy.ndimage.filters as filters
+import matplotlib.pyplot as plt
 import time
+import datetime
 
 from collections import OrderedDict
 from core.module import Connector, StatusVar
@@ -45,7 +47,7 @@ class PoI:
 
     """
 
-    def __init__(self, pos=None, name=None, key=None):
+    def __init__(self, pos=None, name=None, key=None, counts=None):
         # Logging
         self.log = logging.getLogger(__name__)
 
@@ -55,6 +57,7 @@ class PoI:
         # The POI is at a scanner position, which may vary with time (drift).  This time
         # trace records every time+position when the POI position was explicitly known.
         self._position_time_trace = []
+        self._counts_time_trace = []
 
         # To avoid duplication while algorithmically setting POIs, we need the key string to
         # go to sub-second. This requires the datetime module.
@@ -73,8 +76,11 @@ class PoI:
             # Store the time in the history log as seconds since 1970,
             # rather than as a datetime object.
             creation_time_sec = (self._creation_time - datetime.utcfromtimestamp(0)).total_seconds()
-            self._position_time_trace.append([creation_time_sec, pos[0], pos[1], pos[2]])
+            self._position_time_trace.append([creation_time_sec, pos[0], pos[1], pos[2]])            
             self._coords_in_sample = pos
+            
+            if counts is not None:
+                self._counts_time_trace.append([creation_time_sec, counts])
 
         if name is None:
             self._name = self._creation_time.strftime('poi_%H%M%S')
@@ -88,6 +94,7 @@ class PoI:
             'time': self._creation_time,
             'pos': self._coords_in_sample,
             'history': self._position_time_trace
+            # 'counts': self._counts_time_trace
         }
 
     def set_coords_in_sample(self, coords=None):
@@ -109,7 +116,7 @@ class PoI:
 
 
 
-    def add_position_to_history(self, position=None):
+    def add_position_to_history(self, position=None, counts=None):
         """ Adds an explicitly known position+time to the history of the POI.
 
         @param float[3] position: position coordinates of the poi
@@ -125,6 +132,8 @@ class PoI:
         else:
             self._position_time_trace.append(
                 [time.time(), position[0], position[1], position[2]])
+            if counts is not None:
+                self._counts_time_trace.append([time.time(), counts])
 
     def get_coords_in_sample(self):
         """ Returns the coordinates of the POI relative to the sample.
@@ -175,6 +184,14 @@ class PoI:
         """
 
         return np.array(self._position_time_trace)
+    
+    def get_counts_history(self):
+        """ Returns the whole fluorescence counts history as array.
+
+        @return float[][4]: the whole position history
+        """
+
+        return np.array(self._counts_time_trace)
 
     def delete_last_position(self, empty_array_completely=False):
         """ Delete the last position in the history.
@@ -184,6 +201,7 @@ class PoI:
 
         @return float[4]: the position just deleted.
         """
+        # todo: include counts trace
         # do not delete initial position
         if len(self._position_time_trace) > 1:
             return self._position_time_trace.pop()
@@ -210,6 +228,7 @@ class PoiManagerLogic(GenericLogic):
     # status vars
     poi_list = StatusVar(default=OrderedDict())
     poi_trace = []
+    poi_counts_trace = []
     time_list = []
     abs_time_list = []
     roi_name = StatusVar(default='')
@@ -775,6 +794,7 @@ class PoiManagerLogic(GenericLogic):
 
         # We will fill the data OderedDict to send to savelogic
         data = OrderedDict()
+        dataplt=OrderedDict()
 
         x_shift_data = []
         y_shift_data = []
@@ -789,12 +809,17 @@ class PoiManagerLogic(GenericLogic):
         for i in range(len(self.time_list)):
             abs_time.append(self.abs_time_list[i])
             rel_time.append(self.time_list[i]-self.time_list[0])
+        
+        # for i in range(len(self.poi_trace)):
+        #     x_shift_data.append(self.poi_trace[i][0])
+        #     y_shift_data.append(self.poi_trace[i][1])
 
         data['Absolute Time'] = np.array(abs_time)
         data['Relative Time'] = np.array(rel_time)
         data['x'] = np.array(x_shift_data)
         data['y'] = np.array(y_shift_data)
         data['z'] = np.array(z_shift_data)
+        # data['fluorescence'] = np.array(self.poi_counts_trace)
 
         self._save_logic.save_data(
             data,
@@ -804,6 +829,78 @@ class PoiManagerLogic(GenericLogic):
         )
 
         self.log.debug('POI history saved to:\n{0}'.format(filepath))
+
+        dataplt['Absolute Time'] = np.array(abs_time)
+        dataplt['Relative Time'] = np.array(rel_time)
+        dataplt['x'] = np.array(x_shift_data)*10e9
+        dataplt['y'] = np.array(y_shift_data)*10e9
+        dataplt['z'] = np.array(z_shift_data)*10e9
+
+        plt.style.use(self._save_logic.mpl_qd_style)
+
+        fig = plt.clf()
+        fig = plt.plot(dataplt['Relative Time'], dataplt['x'], 'o--', linewidth=1, label='X Shift', markersize=10)
+        fig = plt.plot(dataplt['Relative Time'], dataplt['y'], 'o--', linewidth=1, label='Y Shift', markersize=10)
+        fig = plt.plot(dataplt['Relative Time'], dataplt['z'], 'o--', linewidth=1, label='Z Shift', markersize=10)
+        fig = plt.xlabel('Time (s)')
+        fig = plt.ylabel('Shift (nm)')
+        fig = plt.legend()
+
+        year_int = datetime.now().year
+        year = str(year_int)
+
+        month_int = datetime.now().month
+        month = str(month_int)
+        if len(month) < 2:
+            month = '0' + month
+        elif len(month) > 1:
+            month = month
+
+        day_int = datetime.now().day
+        day = str(day_int)
+        if len(day) < 2:
+            day = '0' + day
+        elif len(day) > 1:
+            day = day
+
+        hour_int = datetime.now().hour
+        hour = str(hour_int)
+        if len(hour) < 2:
+            hour = '0' + hour
+        elif len(hour) > 1:
+            hour = hour
+
+        min_int = datetime.now().minute
+        minute = str(min_int)
+        if len(minute) < 2:
+            minute = '0' + minute
+        elif len(minute) > 1:
+            minute = minute
+
+        sec_int = datetime.now().second
+        second = str(sec_int)
+        if len(second) < 2:
+            second = '0' + second
+        elif len(second) > 1:
+            second = second
+
+        plt.savefig(
+            'C:\Data\\' + year + '\\' + month + '\\' + year + month + day + '\\' + 'POI_History' + '\\' + year + month + day + '-' + hour + minute + '-' + second + '_poi_shift_plot',
+            dpi=300)
+
+
+        # # plot fluorescence trace
+        #
+        # fig = plt.clf()
+        # fig = plt.plot(dataplt['Relative Time'], dataplt['fluorescence']/1000, 'o--', linewidth=1, label='fluoresence', markersize=10)
+        # fig = plt.xlabel('Time (s)')
+        # fig = plt.ylabel('Counts (kcps)')
+        # fig = plt.legend()
+        #
+        # plt.savefig(
+        #     'C:\Data\\' + year + '\\' + month + '\\' + year + month + day + '\\' + 'POI_History' + '\\' + year + month + day + '-' + hour + minute + '-' + second + '_poi_fluorescence_plot',
+        #     dpi=300)
+
         return 0
 
 

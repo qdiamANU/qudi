@@ -70,7 +70,10 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         self.log.info('TimeTagger (fast counter) configured to use  channel {0}'
                       .format(self._channel_apd))
 
-        #self._tagger.setTestSignal(0, False)
+        self._tagger.setTestSignal(0, False)
+        self._tagger.setTestSignal(1, False)
+        self._tagger.setTestSignal(2, False)
+        self._tagger.setTestSignal(3, False)
 
         self.statusvar = 0
 
@@ -128,7 +131,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         self.pulsed.clear()
         self.pulsed = None
 
-    def configure(self, bin_width_s, record_length_s, number_of_gates=0):
+    def configure(self, bin_width_s, record_length_s, number_of_gates=0, next_channel=None, rollover=True):
 
         """ Configuration of the fast counter.
 
@@ -145,6 +148,14 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
                     number_of_gates: the number of gated, which are accepted
         """
 
+        # LOCALFIX Andrew 27/2
+        try:
+            self.pulsed.stop()
+        except:
+            pass
+
+        if next_channel is None:
+            next_channel = self._channel_detect
 
         self._number_of_gates = number_of_gates
         self._bin_width = bin_width_s * 1e9
@@ -153,24 +164,26 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         # Detection channel input voltage is quite low, due to signal being split between laser and timetagger
         # Need to lower the trigger level on this channel, to e.g. 0.9 V
         self._tagger.setTriggerLevel(self._channel_detect, 0.9)
-        #print('TriggerLevel ch{} = {} V'.format(self._channel_detect, self._tagger.getTriggerLevel(self._channel_detect)))
-        #number_of_gates = 50
+        self._tagger.setTriggerLevel(next_channel, 0.9)
 
-        print('tt configure')
-        print('tagger={}, click_channel={}, start/next_channel={}'.format(
-            self._tagger, self._channel_apd, self._channel_detect))
-        print('bin_width={} ns, '.format(self._bin_width))
+        print('tt configure. tagger: click_channel={}, start_channel={}, next_channel={}'.format(
+            self._channel_apd, self._channel_detect, next_channel))
         binwidth_ps = int(np.round(self._bin_width * 1000))
         print('binwidth={} ps, n_bins={}, n_histograms={}'.format(binwidth_ps, int(self._record_length), number_of_gates))
         self.pulsed = tt.TimeDifferences(
             tagger=self._tagger,
             click_channel=self._channel_apd,
             start_channel=self._channel_detect,
-            next_channel=self._channel_detect,
+            next_channel=next_channel,
             sync_channel=tt.CHANNEL_UNUSED,
             binwidth=int(np.round(self._bin_width * 1000)),
             n_bins=int(self._record_length),
             n_histograms=number_of_gates)
+
+        # rollover = keep counting until stopped. once histogram is filled, rollover to start of histogram and add
+        # to counts already there. Generally, want rollover=True. Want False for e.g. just-SSR measurements
+        if not rollover:
+            self.pulsed.setMaxCounts(1)
 
         self.pulsed.stop()
 
@@ -189,7 +202,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         """ Stop the fast counter. """
         print('tt stop measure')
         if self.module_state() == 'locked':
-            self.pulsed.stop()
+            # self.pulsed.stop() # LOCALFIX Andrew 27/2/19
             self.module_state.unlock()
         self.statusvar = 1
         return 0
@@ -234,8 +247,13 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         care of in this hardware class. A possible overflow of the histogram
         bins must be caught here and taken care of.
         """
-        print('tt get_data_trace')
-        return np.array(self.pulsed.getData(), dtype='int64')
+
+        # LOCALFIX Andrew: debugging help
+        self.data = np.array(self.pulsed.getData(), dtype='int64')
+        print('tt get_data_trace, size = {}'.format(self.data.shape))
+        return self.data
+
+        # return np.array(self.pulsed.getData(), dtype='int64')
 
 
     def get_status(self):
@@ -255,29 +273,3 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         width_in_seconds = self._bin_width * 1e-9
         return width_in_seconds
 
-################################### Methods for SSR interface ####################################
-
-    def configure_ssr_counter(self, counts_per_readout=None, countlength=None):
-        """ Configuration of the fast counter.
-
-        necessary for some fast counters. Does not appear necessary for TimeTagger
-
-                @param int counts_per_readout: optional, number of readouts for one measurement
-                @param int cycles: countlength, number of measurements
-
-
-                @return tuple(binwidth_s, record_length_s, preset, cycles, sequences ):
-                            binwidth_s: float the actual set binwidth in seconds
-                            gate_length_s: the actual record length in seconds
-                            preset: number of readout per measurement
-                            cycles: number of measurements
-                            sequences: number of sequences
-        """
-
-        pass
-
-    def change_sweep_mode(self, gated=True):
-        """
-                necessary for some fast counters. Does not appear necessary for TimeTagger
-        """
-        pass

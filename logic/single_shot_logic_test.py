@@ -376,23 +376,28 @@ class SingleShotLogic(GenericLogic):
                 settings_dict.update(kwargs)
 
             # Set parameters if present
-            if 'countlength' in settings_dict:
-                self.countlength= int(settings_dict['countlength'])
             if 'counts_per_readout' in settings_dict:
                 self.counts_per_readout = int(settings_dict['counts_per_readout'])
 
             if 'num_of_points' in settings_dict:
+                # number of fastcounter histogram rows, corresponding to e.g. number of steps of controlled variable,
                 self.num_of_points = settings_dict['num_of_points']
             if 'countlength' in settings_dict:
-                    self.histogram_length_s = settings_dict['countlength']
-
-
+                # fast counter histogram length, roughly laser pulse duration
+                self.histogram_length_s = settings_dict['countlength']
+            if 'bin_width_s' in settings_dict:
+                # fast counter histogram length, roughly laser pulse duration
+                self.bin_width_s = settings_dict['bin_width_s']
+            if 'rollover' in settings_dict:
+                # fast counter histogram length, roughly laser pulse duration
+                self.rollover = settings_dict['rollover']
 
             # Apply the settings to hardware
-            # self.singleshotreadoutcounter().configure_ssr_counter(countlength=self.countlength,
-            #                                                       counts_per_readout=self.counts_per_readout)
             self.singleshotreadoutcounter().configure_ssr_counter(histogram_length_s=self.histogram_length_s,
-                                                                  n_steps_controlled_variable= self.num_of_points)
+                                                                  n_steps_controlled_variable=self.num_of_points,
+                                                                  bin_width_s=self.bin_width_s,
+                                                                  rollover=self.rollover)
+
         else:
             self.log.warning('Gated counter is not idle (status: {0}).\n'
                              'Unable to apply new settings.'.format(counter_status))
@@ -532,69 +537,74 @@ class SingleShotLogic(GenericLogic):
         """ Acquires laser pulses from ssr counter,
             calculates fluorescence signal and creates plots.
         """
+        start_time = time.time()
         # self.log.error('_ssr_analysis_loop: entered')
-        # with self._threadlock:
-        #     self.log.error('_ssr_analysis_loop:  with self._threadlock')
-        #     # Update elapsed time
-        #     self.__elapsed_time = time.time() - self.__start_time
+        with self._threadlock:
+            # self.log.error('_ssr_analysis_loop:  with self._threadlock')
+            # Update elapsed time
+            self.__elapsed_time = time.time() - self.__start_time
+
+            # self.log.error('_ssr_analysis_loop: get_raw_data')
+            # Get counter raw data (including recalled raw data from previous measurement)
+            self.trace, self.charge_state = self._get_raw_data()
+            # print('analysis loop: trace length = {}'.format(len(self.trace)))
+
+            # print('_ssr_analysis_loop: len(self.trace)={}, sequence_length = {}')
+            self.time_axis = np.arange(1, len(self.trace) + 1) * self.sequence_length
+
+            # compute spin flip probabilities
+            try:
+                # self.log.error('starting analyze_ssr')
+                self.analyze_ssr()
+                # self.log.error('finished analyze_ssr')
+            except:
+                self.log.warning('Analysis of time traced failed')
+                self.spin_flip_prob, self.error_flip_prob, self.spin_flip_error, self.mapped_state, \
+                    self.lost_events, self.lost_events_percent = 0, 0, 0, 0, 0, 0
+
+            # update the trace in GUI
+            self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob,
+                                      self.spin_flip_error, self.mapped_state, self.lost_events,
+                                      self.lost_events_percent)
+
+
+            # compute and fit histogram
+            self.calculate_histogram()
+            self.double_gaussian_fit_histogram()
+
+        # start_time = time.time()
         #
-        #     self.log.error('_ssr_analysis_loop: get_raw_data')
-        #     # Get counter raw data (including recalled raw data from previous measurement)
-        #     self.trace, self.charge_state = self._get_raw_data()
+        # # Update elapsed time
+        # self.__elapsed_time = time.time() - self.__start_time
         #
-        #     self.time_axis = np.arange(1, len(self.trace) + 1) * self.sequence_length
+        # # self.log.error('_ssr_analysis_loop: get_raw_data')
+        # # Get counter raw data (including recalled raw data from previous measurement)
+        # self.trace, self.charge_state = self._get_raw_data()
         #
-        #     # compute spin flip probabilities
-        #     try:
-        #         self.log.error('starting analyze_ssr')
-        #         self.analyze_ssr()
-        #         self.log.error('finished analyze_ssr')
-        #     except:
-        #         self.log.warning('Analysation of time traced failed')
-        #         self.spin_flip_prob, self.error_flip_prob, self.spin_flip_error, self.mapped_state, \
-        #             self.lost_events, self.lost_events_percent = 0, 0, 0, 0, 0, 0
+        # self.time_axis = np.arange(1, len(self.trace) + 1) * self.sequence_length
         #
-        #     # update the trace in GUI
-        #     self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob,
-        #                               self.spin_flip_error, self.mapped_state, self.lost_events,
-        #                               self.lost_events_percent)
+        # # compute spin flip probabilities
+        # try:
+        #     # self.log.error('starting analyze_ssr')
+        #     self.analyze_ssr()
+        #     # self.log.error('finished analyze_ssr')
+        # except:
+        #     self.log.warning('Analysation of time traced failed')
+        #     self.spin_flip_prob, self.error_flip_prob, self.spin_flip_error, self.mapped_state, \
+        #     self.lost_events, self.lost_events_percent = 0, 0, 0, 0, 0, 0
         #
+        # # update the trace in GUI
+        # self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob,
+        #                           self.spin_flip_error, self.mapped_state, self.lost_events,
+        #                           self.lost_events_percent)
         #
-        #     # compute and fit histogram
-        #     self.calculate_histogram()
-        #     self.double_gaussian_fit_histogram()
+        # # compute and fit histogram
+        # self.calculate_histogram()
+        # self.double_gaussian_fit_histogram()
+        #
+        time_taken = time.time() - start_time
+        print('_ssr_analysis_loop: time = {}'.format(time_taken))
 
-
-        self.log.error('_ssr_analysis_loop: entered')
-
-        # self.log.error('_ssr_analysis_loop:  with self._threadlock')
-        # Update elapsed time
-        self.__elapsed_time = time.time() - self.__start_time
-
-        self.log.error('_ssr_analysis_loop: get_raw_data')
-        # Get counter raw data (including recalled raw data from previous measurement)
-        self.trace, self.charge_state = self._get_raw_data()
-
-        self.time_axis = np.arange(1, len(self.trace) + 1) * self.sequence_length
-
-        # compute spin flip probabilities
-        try:
-            self.log.error('starting analyze_ssr')
-            self.analyze_ssr()
-            self.log.error('finished analyze_ssr')
-        except:
-            self.log.warning('Analysation of time traced failed')
-            self.spin_flip_prob, self.error_flip_prob, self.spin_flip_error, self.mapped_state, \
-            self.lost_events, self.lost_events_percent = 0, 0, 0, 0, 0, 0
-
-        # update the trace in GUI
-        self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob,
-                                  self.spin_flip_error, self.mapped_state, self.lost_events,
-                                  self.lost_events_percent)
-
-        # compute and fit histogram
-        self.calculate_histogram()
-        self.double_gaussian_fit_histogram()
         return
 
 
@@ -605,13 +615,15 @@ class SingleShotLogic(GenericLogic):
         :return numpy.ndarray: The count data (1D for ungated, 2D for gated counter)
         """
 
-        self.log.error('get_raw_data')
+        # self.log.error('get_raw_data')
+        start_time = time.time()
         # get raw data from ssr counter
         # netobtain: Check if something is a rpyc remote object. If so, transfer it (i.e. convert to float??)
         ssr_data, charge_data = netobtain(self.singleshotreadoutcounter().get_data_trace(self.normalized,
                                                                                          self.charge_state_selection,
                                                                                          self.subtract_mean))
-        print('_get_raw_data: ssr_data.shape = {}'.format(ssr_data.shape))
+        time_taken = time.time() - start_time
+        print('_get_raw_data.get_data_trace: time = {}, ssr_data.shape = {}'.format(time_taken, ssr_data.shape))
         # add old raw data from previous measurements if necessary
         if self._saved_raw_data.get(self._recalled_raw_data_tag) is not None:
             if not ssr_data.any():
@@ -625,7 +637,7 @@ class SingleShotLogic(GenericLogic):
                 #self.log.warning('Recalled raw data has not the same shape as current data.'
                  #                '\nDid NOT add recalled raw data to current time trace.')
         if not ssr_data.any():
-            #self.log.warning('Only zeros received from ssr counter!')
+            self.log.warning('Only zeros received from ssr counter!')
             ssr_data = np.zeros(ssr_data.shape, dtype='int64')
             charge_data = []
         return ssr_data, charge_data
@@ -642,6 +654,7 @@ class SingleShotLogic(GenericLogic):
         :return:
         """
 
+        start_time = time.time()
         ## Compare the data to the threshold
         # find all indices in the trace-array, where the value is above init_threshold[1]
         init_high = np.where(self.trace[:-1] >= self.init_threshold1)[0]
@@ -654,9 +667,15 @@ class SingleShotLogic(GenericLogic):
 
         incorrect_charge = np.where(self.charge_state < self.charge_threshold)[0]
 
+        time_taken = time.time() - start_time
+        print('analyze ssr: init/ana high/low time = {}'.format(time_taken))
+
         if self.ssr_mode == 'flip_probability':
+            start_time = time.time()
             amount_analyzed_data \
                 = self.analyze_ssr_flip_probability(init_high, init_low, ana_high, ana_low, incorrect_charge)
+            time_taken = time.time() - start_time
+            print('analyze ssr: analyze_ssr_flip_probability time = {}'.format(time_taken))
 
         elif self.ssr_mode == 'mapping':
             amount_analyzed_data = self.analyze_ssr_mapping(init_high, init_low, incorrect_charge)
@@ -682,6 +701,7 @@ class SingleShotLogic(GenericLogic):
         no_flip = 0.0
         flip = 0.0
 
+        # todo: faster analysis than for-loop
         if self.analyze_mode == 'bright' or self.analyze_mode == 'full':
             # analyze the trace where the data were the nuclear was initalized into one direction
             for index in init_high:
@@ -711,7 +731,7 @@ class SingleShotLogic(GenericLogic):
             self.spin_flip_error = np.sqrt((flip*(1-self.spin_flip_prob)**2+no_flip*self.spin_flip_prob**2)\
                                    /(flip + no_flip-1)/(flip + no_flip))
         amount_analyzed_data = flip + no_flip
-        self.log.error('self.spin_flip_prob = {}'.format(self.spin_flip_prob))
+        print('self.spin_flip_prob = {}'.format(self.spin_flip_prob))
         return amount_analyzed_data
 
 
@@ -726,7 +746,7 @@ class SingleShotLogic(GenericLogic):
             self.mapped_state = 0
         # return the amount of analyzed data
         amount_analyzed_data = len(self.bright_states) + len(self.dark_states)
-        self.log.error('self.mapped_state = {}'.format(self.mapped_state))
+        print('self.mapped_state = {}'.format(self.mapped_state))
         return amount_analyzed_data
 
 

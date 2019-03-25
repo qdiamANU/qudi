@@ -115,6 +115,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         self.current_status = 0    # current_status = 0 means off, not running.
 
+        self.cw_odmr_samples_per_step = 400*32
+
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
@@ -312,14 +314,14 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         @return int: error code (0:stopped, -1:error, 1:running)
         """
-        if self.current_status == 0:
-            self.log.info('Pulser already off!')
-        elif self.current_status == -1:
+        # if self.current_status == 0:
+        #     self.log.info('Pulser already off!')
+        if self.current_status == -1:
             self.log.error('Pulser in error state, cannot switch output off!')
             return -1
         elif self.current_status == 1:
             self.current_status = 0
-            self.log.info('Pulser: Switch off the output.')
+            # self.log.info('Pulser: Switch off the output.')
 
             spcm_dwSetParam_i32(self._hCard, SPC_M2CMD, M2CMD_CARD_STOP)
 
@@ -507,6 +509,10 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                                    'present in device memory.'.format(name, waveform))
                     return -1
 
+        # prepare the AWG in a defined state, to ensure predictable output
+        # todo: may be able to move this further down, and only call if n_actual_segments changes
+        self.reset_with_settings_retained()
+
         # overwrite the sequence dictionary:
         self.sequence_dict = dict()
         self.sequence_dict[name] = ''
@@ -551,13 +557,18 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 llSegment = i  # associated with memory segment #i
                 llLoop = param_dict['repetitions']+1  # Pattern will be repeated this many times. Needs +1 to match qudi/Spectrum syntaxes
 
-                if i == n_segments - 1:  # todo: this may result in unexpected output for sequences defined non-sequentially
+                # fixme: this will result in unexpected output for sequences defined non-sequentially
+                # for the final segment of the sequence:
+                if i == n_segments - 1:
                     llNext = 0
-                    if param_dict['wait_for'] == 'ON':
+                    if param_dict['go_to'] < 1:
+                        llCondition = SPCSEQ_END
+                    elif param_dict['wait_for'] == 'ON':
                         llCondition = SPCSEQ_ENDLOOPONTRIG
                     else:
                         #llCondition = SPCSEQ_END  # End of sequence
                         llCondition = SPCSEQ_ENDLOOPALWAYS  # Unconditionally leave current step -> continuously loop sequence
+                # for all other segments:
                 else:
                     if param_dict['go_to'] < 1:
                         llNext = i+1
@@ -639,12 +650,15 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         NOTE: unlike many AWGs, with an onboard file system, only the active
         waveform/sequence is stored on the Spectrum AWG.
 
+        For the Spectrum AWG, this function doesn't do much
+
         @param str sequence_name: The name of the sequence to be deleted
                                   Optionally a list of sequence names can be passed.
 
         @return list: a list of deleted sequence names.
         """
-        self.log.warning('Cannot delete sequences from Spectrum AWG (can only overwrite). No action taken.')
+
+        self.sequence_dict = dict()
         return list(sequence_name)
 
     def load_waveform(self, load_dict, print_time=True):
@@ -673,7 +687,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         # If the AWG was previously in sequence mode, need to reset before running in waveform mode
         # todo: find a way around this issue that doesn't require resetting the AWG - probably have to contact manufacturer
         if self.current_loaded_assets_type != 'waveform':
-            self.reset_for_waveform_sequence_switch()
+            self.reset_with_settings_retained()
 
         start_time = time.time()
 
@@ -943,38 +957,14 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
-        # TODO -> change to be robust against out-of-bounds inputs. Base off tektronix_awg70k
-        # if sample_rate > constraint.max:
-        #    self.sample_rate = constraint.max
-        # elif sample_rate < constraint.min:
-        #    self.sample_rate = constraint.min
-        # else:
-        #    self.sample_rate = sample_rate
-
-
-        #for a_ch, amp in amplitude.items():
-        #    self.amplitude_dict[a_ch] = amp
-#
-        #for a_ch, off in offset.items():
-        #    self.offset_dict[a_ch] = off
-
 
         if amplitude is None:
             amplitude = dict()
-        if offset is not None:
-            self.log.warning('Setting analog offset values is not available for the Spectrum M4i AWG series!\n'
-                             'Method call will be ignored.')
+        # if offset is not None:
+        #     self.log.warning('Setting analog offset values is not available for the Spectrum M4i AWG series!\n'
+        #                      'Method call will be ignored.')
 
-            #if self.sample_rate > constraint.max:
-            #    self.sample_rate = constraint.max
-            #elif sample_rate < constraint.min:
-            #    self.sample_rate = constraint.min
-            #else:
-            #    self.sample_rate = sample_rate
-        # self.log.warning('set_analogue_level')
         constraints = self.get_constraints()
-        # print('\namplitude constraints: {} to {}'.format(constraints.a_ch_amplitude.min, constraints.a_ch_amplitude.max))
-        # print('\namplitude a_ch1 cmd = {}\n'.format(amplitude['a_ch1']))
         if 'a_ch1' in amplitude.keys():
             if (amplitude['a_ch1'] >= constraints.a_ch_amplitude.min) and\
                     (amplitude['a_ch1'] <= constraints.a_ch_amplitude.max):
@@ -982,29 +972,29 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
                 spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(amplitude['a_ch1']*1000/2)))
             elif amplitude['a_ch1'] < constraints.a_ch_amplitude.min:
                 self.log.warning(
-                    'Requested amplitude for a_ch1 is too low for AWG. Setting to min. allowed value of {} V'.format(
-                        constraints.a_ch_amplitude.min))
+                    'Requested amplitude for a_ch1 ({} V) is too low for AWG. Setting to min. allowed value of {} V'.
+                    format(amplitude['a_ch1'], constraints.a_ch_amplitude.min))
                 spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.min * 1000 / 2)))
             elif amplitude['a_ch1'] > constraints.a_ch_amplitude.max:
                 self.log.warning(
-                    'Requested amplitude for a_ch1 is too high for AWG. Setting to max. allowed value of {} V'.format(
-                        constraints.a_ch_amplitude.max))
+                    'Requested amplitude for a_ch1 ({} V) is too high for AWG. Setting to max. allowed value of {} V'.
+                    format(amplitude['a_ch1'], constraints.a_ch_amplitude.max))
                 spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.max * 1000 / 2)))
 
         if 'a_ch2' in amplitude.keys():
             if (amplitude['a_ch2'] >= constraints.a_ch_amplitude.min) and\
                     (amplitude['a_ch2'] <= constraints.a_ch_amplitude.max):
-                # channel0 amplitude in mV
+                # channel1 amplitude in mV
                 spcm_dwSetParam_i32(self._hCard, SPC_AMP1, int32(int(amplitude['a_ch2']*1000/2)))
             elif amplitude['a_ch2'] < constraints.a_ch_amplitude.min:
                 self.log.warning(
-                    'Requested amplitude for a_ch1 is too low for AWG. Setting to min. allowed value of {} V'.format(
-                        constraints.a_ch_amplitude.min))
+                    'Requested amplitude for a_ch2 ({} V) is too low for AWG. Setting to min. allowed value of {} V'.
+                    format(amplitude['a_ch2'], constraints.a_ch_amplitude.min))
                 spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.min * 1000 / 2)))
             elif amplitude['a_ch2'] > constraints.a_ch_amplitude.max:
                 self.log.warning(
-                    'Requested amplitude for a_ch1 is too high for AWG. Setting to max. allowed value of {} V'.format(
-                        constraints.a_ch_amplitude.max))
+                    'Requested amplitude for a_ch2 ({} V) is too high for AWG. Setting to max. allowed value of {} V'.
+                    format(amplitude['a_ch2'], constraints.a_ch_amplitude.max))
                 spcm_dwSetParam_i32(self._hCard, SPC_AMP0, int32(int(constraints.a_ch_amplitude.max * 1000 / 2)))
 
         self.read_out_error()
@@ -1086,8 +1076,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
-        self.log.warning('Setting the digital voltage levels is not available for the Spectrum M4i AWG series!\n'
-                         'Method call will be ignored.')
+        # self.log.warning('Setting the digital voltage levels is not available for the Spectrum M4i AWG series!\n'
+        #                  'Method call will be ignored.')
         return self.get_digital_level()
 
     def get_active_channels(self, ch=None):
@@ -1346,13 +1336,14 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.connected = True
             return 0
 
-    def reset_for_waveform_sequence_switch(self):
+    def reset_with_settings_retained(self):
         """ Reset the device, and prepare in a default state:
 
         All channels activated (a_ch1, a_ch2, d_ch1, d_ch2, d_ch3)
         Output for all channels deactivated
-        Analogue amplitudes: 4 V peak-to-peak
-        AWG timeout:         25 s
+        Analogue amplitudes: returned to their value before the reset
+        sample rate: returned to value before the reset
+        AWG timeout: returned to value before the reset
 
         @return int: error code (0:OK, -1:error)
         """
@@ -1364,11 +1355,12 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
 
         self.read_out_error()
         reset_outcome = self._spcm_dwSetParam_i64(SPC_M2CMD, M2CMD_CARD_RESET)
+        time.sleep(1)
+        # reset_outcome = self._spcm_dwSetParam_i64(SPC_M2CMD, M2CMD_CARD_RESET)
         self.current_status = 0
 
         # return to previous settings
-        print(ampl_dict)
-        self.set_analog_level(ampl_dict)
+        self.set_analog_level(ampl_dict, offset_dict)
         self.set_sample_rate(sample_rate)
         self._spcm_dwSetParam_i32(SPC_TIMEOUT, awg_timeout)
 
@@ -1393,7 +1385,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
             self.log.error('AWG reset error')
             return -1
         else:
-            self.log.info('AWG reset for waveform-sequence switch successful')
+            # self.log.info('AWG reset for waveform-sequence switch successful')
             self.connected = True
             return 0
 
@@ -1629,7 +1621,8 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         self._frequency_list = list(np.arange(freq_start, freq_stop, freq_step))
         n_freq_steps = len(self._frequency_list)
 
-        n_samples_per_step = 400 * 32  # with a 1.25 GS/s sampling rate, this equates to 10.2us per frequency step
+        # n_samples_per_step = 400 * 32  # with 1.25 GS/s sampling rate, 400 samples equates to 10.2us per frequency step
+        n_samples_per_step = self.cw_odmr_samples_per_step
         n_samples = n_samples_per_step * n_freq_steps
 
         sample_rate = self.get_sample_rate()
@@ -1696,7 +1689,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         n_actual_segments = int(pow(2, np.ceil(np.log2(n_segments))))
 
         # desired number of samples per segment
-        desired_n_samples = 400 * 32  # should be a multiple of 32
+        # with 1.25 GS/s sampling rate, 400 samples equates to 10.2us per frequency step
+        desired_n_samples = self.cw_odmr_samples_per_step
+        # desired_n_samples = 4000 * 32  # should be a multiple of 32.
         memory_size_bytes_per_channel = self._spcm_dwGetParam_i64(SPC_PCIMEMSIZE) / self._spcm_dwGetParam_i64(SPC_MIINST_CHPERMODULE)
         memory_size_samples_per_channel = memory_size_bytes_per_channel / self._spcm_dwGetParam_i64(SPC_MIINST_BYTESPERSAMPLE)
         max_n_samples = memory_size_samples_per_channel / n_actual_segments
@@ -1773,7 +1768,7 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         name = 'odmr_freqstep{}'.format(n_freq_steps)
         parameters_dict = dict()
         parameters_dict['repetitions'] = 0
-        parameters_dict['go_to'] = 0
+        parameters_dict['go_to'] = 1 # LOCALFIX Andrew 18/3/2019 - sequence not looping correctly
         parameters_dict['event_jump_to'] = 0
         parameters_dict['event_trigger'] = 'OFF'
         parameters_dict['wait_for'] = 'ON'
@@ -1811,7 +1806,9 @@ class AWGSpectrumM4i6631x8(Base, PulserInterface):
         n_actual_segments = int(pow(2, np.ceil(np.log2(n_segments))))
 
         # desired number of samples per segment
-        desired_n_samples = 400 * 32  # should be a multiple of 32
+        # with 1.25 GS/s sampling rate, 400 samples equates to 10.2us per frequency step
+        desired_n_samples = self.cw_odmr_samples_per_step
+        # desired_n_samples = 4000 * 32  # should be a multiple of 32.
         memory_size_bytes_per_channel = self._spcm_dwGetParam_i64(SPC_PCIMEMSIZE) / self._spcm_dwGetParam_i64(SPC_MIINST_CHPERMODULE)
         memory_size_samples_per_channel = memory_size_bytes_per_channel / self._spcm_dwGetParam_i64(SPC_MIINST_BYTESPERSAMPLE)
         max_n_samples = memory_size_samples_per_channel / n_actual_segments

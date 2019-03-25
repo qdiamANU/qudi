@@ -44,7 +44,7 @@ class FastCounterDummy(Base, FastCounterInterface):
     _modtype = 'hardware'
 
     # config option
-    _gated = ConfigOption('gated', False, missing='warn')
+    _gated = ConfigOption('gated', True, missing='warn')
     trace_path = ConfigOption('load_trace', None)
 
     def __init__(self, config, **kwargs):
@@ -62,12 +62,19 @@ class FastCounterDummy(Base, FastCounterInterface):
                 'tools',
                 'FastComTec_demo_timetrace.asc')
 
+
+
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
         self.statusvar = 0
         self._binwidth = 1
         self._gate_length_bins = 8192
+
+        self._number_of_gates = int(100)
+        self._bin_width = 1
+        self._record_length = int(4000)
+
         return
 
     def on_deactivate(self):
@@ -118,7 +125,7 @@ class FastCounterDummy(Base, FastCounterInterface):
 
         return constraints
 
-    def configure(self, bin_width_s, record_length_s, number_of_gates = 0):
+    def configure(self, bin_width_s, record_length_s, number_of_gates=0, next_channel=None):
         """ Configuration of the fast counter.
 
         @param float bin_width_s: Length of a single time bin in the time trace

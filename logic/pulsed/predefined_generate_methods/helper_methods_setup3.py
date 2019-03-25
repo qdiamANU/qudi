@@ -49,7 +49,7 @@ class HelperMethods(PredefinedGeneratorBase):
         # todo: the minimum number of samples for a sequence waveform is currently hard-coded into this file.
         # Defining a single parameter here is better than just using a number throughout the class, as before
         # But the class should really be re-written so that all of this is dealt with in the hardware file
-        # the minimum waveform length for the Spectrum AWG is only 384 samples. Any required idle time is already
+        # the minimum waveform length for the Spectrum AWG is 384 samples. Any required idle time is already
         # applied in the AWG hardware file, when writing the waveform for each pulse ensemble
         self.minimum_number_of_samples = 384
 
@@ -93,9 +93,7 @@ class HelperMethods(PredefinedGeneratorBase):
         created_ensembles.append(block_ensemble)
         return created_blocks, created_ensembles, list()
 
-
-
-    def generate_laser_wait(self, name='laser_wait', laser_length=500e-9, wait_length = 1e-6):
+    def generate_laser_wait(self, name='laser_wait', laser_length=500e-9, wait_length = 1e-6, trigger=True):
         """ Generates Laser pulse and waiting (idle) time.
 
         @param str name: Name of the PulseBlockEnsemble
@@ -117,7 +115,10 @@ class HelperMethods(PredefinedGeneratorBase):
             wait_length = self._adjust_to_samplingrate(wait_length, 2)
 
         # create the laser element
-        laser_element = self._get_laser_gate_element(length=laser_length, increment=0)
+        if trigger:
+            laser_element = self._get_laser_gate_element(length=laser_length, increment=0)
+        else:
+            laser_element = self._get_laser_element(length=laser_length, increment=0)
         waiting_element = self._get_idle_element(length=wait_length, increment=0.0)
         # Create the element list
         block = PulseBlock(name=name)
@@ -256,7 +257,7 @@ class HelperMethods(PredefinedGeneratorBase):
 ################################### Trigger helper methods ######################################
 
     def generate_trigger(self, name='trigger', tau=1e-6, digital_channel='d_ch1'):
-        """ Generates an element where the orange laser is turned on.
+        """ Generates an element with a digital trigger
 
         @param str name: Name of the PulseBlockEnsemble
         @param float tau: duration in seconds
@@ -276,10 +277,10 @@ class HelperMethods(PredefinedGeneratorBase):
                              '{1}'.format(tau, self.pulse_generator_settings['sample_rate']))
 
         # get the trigger element
-        laser_element = self._get_trigger_element(length=tau, increment=0.0, channels=digital_channel)
+        trigger_element = self._get_trigger_element(length=tau, increment=0.0, channels=digital_channel)
 
         block = PulseBlock(name=name)
-        block.append(laser_element)
+        block.append(trigger_element)
         created_blocks.append(block)
 
         # Create block ensemble
@@ -335,7 +336,7 @@ class HelperMethods(PredefinedGeneratorBase):
 
     ################################## sequence parts ######################################
 
-    def generate_singleshot_readout(self, name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=0.1,
+    def generate_singleshot_readout_s3(self, name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=0.1,
                                     mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=0.1,
                                     mw_cnot_frequency2=2.8e9, mw_cnot_phase2=0, ssr_normalise=True):
         """
@@ -404,7 +405,7 @@ class HelperMethods(PredefinedGeneratorBase):
 
 
     def generate_single_mw_pulse(self, name='MW_pulse', tau=1e-6, microwave_amplitude=1.0,
-                                    microwave_frequency = 1e6, microwave_phase=0.0):
+                                    microwave_frequency = 1e6, microwave_phase=0.0, channel='none'):
 
         # In sequence mode there is a minimum waveform length of self.minimum_number_of_samples sample. If the pulse is to short add an
         # extra idle time before the pulse to take that into account
@@ -418,7 +419,8 @@ class HelperMethods(PredefinedGeneratorBase):
                                           increment=0.0,
                                           amp=microwave_amplitude,
                                           freq=microwave_frequency,
-                                          phase=microwave_phase)
+                                          phase=microwave_phase,
+                                          channel=channel)
 
         # Create PulseBlock object
         block = PulseBlock(name=name)
@@ -566,30 +568,73 @@ class HelperMethods(PredefinedGeneratorBase):
 ################################################## RF methods ###################################
 
 
-    def _chopped_rf_pulse(self, name, rf_duration, rf_amp, rf_freq, rf_phase):
-        # analyse the rf pulse
-        rf_dict = self._analyse_rf_pulse(rf_duration, rf_freq)
-        # generate first part of rf pulse
-        if rf_dict['number_periods'] > 0:
+    def _chopped_rf_pulse(self, name, rf_duration, rf_amp, rf_freq, rf_phase, rf_channel):
+        """
+        The function of chopped_rf_pulse is to reduce the data upload burden to the AWG, by 'chopping' the rf
+        pulse into a number of periods
+
+        generates two waveforms - rf pulse 1 which is an integer number of rf periods (or idle if pulse is shorter than
+        one period), and rf pulse 2, which is the remaining fractional period.
+        The output is then two sequence elements, where rf pulse 1 is repeated N times, and rf pulse 2 is played once.
+        The number of repetitions, N, is chosen to match the desired total rf pulse duration
+
+        Unfortunately, this technique doesn't work well with Spectrum AWGs (at least how the ANU one is set up as of
+        25/2/2019), as there is a ca. 10ns idle period between repetitions of a waveform
+
+        :param name:
+        :param rf_duration:
+        :param rf_amp:
+        :param rf_freq:
+        :param rf_phase:
+        :param rf_channel:
+        :return: created_blocks, created_ensembles, list1, list2
+        list 1 = [name+'1', seq_param] - details for rf pulse 1
+        list 1 = [name+'2', seq_param2] - details for rf pulse 2
+        """
+
+
+        rf_period = 1.0/rf_freq
+        n_periods = np.floor(rf_duration / rf_period)
+        # print('\n n_periods = {}'.format(n_periods))
+
+        if n_periods == 0:
+            # If there is not more than 1 period just make rf pulse 1 an idle period with minimal length
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_single_mw_pulse(name=name+'1', tau=rf_dict['period'], microwave_amplitude=rf_amp,
-                                                 microwave_frequency=rf_freq, microwave_phase=rf_phase)
+                self.generate_idle_s3(name=name + '1',
+                                      tau=self.minimum_number_of_samples / self.pulse_generator_settings['sample_rate'])
+            n_repetitions = 0
+            rf_pulse2_duration = rf_duration
         else:
-            # If there is not more than 1 period just makes this an idle with minimal length
+            # min. number of rf periods limited by min. number of samples for a waveform in an AWG sequence
+            rf_pulse1_n_periods = np.ceil((self.minimum_number_of_samples / self.sample_rate) / rf_period)
+            # rf_pulse1_duration multiplicity has to be two to avoid granularity problems with AWG
+            rf_pulse1_duration = self._adjust_to_samplingrate(rf_pulse1_n_periods * rf_period, 2)
+            # print('rf_pulse1_n_periods = {}, rf_pulse1_duration = {}'.format(rf_pulse1_n_periods, rf_pulse1_duration))
+
+            # calculate duration for rf pulse 2
+            rf_pulse2_duration = rf_duration % rf_pulse1_duration
+            rf_pulse2_duration = self._adjust_to_samplingrate(rf_pulse2_duration + rf_period, 2)
+            # extra ps length helps to prevent granularity problems (from Ulm - untested with ANU hardware):
+            rf_pulse2_duration += 1e-12
+            # print('rf_pulse2_duration = {}'.format(rf_pulse2_duration))
+
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_idle_s3(name=name + '1', tau=self.minimum_number_of_samples/self.pulse_generator_settings['sample_rate'])
-            # set it to 1 so it is repeated at least once
-            rf_dict['number_periods'] = 1
+                self.generate_single_mw_pulse(name=name+'1', tau=rf_pulse1_duration,
+                                              microwave_amplitude=rf_amp, microwave_frequency=rf_freq,
+                                              microwave_phase=rf_phase, channel=rf_channel)
+            n_repetitions = int(np.floor(rf_duration / rf_pulse1_duration)-1)
+            # print('n_repetitions = {}'.format(n_repetitions))
+
         created_blocks = created_blocks_tmp
         created_ensembles = created_ensembles_tmp
         # add sequence parameters
-        seq_param = self._customize_seq_para({'repetitions': rf_dict['number_periods']-1})
+        seq_param = self._customize_seq_para({'repetitions': n_repetitions})
         list1 = [name+'1', seq_param]
 
         # generate second part of rf pulse
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-            self.generate_single_mw_pulse(name=name+'2', tau=rf_dict['remainder'], microwave_amplitude=rf_amp,
-                                             microwave_frequency=rf_freq, microwave_phase=rf_phase)
+            self.generate_single_mw_pulse(name=name+'2', tau=rf_pulse2_duration, microwave_amplitude=rf_amp,
+                                             microwave_frequency=rf_freq, microwave_phase=rf_phase, channel=rf_channel)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         # add sequence parameters
@@ -599,13 +644,14 @@ class HelperMethods(PredefinedGeneratorBase):
         return created_blocks, created_ensembles, list1, list2
 
 
-    def _analyse_rf_pulse(self, rf_duration, rf_freq):
+    def _analyse_rf_pulse(self, rf_duration, rf_freq, number_of_rf_periods_per_waveform):
         rf_dict={'rf_duration': rf_duration}
         rf_dict['rf_freq'] = rf_freq
         period = 1.0/rf_freq
+
         # multiplicity has to be two to avoid granularity problems  with AWG
         rf_dict['period'] = self._adjust_to_samplingrate(period, 2)
-        rf_dict['number_periods'] = int(rf_duration / period) - 1
+        rf_dict['number_periods'] = np.floor(rf_duration / period)
         if rf_dict['number_periods'] > 0:
             remainder = rf_duration % rf_dict['period']
             remainder = self._adjust_to_samplingrate(remainder + rf_dict['period'], 2)
@@ -614,8 +660,6 @@ class HelperMethods(PredefinedGeneratorBase):
         # this helps to prevent granularity problems
         rf_dict['remainder'] = remainder + 1e-12
         return rf_dict
-
-
 
 ################################### Sequence options ##########################################
 

@@ -299,7 +299,7 @@ Threshold</string>
           </size>
          </property>
          <property name="text">
-          <string>Fidelity (left/rigth)</string>
+          <string>Fidelity (left/right)</string>
          </property>
         </widget>
        </item>

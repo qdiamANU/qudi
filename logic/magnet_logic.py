@@ -29,6 +29,7 @@ from core.module import Connector, ConfigOption, StatusVar
 from logic.generic_logic import GenericLogic
 from qtpy import QtCore
 from interface.slow_counter_interface import CountingMode
+import scipy.optimize as opt
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -1147,6 +1148,7 @@ class MagnetLogic(GenericLogic):
                                           self._optimizer_logic.optim_pos_x,
                                           self._optimizer_logic.optim_pos_y,
                                           self._optimizer_logic.optim_pos_z)
+    """below is old code
     def twoD_gaussian_fit(self):
         count_data = self._2D_data_matrix
         x_val = self._2D_axis0_data
@@ -1161,7 +1163,23 @@ class MagnetLogic(GenericLogic):
             estimator=self._fit_logic.estimate_twoDgaussian_MLE
         )
         return result_2D_gaus, result_2D_gaus.fit_report()
+    """
 
+    def twoD_gaussian_fit(self):
+        count_data = self._2D_data_matrix
+        x_val = self._2D_axis0_data
+        y_val = self._2D_axis1_data
+        fit_x, fit_y = np.meshgrid(x_val, y_val)
+        xy_fit_data = count_data[:, :].ravel()
+
+        p0_guess = [float(xy_fit_data.max()-xy_fit_data.min()), (x_val.max()-x_val.min())/2, (y_val.max()-y_val.min())/2, (x_val.max()-x_val.min())/3, (y_val.max()-y_val.min())/3, 0, float(xy_fit_data.min())]
+
+        popt, pcov = opt.curve_fit(self._fit_logic.twoDgaussian_function, (x_val, y_val), xy_fit_data, p0=p0_guess, bounds=((0, x_val.min(), y_val.min(), 0, 0, 0, 0), (np.inf, x_val.max(), y_val.max(), 1e8, 1e8, np.pi/2, 1e8)))
+
+        opt_x = popt[1]
+        opt_y = popt[2]
+
+        return popt
 
     def _do_alignment_measurement(self):
         """ That is the main method which contains all functions with measurement routines.

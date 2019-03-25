@@ -222,6 +222,7 @@ class PulseExtractor(PulseExtractorBase):
         else:
             extraction_method = self._ungated_extraction_methods[self._current_extraction_method]
         kwargs = self._get_extraction_method_kwargs(extraction_method)
+
         return extraction_method(count_data=count_data, **kwargs)
 
     def _get_extraction_method_kwargs(self, method):
@@ -236,17 +237,21 @@ class PulseExtractor(PulseExtractorBase):
         """
         kwargs_dict = dict()
         method_signature = inspect.signature(method)
+        # print('pulse_extractor method_signature = {}, parameters.keys={}'.format(method_signature, method_signature.parameters.keys()))
         for name in method_signature.parameters.keys():
             if name == 'count_data':
                 continue
 
             default = method_signature.parameters[name].default
             recalled = self._parameters.get(name)
+            # print('pulse_extractor default = {}'.format(default))
+            # print('pulse_extractor recalled = {}'.format(recalled))
 
             if recalled is not None and type(recalled) == type(default):
                 kwargs_dict[name] = recalled
             else:
                 kwargs_dict[name] = default
+        # print('pulse_extractor kwargs_dict = {}'.format(kwargs_dict))
         return kwargs_dict
 
     def __import_external_extractors(self, paths):

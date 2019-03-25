@@ -128,7 +128,6 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         """
 
         """
-        print('basic methods: generate rabi')
         created_blocks = list()
         created_ensembles = list()
         created_sequences = list()
@@ -181,7 +180,7 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         created_ensembles.append(block_ensemble)
         return created_blocks, created_ensembles, created_sequences
 
-    def generate_pulsedodmr(self, name='pulsedODMR', freq_start=2870.0e6, freq_step=0.2e6,
+    def generate_pulsedodmr(self, name='pulsedODMR', freq_start=100.0e6, freq_step=0.2e6,
                             num_of_points=50):
         """
 

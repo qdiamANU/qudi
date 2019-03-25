@@ -73,8 +73,8 @@ class SequenceGeneratorLogic(GenericLogic):
     # Global parameters describing the channel usage and common parameters used during pulsed object
     # generation for predefined methods.
     _generation_parameters = StatusVar(default=OrderedDict([('laser_channel', 'd_ch1'),
-                                                            ('sync_channel', ''),
-                                                            ('gate_channel', ''),
+                                                            ('sync_channel', 'd_ch2'),
+                                                            ('gate_channel', 'd_ch3'),
                                                             ('microwave_channel', 'a_ch1'),
                                                             ('microwave_frequency', 2.87e9),
                                                             ('microwave_amplitude', 0.0),
@@ -462,7 +462,7 @@ class SequenceGeneratorLogic(GenericLogic):
                                    'PulseBlockEnsemble.'.format(waveform, ensemble.name))
                     self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
                     return
-            # fixme: there is no way of resetting after triggering this, other than restarting qudi
+            # fixme: there is no way of resetting after triggering this error, other than restarting qudi
             if self.pulsegenerator().get_status()[0] > 0:
                 self.log.error('Can´t load a waveform, because pulser running. Switch off the pulser and try again.')
                 # return -1
@@ -903,6 +903,9 @@ class SequenceGeneratorLogic(GenericLogic):
         @param name:
         @return:
         """
+
+        print('get_sequence: name = {}'.format(name))
+        # print('get_sequence: self._saved_pulse_sequences = {}'.format(self._saved_pulse_sequences))
         if name not in self._saved_pulse_sequences:
             self.log.warning('PulseSequence "{0}" could not be found in saved pulse sequences.\n'
                              'Returning None.'.format(name))
@@ -1002,6 +1005,39 @@ class SequenceGeneratorLogic(GenericLogic):
         for sequence in self.saved_pulse_sequences.values():
             self._save_sequence_to_file(sequence)
         return
+#
+# {'name': 'SSR-Rabi', 'tau_start': 1e-06, 'tau_step': 1e-06, 'num_of_points': 2, 'laser_name': 'laser_wait',
+#  'laser_length': 4e-07, 'wait_length': 1e-06, 'rf_cnot_name': 'RF', 'rf_cnot_freq': 2000000.0, 'rf_cnot_amp': 0.2,
+#  'rf_cnot_duration': 3e-06, 'rf_cnot_phase': 0, 'ssr_name': 'SSR', 'mw_cnot_rabi_period': 1e-06,
+#  'mw_cnot_amplitude': 2.0, 'mw_cnot_frequency': 5000000.0, 'mw_cnot_phase': 0, 'mw_cnot_amplitude2': 1.0,
+#  'mw_cnot_frequency2': 7500000.0, 'mw_cnot_phase2': 0, 'ssr_normalise': False, 'counts_per_readout': 3,
+#  'sync_gate_name': 'sync_gate', 'rf_channel': 'a_ch2'}
+# SSR_Rabi, para_dict = {'created_sequences': [], 'created_ensembles': [], 'created_blocks': [], 'rf_channel': 'a_ch2',
+#                         'sync_gate_name': 'sync_gate', 'counts_per_readout': 3, 'ssr_normalise': False,
+#                          'mw_cnot_phase2': 0, 'mw_cnot_frequency2': 7500000.0,
+#                        'mw_cnot_amplitude2': 1.0, 'mw_cnot_phase': 0, 'mw_cnot_frequency': 5000000.0,
+#                        'mw_cnot_amplitude': 2.0, 'mw_cnot_rabi_period': 1e-06, 'ssr_name': 'SSR',
+#                        'rf_cnot_phase': 0, 'rf_cnot_duration': 3e-06, 'rf_cnot_amp': 0.2, 'rf_cnot_freq': 2000000.0,
+#                        'rf_cnot_name': 'RF', 'wait_length': 1e-06, 'laser_length': 4e-07,
+#                        'laser_name': 'laser_wait', 'num_of_points': 2, 'tau_step': 1e-06, 'tau_start': 1e-06,
+#                        'name': 'SSR-Rabi', 'self': < ssr_methods.SSRPredefinedGeneratorS3 object at 0x0000005080778160 >}
+#
+# {'name': 'SSR-Rabi', 'tau_start': 1e-06, 'tau_step': 1e-06, 'num_of_points': 2, 'laser_name': 'laser_wait',
+#  'laser_length': 4e-07, 'wait_length': 1e-06, 'rf_cnot_name': 'RF', 'rf_cnot_freq': 2000000.0, 'rf_cnot_amp': 0.2,
+#  'rf_cnot_duration': 3e-06, 'rf_cnot_phase': 0, 'ssr_name': 'SSR', 'mw_cnot_rabi_period': 1e-06,
+#  'mw_cnot_amplitude': 2.0, 'mw_cnot_frequency': 5000000.0, 'mw_cnot_phase': 0, 'mw_cnot_amplitude2': 1.0,
+#  'mw_cnot_frequency2': 7500000.0, 'mw_cnot_phase2': 0, 'ssr_normalise': False, 'counts_per_readout': 3,
+#  'sync_gate_name': 'sync_gate', 'rf_channel': 'a_ch2'}
+# SSR_Rabi, para_dict = {'created_sequences': [], 'created_ensembles': [], 'created_blocks': [], 'rf_channel': 'a_ch2',
+#                        'sync_gate_name': 'sync_gate', 'counts_per_readout': 3, 'ssr_normalise': False,
+#                        'mw_cnot_phase2': [0, 0, 0], 'mw_cnot_frequency2': array([ 8030000.,  5864000.,  3698000.]),
+#                        'mw_cnot_amplitude2': [2, 0, 0], 'mw_cnot_phase': [0, 0, 0], 'mw_cnot_frequency': array([ 5000000.,  2834000.,   668000.]),
+#                        'mw_cnot_amplitude': [2, 0, 0], 'mw_cnot_rabi_period': 2e-06, 'ssr_name': 'SSR',
+#                        'rf_cnot_phase': 0, 'rf_cnot_duration': 1.5e-06, 'rf_cnot_amp': 0.25, 'rf_cnot_freq': 1000000.0,
+#                        'rf_cnot_name': 'RF', 'wait_length': 1e-06, 'laser_length': 3e-06,
+#                        'laser_name': 'laser_wait', 'num_of_points': 2, 'tau_step': 1e-06, 'tau_start': 1e-06,
+#                        'name': 'SSR-Rabi', 'self': <ssr_methods.SSRPredefinedGeneratorS3 object at 0x0000005080778160>}
+
 
     def generate_predefined_sequence(self, predefined_sequence_name, kwargs_dict):
         """
@@ -1010,8 +1046,11 @@ class SequenceGeneratorLogic(GenericLogic):
         @param kwargs_dict:
         @return:
         """
+        # print('seq-logic.generate_predefineduence_seq, name = {}'.format(predefined_sequence_name))
         gen_method = self.generate_methods[predefined_sequence_name]
         gen_params = self.generate_method_params[predefined_sequence_name]
+        # print('seq-logic.generate_predefineduence_seq, gen_method = {}'.format(gen_method))
+        # print('seq-logic.generate_predefineduence_seq, gen_params = {}'.format(gen_params))
         # match parameters to method and throw out unwanted ones
         thrown_out_params = [param for param in kwargs_dict if param not in gen_params]
         for param in thrown_out_params:
@@ -1083,6 +1122,7 @@ class SequenceGeneratorLogic(GenericLogic):
         # channel instead of the laser trigger.
         laser_channel = self.generation_parameters['gate_channel'] if self.generation_parameters[
             'gate_channel'] else self.generation_parameters['laser_channel']
+        # todo Andrew 13/3/2019: For SSR, should be the number of sync gates. Not sure of best way to implement conditionally for SSR measurements
 
         length_bins = 0
         length_s = 0 if sequence.is_finite else np.inf

@@ -718,7 +718,7 @@ class ODMRLogic(GenericLogic):
         return self._odmr_counter.get_odmr_channels()
 
     def get_hw_constraints(self):
-        """ Return the names of all ocnfigured fit functions.
+        """ Return the names of all configured fit functions.
         @return object: Hardware constraints object
         """
         constraints = self._mw_device.get_limits()
