@@ -551,7 +551,7 @@ a
         """
         channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel, self._apd_gate_channel])
         self.pulse_streamer.constant(pulse_streamer_pb2.PulseMessage(ticks=0, digi=channels, ao0=0, ao1=0))
-        self.pulse_streamer.constant(laser_on)
+        #self.pulse_streamer.constant(laser_on)
         return 0
 
     def has_sequence_mode(self):
