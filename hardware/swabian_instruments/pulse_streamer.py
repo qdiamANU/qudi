@@ -52,7 +52,7 @@ class PulseStreamer(Base, PulserInterface):
         self.__current_status = -1
         self.__currently_loaded_waveform = ''  # loaded and armed waveform name
         self.__samples_written = 0
-        self.__trigger = ps.TriggerStart.SOFTWARE
+        self._trigger = ps.TriggerStart.SOFTWARE
         self._laser_mw_on_state = ps.OutputState([self._laser_channel, self._uw_x_channel], 0, 0)
 
     def on_activate(self):
