@@ -63,7 +63,7 @@ class SamplingFunctions():
         # <general_parameter> = {}
         freq_def = {'unit': 'Hz', 'init_val': 0.0, 'min': 0.0, 'max': np.inf,
                     'view_stepsize': 1.0, 'dec': 15, 'type': float}
-        ampl_def = {'unit': 'V', 'init_val': 0.0, 'min': 0.0, 'max': 1.0,
+        ampl_def = {'unit': 'V', 'init_val': 0.0, 'min': 0.0, 'max': 2.0,
                     'view_stepsize': 0.01, 'dec': 15, 'type': float}
         phase_def = {'unit': '°', 'init_val': 0.0, 'min': -360, 'max': 360,
                      'view_stepsize': 0.1, 'dec': 15, 'type': float}
@@ -132,7 +132,7 @@ class SamplingFunctions():
         return result_arr
 
     def _dc(self, time_arr, parameters):
-        amp = parameters['amplitude1']
+        amp = 2*parameters['amplitude1']
         result_arr = np.full(len(time_arr), amp, dtype='float64')
         return result_arr
 
@@ -151,7 +151,7 @@ class SamplingFunctions():
         return result_arr
 
     def _doublesin(self, time_arr, parameters):
-        amp1 = 2*parameters['amplitude1'] #conversion so that the AWG actually outputs the specified voltage
+        amp1 = 2# *parameters['amplitude1'] #conversion so that the AWG actually outputs the specified voltage
         amp2 = 2*parameters['amplitude2'] #conversion so that the AWG actually outputs the specified voltage
         freq1 = parameters['frequency1']
         freq2 = parameters['frequency2']

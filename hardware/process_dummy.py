@@ -27,7 +27,14 @@ import numpy as np
 
 class ProcessDummy(Base, ProcessInterface, ProcessControlInterface):
     """ Methods to control slow laser switching devices.
+
+    Example config for copy-paste:
+
+    process_dummy:
+        module.Class: 'process_dummy.ProcessDummy'
+
     """
+
     _modclass = 'Process'
     _modtype = 'hardware'
 
@@ -58,7 +65,7 @@ class ProcessDummy(Base, ProcessInterface, ProcessControlInterface):
 
             @return float: process unit
         """
-        return ('K', 'kelvin')
+        return 'K', 'kelvin'
 
     def setControlValue(self, value):
         """ Set control value, here heating power.
@@ -79,14 +86,14 @@ class ProcessDummy(Base, ProcessInterface, ProcessControlInterface):
 
             @return tuple(str): short and text unit of control value
         """
-        return ('%', 'percent')
+        return '%', 'percent'
 
     def getControlLimits(self):
         """ Get minimum and maximum of control value.
 
             @return tuple(float, float): minimum and maximum of control value
         """
-        return (-100, 100)
+        return -100, 100
 
     def _recalcTemp(self):
         """ Update current temperature based on model.
@@ -97,7 +104,6 @@ class ProcessDummy(Base, ProcessInterface, ProcessControlInterface):
         if abs(dt) > 10:
             dt = 10*np.sign(dt)
         self.temperature = self.temperature + dt
-        # print(self.temperature, self.pwmpower, heatCapacity)
 
     def metalHeatCapacity(self, T):
         """ Calculate heat capacity of copper at given temperature.

@@ -29,6 +29,14 @@ import RPi.GPIO as GPIO
 
 class PiPWM(Base, ProcessControlInterface):
     """ Hardware module for Raspberry Pi-based PWM controller.
+
+    Example config for copy-paste:
+
+    pi_pwm:
+        module.Class: 'pi_pwm.PiPWM'
+        channel: 0
+        frequency: 100 # in Hz
+
     """
 
     _modclass = 'ProcessControlInterface'
@@ -146,14 +154,14 @@ class PiPWM(Base, ProcessControlInterface):
 
             @return tuple(str, str): short and text form of unit
         """
-        return ('%', 'percent')
+        return '%', 'percent'
 
     def getControlLimits(self):
         """ Get minimum and maxuimum value for control value.
 
             @return tuple(float, float): min and max control value
         """
-        return (-100, 100)
+        return -100, 100
 
 
 class PiPWMHalf(PiPWM):
@@ -170,4 +178,4 @@ class PiPWMHalf(PiPWM):
 
             @return tuple(float, float): min and max control value
         """
-        return (0, 100)
+        return 0, 100

@@ -147,11 +147,21 @@ class ACQDATA(ctypes.Structure):
 
 
 class FastComtec(Base, FastCounterInterface):
-    """
+    """ Hardware Class for the FastComtec Card.
+
     unstable: Jochen Scheuer, Simon Schmitt
 
-    Hardware Class for the FastComtec Card.
+    Example config for copy-paste:
+
+    fastcomtec_p7887:
+        module.Class: 'fastcomtec.fastcomtecp7887.FastComtec'
+        gated: False
+        trigger_safety: 200e-9
+        aom_delay: 400e-9
+        minimal_binwidth: 0.25e-9
+
     """
+
     _modclass = 'FastComtec'
     _modtype = 'hardware'
     gated = ConfigOption('gated', False, missing='warn')
@@ -263,7 +273,7 @@ class FastComtec(Base, FastCounterInterface):
         if filename is not None:
             self._change_filename(filename)
 
-        return (self.get_binwidth(), record_length_FastComTech_s, number_of_gates)
+        return self.get_binwidth(), record_length_FastComTech_s, number_of_gates
 
 
 
@@ -305,7 +315,7 @@ class FastComtec(Base, FastCounterInterface):
 
     def get_current_sweeps(self):
         """
-        Returns the current runtime.
+        Returns the current sweeps.
         @return int sweeps: in sweeps
         """
         status = AcqStatus()
@@ -401,11 +411,13 @@ class FastComtec(Base, FastCounterInterface):
         if self.gated and self.timetrace_tmp != []:
             time_trace = time_trace + self.timetrace_tmp
 
-        return time_trace
+        info_dict = {'elapsed_sweeps': self.get_current_sweeps(),
+                     'elapsed_time': None} 
+        return time_trace, info_dict
 
 
     def get_data_testfile(self):
-        ''' Load data test file '''
+        """ Load data test file """
         data = np.loadtxt(os.path.join(get_main_dir(), 'tools', 'FastComTec_demo_timetrace.asc'))
         time.sleep(0.5)
         return data
@@ -467,13 +479,13 @@ class FastComtec(Base, FastCounterInterface):
             self.dll.RunCmd(0, bytes(cmd, 'ascii'))
             cmd = 'roimax={0}'.format(int(length_bins))
             self.dll.RunCmd(0, bytes(cmd, 'ascii'))
-            if preset != None:
+            if preset is not None:
                 cmd = 'swpreset={0}'.format(preset)
                 self.dll.RunCmd(0, bytes(cmd, 'ascii'))
-            if cycles != None and cycles != 0:
+            if cycles:
                 cmd = 'cycles={0}'.format(cycles)
                 self.dll.RunCmd(0, bytes(cmd, 'ascii'))
-            if sequences != None and sequences != 0:
+            if sequences:
                 cmd = 'sequences={0}'.format(sequences)
                 self.dll.RunCmd(0, bytes(cmd, 'ascii'))
             return self.get_length()

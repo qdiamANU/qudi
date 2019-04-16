@@ -27,10 +27,17 @@ from interface.confocal_scanner_interface import ConfocalScannerInterface
 
 
 class ConfocalScannerDummy(Base, ConfocalScannerInterface):
+    """ Dummy confocal scanner. Produces a picture with several gaussian spots.
 
-    """ Dummy confocal scanner.
-        Produces a picture with several gaussian spots.
+    Example config for copy-paste:
+
+    confocal_scanner_dummy:
+        module.Class: 'confocal_scanner_dummy.ConfocalScannerDummy'
+        clock_frequency: 100 # in Hz
+        fitlogic: 'fitlogic' # name of the fitlogic module, see default config
+
     """
+
     _modclass = 'ConfocalScannerDummy'
     _modtype = 'hardware'
 
@@ -419,11 +426,9 @@ class ConfocalScannerDummy(Base, ConfocalScannerInterface):
         if not isinstance( x_data,(frozenset, list, set, tuple, np.ndarray)):
             self.log.error('Given range of axis is no array type.')
 
-
         parameters=[amplitude,x_zero,sigma,offset]
         for var in parameters:
-            if not isinstance(var,(float,int)):
-                print('error',var)
+            if not isinstance(var, (float, int)):
                 self.log.error('Given range of parameter is no float or int.')
         gaussian = amplitude*np.exp(-(x_data-x_zero)**2/(2*sigma**2))+offset
         return gaussian

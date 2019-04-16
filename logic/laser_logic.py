@@ -23,7 +23,7 @@ import time
 import numpy as np
 from qtpy import QtCore
 
-from core.module import Connector
+from core.module import Connector, ConfigOption
 from logic.generic_logic import GenericLogic
 from interface.simple_laser_interface import ControlMode, ShutterState, LaserState
 
@@ -34,7 +34,9 @@ class LaserLogic(GenericLogic):
     _modclass = 'laser'
     _modtype = 'logic'
 
+    # waiting time between queries im milliseconds
     laser = Connector(interface='SimpleLaserInterface')
+    queryInterval = ConfigOption('query_interval', 100)
 
     sigUpdate = QtCore.Signal()
 
@@ -45,8 +47,6 @@ class LaserLogic(GenericLogic):
         self.stopRequest = False
         self.bufferLength = 100
         self.data = {}
-        # waiting time between queries im milliseconds
-        self.queryInterval = 100
 
         # delay timer for querying laser
         self.queryTimer = QtCore.QTimer()
@@ -144,7 +144,7 @@ class LaserLogic(GenericLogic):
 
     @QtCore.Slot(ControlMode)
     def set_control_mode(self, mode):
-        """ Change whether the laser is controlled by dioe current or output power. """
+        """ Change whether the laser is controlled by diode current or output power. """
         #print('set_control_mode', QtCore.QThread.currentThreadId())
         if mode in self._laser.allowed_control_modes():
             ctrl_mode = ControlMode.MIXED
@@ -165,6 +165,7 @@ class LaserLogic(GenericLogic):
             self._laser.on()
         if not state and self.laser_state == LaserState.ON:
             self._laser.off()
+        self.sigUpdate.emit()
 
     @QtCore.Slot(bool)
     def set_shutter_state(self, state):

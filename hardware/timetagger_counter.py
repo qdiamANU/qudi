@@ -20,18 +20,36 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-import TimeTagger as tt
+import thirdparty.swabian_instruments.timetagger.TimeTagger as tt
 import time
 import numpy as np
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> qcomp
 from core.module import Base, ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
 from interface.slow_counter_interface import CountingMode
+from interface.odmr_counter_interface import ODMRCounterInterface
 
+<<<<<<< HEAD
+class TimeTaggerCounter(Base, SlowCounterInterface, ODMRCounterInterface):
+=======
 class TimeTaggerCounter(Base, SlowCounterInterface):
+    """ Using the TimeTagger as a slow counter.
+>>>>>>> upstream/master
 
-    """ Using the TimeTagger as a counter."""
+    Example config for copy-paste:
+
+    timetagger_slowcounter:
+        module.Class: 'timetagger_counter.TimeTaggerCounter'
+        timetagger_channel_apd_0: 0
+        timetagger_channel_apd_1: 1
+        timetagger_sum_channels: 2
+
+    """
 
     _modtype = 'TTCounter'
     _modclass = 'hardware'
@@ -39,7 +57,9 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
     _channel_apd_0 = ConfigOption('timetagger_channel_apd_0', missing='error')
     _channel_apd_1 = ConfigOption('timetagger_channel_apd_1', None, missing='warn')
     _sum_channels = ConfigOption('timetagger_sum_channels', False)
+    _odmr_trigger_channel = ConfigOption('timetagger_odmr_trigger', None, missing='warn')
 
+    _nvalues = 100
     def on_activate(self):
         """ Start up TimeTagger interface
         """
@@ -59,6 +79,7 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
             self._mode = 0
         else:
             self._mode = 2
+
 
     def on_deactivate(self):
         """ Shut down the TimeTagger.
@@ -189,3 +210,104 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
         @return int: error code (0:OK, -1:error)
         """
         return 0
+
+
+    #ODMR counter methods
+    def set_up_odmr_clock(self, clock_frequency=None, clock_channel=None):
+        """ Configures the hardware clock of the timetagger to give the timing.
+
+        @param float clock_frequency: if defined, this sets the frequency of the
+                                      clock
+        @param str clock_channel: if defined, this is the physical channel of
+                                  the clock
+
+        @return int: error code (0:OK, -1:error)
+        """
+        self._count_frequency = clock_frequency
+        return 0
+
+    def set_up_odmr(self, counter_channel=None, photon_source=None,
+                    clock_channel=None, odmr_trigger_channel=None):
+        """ Configures the actual counter with a given clock.
+
+        @param str counter_channel: if defined, this is the physical channel of
+                                    the counter
+        @param str photon_source: if defined, this is the physical channel where
+                                  the photons are to count from
+        @param str clock_channel: if defined, this specifies the clock for the
+                                  counter
+        @param str odmr_trigger_channel: if defined, this specifies the trigger
+                                         output for the microwave
+
+        @return int: error code (0:OK, -1:error)
+        """
+        # currently, parameters passed to this function are ignored -- the channels used and clock frequency are
+        # set at startup
+
+        if self._mode == 0:
+            self._channel_apd = self._channel_apd_0
+            self.odmr_counter = tt.CountBetweenMarkers(
+                self._tagger,
+                click_channel=self._channel_apd,
+                begin_channel=self._odmr_trigger_channel,
+                end_channel=self._odmr_trigger_channel+8,
+                n_values=self._nvalues
+            )
+        elif self._mode == 1:
+            channel_combined = tt.CountBetweenMarkers(self._tagger, channels=[self._channel_apd_0, self._channel_apd_1])
+            self._channel_apd = channel_combined.getChannel()
+
+            self.odmr_counter = tt.CountBetweenMarkers(
+                self._tagger,
+                click_channel=self._channel_apd,
+                begin_channel=self._odmr_trigger_channel,
+                end_channel=self._odmr_trigger_channel + 8,
+                n_values=self._nvalues
+            )
+        else:
+            self.log.error('Cannot do the dual channel mode for ODMR')
+            return -1
+
+        self.log.info('set up counter with {0}'.format(self._count_frequency))
+        return 0
+
+    def set_odmr_length(self, length=100):
+        """Set up the trigger sequence for the ODMR and the triggered microwave.
+
+        @param int length: length of microwave sweep in pixel
+
+        @return int: error code (0:OK, -1:error)
+        """
+        self._nvalues = length
+        return 0
+
+    def count_odmr(self, length=100):
+        """ Sweeps the microwave and returns the counts on that sweep.
+
+        @param int length: length of microwave sweep in pixel
+
+        @return float[]: the photon counts per second
+        """
+        return self.odmr_counter.get_data()
+
+    def close_odmr(self):
+        """ Close the odmr and clean up afterwards.
+
+        @return int: error code (0:OK, -1:error)
+        """
+        self.counter.clearOverflows()
+        return 0
+
+    def close_odmr_clock(self):
+        """ Close the odmr and clean up afterwards.
+
+        @return int: error code (0:OK, -1:error)
+        """
+        return self.close_counter()
+
+    def get_odmr_channels(self):
+        """ Return a list of channel names.
+
+        @return list(str): channels recorded during ODMR measurement
+        """
+        return []

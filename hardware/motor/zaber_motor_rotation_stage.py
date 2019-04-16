@@ -31,6 +31,28 @@ class MotorRotationZaber(Base, MotorInterface):
     """unstable: Christoph Müller, Simon Schmitt
     This is the Interface class to define the controls for the simple
     microwave hardware.
+
+    Example config for copy-paste:
+
+    motorstage_zaber:
+        module.Class: 'motor.zaber_motor_rotation_stage.MotorRotationZaber'
+        com_port_zaber: 'ASRL1::INSTR'
+        zaber_baud_rate: 9600
+        zaber_timeout: 1000
+        zaber_term_char: '\n'
+
+        zaber_axis_label: 'phi'
+        zaber_angle_min: -1e5 # in degrees
+        zaber_angle_max: 1e5 # in degrees
+        zaber_angle_step: 1e-5 # in degrees
+
+        zaber_velocity_min: 1e-3 # in degrees/s
+        zaber_velocity_max: 10 # in degrees/s
+        zaber_velocity_step: -1e-3 # in degrees/s
+
+        zaber_micro_step_size: 234.375e-6
+        zaber_speed_conversion: 9.375
+
     """
     _modclass = 'MotorRotation'
     _modtype = 'hardware'
@@ -91,25 +113,23 @@ class MotorRotationZaber(Base, MotorInterface):
         """
         constraints = OrderedDict()
 
-        rot = {}
-        rot['label'] = self._axis_label
-        rot['ID'] = None
-        rot['unit'] = '°'
-        rot['ramp'] = None
-        rot['pos_min'] = self._min_angle
-        rot['pos_max'] = self._max_angle
-        rot['pos_step'] = self._min_step
-        rot['vel_min'] = self._min_vel
-        rot['vel_max'] = self._max_vel
-        rot['vel_step'] = self._step_vel
-        rot['acc_min'] = None
-        rot['acc_max'] = None
-        rot['acc_step'] = None
+        rot = {'label': self._axis_label,
+               'ID': None,
+               'unit': '°',
+               'ramp': None,
+               'pos_min': self._min_angle,
+               'pos_max': self._max_angle,
+               'pos_step': self._min_step,
+               'vel_min': self._min_vel,
+               'vel_max': self._max_vel,
+               'vel_step': self._step_vel,
+               'acc_min': None,
+               'acc_max': None,
+               'acc_step': None}
 
         # assign the parameter container to a name which will identify it
         constraints[rot['label']] = rot
         return constraints
-
 
     def move_rel(self, param_dict):
         """Moves stage by a given angle (relative movement)
@@ -312,18 +332,18 @@ class MotorRotationZaber(Base, MotorInterface):
 ########################## internal methods ##################################
 
 
-    def _write_rot(self, list):
-        ''' sending a command encode in a list to the rotation stage,
+    def _write_rot(self, command_list):
+        """ sending a command encode in a list to the rotation stage,
         requires [1, commandnumber, value]
 
-        @param list list: command in a list form
+        @param list command_list: command in a list form
 
-        @return errorcode'''
+        @return errorcode"""
 
         try:
-            xx = list[0]
-            yy = list[1]
-            zz = list[2]
+            xx = command_list[0]
+            yy = command_list[1]
+            zz = command_list[2]
             z4 = 0
             z3 = 0
             z2 = 0
@@ -362,12 +382,12 @@ class MotorRotationZaber(Base, MotorInterface):
             return -1
 
     def _read_answer_rot(self):
-        '''this method reads the answer from the motor!
+        """this method reads the answer from the motor!
         return 6 bytes from the receive buffer
         there must be 6 bytes to receive (no error checking)
 
         @return answer float: answer of motor coded in a single float
-        '''
+        """
 
 
         r = [0, 0, 0, 0, 0, 0]
@@ -385,20 +405,20 @@ class MotorRotationZaber(Base, MotorInterface):
         return answer
 
 
-    def _ask_rot(self,list):
-        '''this method combines writing a command and reading the answer
-        @param list list: list encoded command
+    def _ask_rot(self, command_list):
+        """this method combines writing a command and reading the answer
+        @param list command_list: list encoded command
 
         @return answer float: answer of motor coded in a single float
-        '''
-        self._write_rot(list)
+        """
+        self._write_rot(command_list)
         time.sleep(0.1)
         answer=self._read_answer_rot()
         return answer
 
     def _motor_stopped(self):
-        '''checks if the rotation stage is still moving
-        @return: bool stopped: True if motor is not moving, False otherwise'''
+        """checks if the rotation stage is still moving
+        @return: bool stopped: True if motor is not moving, False otherwise"""
 
         stopped=True
         status = self.get_status()
@@ -407,11 +427,11 @@ class MotorRotationZaber(Base, MotorInterface):
         return stopped
 
     def _map_angle(self, init_angle):
-        '''maps the angle if larger or lower than 360° to inbetween 0° and 360°
+        """maps the angle if larger or lower than 360° to inbetween 0° and 360°
 
         @params init_angle: initial angle, possible not element of {0°,360°}
 
-        @return: float angle: Angle between 0° and 360°'''
+        @return: float angle: Angle between 0° and 360°"""
 
         angle = init_angle%360
 

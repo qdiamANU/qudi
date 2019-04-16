@@ -19,43 +19,74 @@ along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
-
-import numpy as np
-import re
-
-import PyDAQmx as daq
-
-from core.module import Base, ConfigOption
-from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
 from interface.slow_counter_interface import CountingMode
-from interface.odmr_counter_interface import ODMRCounterInterface
-from interface.confocal_scanner_interface import ConfocalScannerInterface
 from .national_instruments_x_series import NationalInstrumentsXSeries
 
 
 class SlowGatedNICard(NationalInstrumentsXSeries):
     """ Enable the usage of the gated counter in the slow counter interface.
-    Overwrite in this new class therefore the appropriate methods. """
+    Overwrite in this new class therefore the appropriate methods.
+
+    Example config for copy-paste:
+
+    slowgated_ni:
+        module.Class: 'gated_ni_card.SlowGatedNICard'
+        photon_sources:
+            - '/Dev1/PFI8'
+        #    - '/Dev1/PFI9'
+        clock_channel: '/Dev1/Ctr0'
+        default_clock_frequency: 100 # optional, in Hz
+        counter_channels:
+            - '/Dev1/Ctr1'
+        counter_ai_channels:
+            - '/Dev1/AI0'
+        default_scanner_clock_frequency: 100 # optional, in Hz
+        scanner_clock_channel: '/Dev1/Ctr2'
+        pixel_clock_channel: '/Dev1/PFI6'
+        scanner_ao_channels:
+            - '/Dev1/AO0'
+            - '/Dev1/AO1'
+            - '/Dev1/AO2'
+            - '/Dev1/AO3'
+        scanner_ai_channels:
+            - '/Dev1/AI1'
+        scanner_counter_channels:
+            - '/Dev1/Ctr3'
+        scanner_voltage_ranges:
+            - [-10, 10]
+            - [-10, 10]
+            - [-10, 10]
+            - [-10, 10]
+        scanner_position_ranges:
+            - [0e-6, 200e-6]
+            - [0e-6, 200e-6]
+            - [-100e-6, 100e-6]
+            - [-10, 10]
+
+        odmr_trigger_channel: '/Dev1/PFI7'
+
+        gate_in_channel: '/Dev1/PFI9'
+        default_samples_number: 50
+        max_counts: 3e7
+        read_write_timeout: 10
+        counting_edge_rising: True
+
+    """
 
     _modtype = 'SlowGatedNICard'
     _modclass = 'hardware'
+
+    _photon_sources = ConfigOption('photon_sources', missing='error')
 
     def on_activate(self):
         """ Starts up the NI Card at activation.
         """
         self._gated_counter_daq_task = None
         self._counter_channels = []
-        self._counter_channel = '/NIDAQ/Ctr0'
+        self._counter_channel = '/Dev1/Ctr0'
 
-        config = self.getConfiguration()
-
-        if 'photon_source' in config.keys():
-            self._photon_source = config['photon_source']
-        else:
-            self.log.error(
-                'No parameter "photon_source" configured.\n'
-                'Assign to that parameter an appropriated channel from your NI Card!')
+        self._ph_source = self._photon_sources[0]
 
     def get_constraints(self):
         """ Get hardware limits of NI device.
@@ -72,13 +103,20 @@ class SlowGatedNICard(NationalInstrumentsXSeries):
         return constraints
 
     #overwrite the SlowCounterInterface commands of the class NICard:
-    def set_up_clock(self, clock_frequency=None, clock_channel=None):
+    def set_up_clock(self, clock_frequency=None, clock_channel=None, scanner=False, idle=False):
         """ Configures the hardware clock of the NiDAQ card to give the timing.
 
         @param float clock_frequency: if defined, this sets the frequency of
-                                      the clock
+                                      the clock in Hz
         @param string clock_channel: if defined, this is the physical channel
-                                     of the clock
+                                     of the clock within the NI card.
+        @param bool scanner: if set to True method will set up a clock function
+                             for the scanner, otherwise a clock function for a
+                             counter will be set.
+        @param bool idle: set whether idle situation of the counter (where
+                          counter is doing nothing) is defined as
+                                True  = 'Voltage High/Rising Edge'
+                                False = 'Voltage Low/Falling Edge'
 
         @return int: error code (0:OK, -1:error)
         """
@@ -122,8 +160,13 @@ class SlowGatedNICard(NationalInstrumentsXSeries):
         """
         return self.get_gated_counts(samples=samples)
 
-    def close_counter(self):
-        """ Closes the counter and cleans up afterwards.
+    def close_counter(self, scanner=False):
+        """ Closes the counter or scanner and cleans up afterwards.
+
+        @param bool scanner: specifies if the counter- or scanner- function
+                             will be excecuted to close the device.
+                                True = scanner
+                                False = counter
 
         @return int: error code (0:OK, -1:error)
         """
@@ -131,8 +174,13 @@ class SlowGatedNICard(NationalInstrumentsXSeries):
             return -1
         return self.close_gated_counter()
 
-    def close_clock(self):
+    def close_clock(self, scanner=False):
         """ Closes the clock and cleans up afterwards.
+
+        @param bool scanner: specifies if the counter- or scanner- function
+                             should be used to close the device.
+                                True = scanner
+                                False = counter
 
         @return int: error code (0:OK, -1:error)
         """

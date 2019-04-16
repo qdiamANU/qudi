@@ -29,6 +29,20 @@ from interface.fast_counter_interface import FastCounterInterface
 
 
 class FastCounterFGAPiP3(Base, FastCounterInterface):
+    """ Qudi module for the an FPGA based FastCounter.
+
+    Example config for copy-paste:
+
+    fpga_pi3:
+        module.Class: 'fpga_fastcounter.fast_counter_fpga_pi3.FastCounterFGAPiP3'
+        fpgacounter_serial: '143400058N'
+        fpgacounter_channel_apd_0: 1
+        fpgacounter_channel_apd_1: 3
+        fpgacounter_channel_detect: 2
+        fpgacounter_channel_sequence: 6
+
+    """
+
     _modclass = 'FastCounterFGAPiP3'
     _modtype = 'hardware'
 
@@ -142,7 +156,7 @@ class FastCounterFGAPiP3(Base, FastCounterInterface):
             self._channel_detect,
             self._channel_sequence
         )
-        return (bin_width_s, record_length_s, number_of_gates)
+        return bin_width_s, record_length_s, number_of_gates
 
     def start_measure(self):
         """ Start the fast counter. """
@@ -200,7 +214,9 @@ class FastCounterFGAPiP3(Base, FastCounterInterface):
         care of in this hardware class. A possible overflow of the histogram
         bins must be caught here and taken care of.
         """
-        return np.array(self.pulsed.getData(), dtype='int64')
+        info_dict = {'elapsed_sweeps': None,
+                     'elapsed_time': None}  # TODO : implement that according to hardware capabilities
+        return np.array(self.pulsed.getData(), dtype='int64'), info_dict
 
 
     def get_status(self):
@@ -219,3 +235,4 @@ class FastCounterFGAPiP3(Base, FastCounterInterface):
         """ Returns the width of a single timebin in the timetrace in seconds. """
         width_in_seconds = self._bin_width * 1e-9
         return width_in_seconds
+

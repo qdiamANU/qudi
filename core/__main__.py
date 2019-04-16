@@ -48,12 +48,13 @@ parser.add_argument('-m', '--manhole', action='store_true',
 parser.add_argument('-g', '--no-gui', action='store_true',
         help='does not load the manager gui module')
 parser.add_argument('-c', '--config', default='', help='configuration file')
+parser.add_argument('-l', '--logdir', default='', help='log directory')
 args = parser.parse_args()
 
 
 # install logging facility
 from .logger import initialize_logger
-initialize_logger()
+initialize_logger(args.logdir)
 import logging
 logger = logging.getLogger(__name__)
 logger.info('Loading Qudi...')
@@ -267,13 +268,13 @@ if interactive:
         if os.path.exists(historyPath):
             readline.read_history_file(historyPath)
 
-    def save_history(historyPath=historyPath):
+    def save_history(new_historyPath=historyPath):
         try:
             import readline
         except ImportError:
             print("Import Error in __main__: Module readline not available.")
         else:
-            readline.write_history_file(historyPath)
+            readline.write_history_file(new_historyPath)
     atexit.register(save_history)
 else:
     # non-interactive, start application in different modes

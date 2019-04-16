@@ -45,7 +45,24 @@ class FastCounterFPGAQO(Base, FastCounterInterface):
         (SWIG) to access the dll library. Be aware that the wrapper is specified
         for a specific version of python (here python 3.4), and it is not
         guaranteed to be working with other versions.
+
+    Example config for copy-paste:
+
+    fpga_qo:
+        module.Class: 'fpga_fastcounter.fast_counter_fpga_qo.FastCounterFPGAQO'
+        fpgacounter_serial: '143400058N'
+        fpga_type: 'XEM6310_LX150'
+        #threshV_ch1: 0.5   # optional, threshold voltage for detection
+        #threshV_ch2: 0.5   # optional, threshold voltage for detection
+        #threshV_ch3: 0.5   # optional, threshold voltage for detection
+        #threshV_ch4: 0.5   # optional, threshold voltage for detection
+        #threshV_ch5: 0.5   # optional, threshold voltage for detection
+        #threshV_ch6: 0.5   # optional, threshold voltage for detection
+        #threshV_ch7: 0.5   # optional, threshold voltage for detection
+        #threshV_ch8: 0.5   # optional, threshold voltage for detection
+
     """
+
     _modclass = 'FastCounterFPGAQO'
     _modtype = 'hardware'
 
@@ -406,6 +423,8 @@ class FastCounterFPGAQO(Base, FastCounterInterface):
         care of in this hardware class. A possible overflow of the histogram
         bins must be caught here and taken care of.
         """
+        info_dict = {'elapsed_sweeps': None,
+                     'elapsed_time': None}  # TODO : implement that according to hardware capabilities
         with self.threadlock:
             # check for error status in FPGA timetagger
             error_messages = self._get_error_messages()
@@ -413,7 +432,7 @@ class FastCounterFPGAQO(Base, FastCounterInterface):
                 for err_message in error_messages:
                     self.log.error(err_message)
                 self.stop_measure()
-                return self.count_data
+                return self.count_data, info_dict
 
             # check for running status
             status_messages = self._get_status_messages()
@@ -422,7 +441,7 @@ class FastCounterFPGAQO(Base, FastCounterInterface):
                                'trace of the device. An empty numpy array[{0},{1}] filled with '
                                'zeros will be returned.'.format(self._number_of_gates,
                                                                 self._gate_length_bins))
-                return self.count_data
+                return self.count_data, info_dict
 
             # initialize the read buffer for the USB transfer.
             # one timebin of the data to read is 32 bit wide and the data is transferred in bytes.
@@ -436,7 +455,7 @@ class FastCounterFPGAQO(Base, FastCounterInterface):
             if read_err_code != buffersize:
                 self.log.error('Data transfer from FPGA via USB failed with error code {0}. '
                                'Returning old count data.'.format(read_err_code))
-                return self.count_data
+                return self.count_data, info_dict
 
             # Encode bytes into 32bit unsigned integers
             buffer_encode = np.frombuffer(data_buffer, dtype='uint32')
@@ -459,7 +478,7 @@ class FastCounterFPGAQO(Base, FastCounterInterface):
             # bin the data according to the specified bin width
             #if self._binwidth != 1:
             #    buffer_encode = buffer_encode[:(buffer_encode.size // self._binwidth) * self._binwidth].reshape(-1, self._binwidth).sum(axis=1)
-            return self.count_data
+            return self.count_data, info_dict
 
     def stop_measure(self):
         """ Stop the fast counter. """
@@ -560,3 +579,4 @@ class FastCounterFPGAQO(Base, FastCounterInterface):
         -1 = error state
         """
         return self.statusvar
+

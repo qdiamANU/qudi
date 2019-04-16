@@ -29,9 +29,15 @@ import random
 import time
 
 class SimpleLaserDummy(Base, SimpleLaserInterface):
+    """ Lazor dummy
+
+    Example config for copy-paste:
+
+    laser_dummy:
+        module.Class: 'laser.simple_laser_dummy.SimpleLaserDummy'
+
     """
-    Lazor dummy
-    """
+
     _modclass = 'laserdummy'
     _modtype = 'hardware'
 
@@ -59,7 +65,7 @@ class SimpleLaserDummy(Base, SimpleLaserInterface):
 
             @return (float, float): power range
         """
-        return (0, 0.250)
+        return 0, 0.250
 
     def get_power(self):
         """ Return laser power
@@ -98,7 +104,7 @@ class SimpleLaserDummy(Base, SimpleLaserInterface):
 
             @return (float, float): laser current range
         """
-        return (0, 100)
+        return 0, 100
 
     def get_current(self):
         """ Get current laser current

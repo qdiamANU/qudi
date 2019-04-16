@@ -30,8 +30,15 @@ from interface.fast_counter_interface import FastCounterInterface
 
 
 class FastCounterDummy(Base, FastCounterInterface):
-    """This is the Interface class to define the controls for the simple
-    microwave hardware.
+    """ Implementation of the FastCounter interface methods for a dummy usage.
+
+    Example config for copy-paste:
+
+    fastcounter_dummy:
+        module.Class: 'fast_counter_dummy.FastCounterDummy'
+        gated: False
+        #load_trace: None # path to the saved dummy trace
+
     """
     _modclass = 'fastcounterinterface'
     _modtype = 'hardware'
@@ -207,15 +214,22 @@ class FastCounterDummy(Base, FastCounterInterface):
         The binning, specified by calling configure() in forehand, must be
         taken care of in this hardware class. A possible overflow of the
         histogram bins must be caught here and taken care of.
-        If the counter is NOT GATED it will return a 1D-numpy-array with
+        If the counter is NOT GATED it will return a tuple (1D-numpy-array, info_dict) with
             returnarray[timebin_index]
-        If the counter is GATED it will return a 2D-numpy-array with
+        If the counter is GATED it will return a tuple (2D-numpy-array, info_dict) with
             returnarray[gate_index, timebin_index]
+
+        info_dict is a dictionary with keys :
+            - 'elapsed_sweeps' : the elapsed number of sweeps
+            - 'elapsed_time' : the elapsed time in seconds
+
+        If the hardware does not support these features, the values should be None
         """
 
         # include an artificial waiting time
         time.sleep(0.5)
-        return self._count_data
+        info_dict = {'elapsed_sweeps': None, 'elapsed_time': None}
+        return self._count_data, info_dict
 
     def get_frequency(self):
         freq = 950.
