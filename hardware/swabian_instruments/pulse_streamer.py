@@ -40,7 +40,7 @@ class PulseStreamer(Base, PulserInterface):
     _pulsestreamer_ip = ConfigOption('pulsestreamer_ip', '192.168.1.100', missing='warn')
     _laser_channel = ConfigOption('laser_channel', 1, missing='warn')
     _uw_x_channel = ConfigOption('uw_x_channel', 3, missing='warn')
-    
+
     __current_waveform = StatusVar(name='current_waveform', default={})
     __current_waveform_name = StatusVar(name='current_waveform_name', default='')
     __sample_rate = StatusVar(name='sample_rate', default=1e9)
@@ -225,15 +225,9 @@ class PulseStreamer(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-<<<<<<< HEAD
-        # stop the pulse sequence
-        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel, self._apd_gate_channel])
-        self.pulse_streamer.constant(pulse_streamer_pb2.PulseMessage(ticks=0, digi=channels, ao0=0, ao1=0))
-        self.current_status = 0
-=======
+
         self.__current_status = 0
         self.pulse_streamer.constant(self._laser_mw_on_state)
->>>>>>> swabian-pulsed-3
         return 0
 
     
@@ -298,29 +292,6 @@ class PulseStreamer(Base, PulserInterface):
             self._seq.setDigital(swabian_channel_number,pulse_pattern)
 
 
-<<<<<<< HEAD
-        # check if asset exists
-        saved_assets = self.get_saved_asset_names()
-        if asset_name not in saved_assets:
-            self.log.error('No asset with name "{0}" found for PulseStreamer.\n'
-                           '"load_asset" call ignored.'.format(asset_name))
-            return -1
-
-        # get samples from file
-        filepath = os.path.join(self.host_waveform_directory, asset_name + '.pstream')
-        pulse_sequence_raw = dill.load(open(filepath, 'rb'))
-
-        pulse_sequence = []
-        for pulse in pulse_sequence_raw:
-            pulse_sequence.append(pulse_streamer_pb2.PulseMessage(ticks=pulse[0], digi=pulse[1], ao0=0, ao1=1))
-
-        blank_pulse = pulse_streamer_pb2.PulseMessage(ticks=0, digi=0, ao0=0, ao1=0)
-        laser_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=self._convert_to_bitmask([self._laser_channel, self._apd_gate_channel]), ao0=0, ao1=0)
-        laser_and_uw_channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel,self._apd_gate_channel])
-        laser_and_uw_on = pulse_streamer_pb2.PulseMessage(ticks=0, digi=laser_and_uw_channels, ao0=0, ao1=0)
-        self._sequence = pulse_streamer_pb2.SequenceMessage(pulse=pulse_sequence, n_runs=0, initial=laser_on,
-            final=laser_and_uw_on, underflow=blank_pulse, start=1)
-=======
     def get_loaded_assets(self):
         """
         Retrieve the currently loaded asset names for each active channel of the device.
@@ -359,7 +330,6 @@ class PulseStreamer(Base, PulserInterface):
         """
         self.log.debug('sequencing not implemented for pulsestreamer')
         return dict()
->>>>>>> swabian-pulsed-3
 
 
     
@@ -766,15 +736,9 @@ class PulseStreamer(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-<<<<<<< HEAD
-        channels = self._convert_to_bitmask([self._laser_channel, self._uw_x_channel, self._apd_gate_channel])
-        self.pulse_streamer.constant(pulse_streamer_pb2.PulseMessage(ticks=0, digi=channels, ao0=0, ao1=0))
-        #self.pulse_streamer.constant(laser_on)
-        return 0
-=======
+
         self.pulse_streamer.reset()
         self.__currently_loaded_waveform = ''
->>>>>>> swabian-pulsed-3
 
     
     def has_sequence_mode(self):
