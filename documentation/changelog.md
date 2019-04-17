@@ -4,6 +4,37 @@
 
 Changes/New features:
 
+* Cleanup/Improvement/Debug of POI manager (logic and GUI)
+* New POI manager tool _POI selector_ which allows adding of new POIs by clicking inside the scan 
+image
+* Added an optional POI nametag to the POI manager. If you give this property a string value, all 
+new POIs will be named after this tag together with a consecutive integer index.
+* If using the POI manager, the currently selected active POI name will be added to savelogic as 
+global parameter. All saved data files will include this POI name in the header.
+* bug fix to how the flags are set for AWG70k
+* Replaced the old `pg.PlotWidget` subclass `PlotWidgetModified` with new subclasses 
+`ScanPlotWidget`, `ScanViewBox` (`pg.ViewBox`) and `ScanImageItem` (`pg.ImageItem`) to handle 
+coordinate transformations upon mouse click/drag and zooming internally. Also integrates the 
+draggable crosshair into the PlotWidget. This reduces code and improves readability in GUI modules.
+* Introduced blink correction filter to confocal and poimanager scan images (toggle in "view" menu). 
+Purely for displaying purposes; raw data is not affected by this filter.
+* Add `scan_blink_correction` filter to `core.utils.filters`
+* exposed the sequencegenerator-functions analyze_sequence and analyze_ensemble to be accessible via pulsedmaster
+* analyze functions can be called either with the appropriate objects or with the object name
+* while sampling a sequence, the ensembles are only sampled if they weren't already sampled before
+* Add `natural_sort` utility function to `core.util.helpers`
+* 
+
+Config changes:
+
+* 
+
+## Release 0.10
+Released on 14 Mar 2019
+Available at https://github.com/Ulm-IQO/qudi/releases/tag/v0.10
+
+Changes/New features:
+
 * Added support for Opal Kelly XEM6310-LX45 devices to HardwareSwitchFpga hardware module.
 * Newport CONEX-AGP piezo stage motor module.
 * Sequence Generator checks the step constraint and adds and idle block if necessary.
@@ -41,6 +72,7 @@ This can be used to specify the axis labels for the measurement (excluding units
 * Implement the switch interface for PulseBlasterESR-PRO devices.
 * Add possibility to set instruction delays in the config for PulseBlasterESR-PRO sequence generation.
 * Add a copy-paste config option to the docstrings of all current qudi hardware modules.
+* Add save logic features to add additional parameters saved with each data file
 * **Pulsed 3.0:**\
     _A truckload of changes regarding all pulsed measurement related modules_
     * analyze_sequence now returns all the necessary values to work with sequences.
