@@ -287,9 +287,12 @@ class PulseStreamer(Base, PulserInterface):
 
         self._seq = self.pulse_streamer.createSequence()
         for channel_number, pulse_pattern in self.__current_waveform.items():
-            print(pulse_pattern)
+            #print(pulse_pattern)
             swabian_channel_number = int(channel_number[-1])-1
             self._seq.setDigital(swabian_channel_number,pulse_pattern)
+
+        self.__currently_loaded_waveform = self.__current_waveform_name
+        return self.get_loaded_assets()[0]
 
 
     def get_loaded_assets(self):
@@ -643,7 +646,7 @@ class PulseStreamer(Base, PulserInterface):
                 pulses.append(pulse)
 
             # extend (as opposed to rewrite) for chunky business
-            print(pulses)
+            #print(pulses)
             self.__current_waveform[channel_number].extend(pulses)
 
         return len(samples), [self.__current_waveform_name]
