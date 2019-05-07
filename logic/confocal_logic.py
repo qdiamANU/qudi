@@ -261,7 +261,7 @@ class ConfocalLogic(GenericLogic):
     savelogic = Connector(interface='SaveLogic')
 
     # status vars
-    _clock_frequency = StatusVar('clock_frequency', 500)
+    _clock_frequency = StatusVar('clock_frequency', 500.0)
     return_slowness = StatusVar(default=50)
     max_history_length = StatusVar(default=10)
 
@@ -381,7 +381,7 @@ class ConfocalLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._clock_frequency = int(clock_frequency)
+        self._clock_frequency = float(clock_frequency)
         #checks if scanner is still running
         if self.module_state() == 'locked':
             return -1

@@ -142,6 +142,9 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
                     gate_length_s: the actual set gate length in seconds
                     number_of_gates: the number of gated, which are accepted
         """
+
+        if number_of_gates == 0:
+            number_of_gates = 50
         self._number_of_gates = number_of_gates
         self._bin_width = bin_width_s * 1e9
         self._record_length = 1 + int(record_length_s / bin_width_s)

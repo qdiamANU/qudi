@@ -67,7 +67,7 @@ class PulsedMeasurementLogic(GenericLogic):
     # fast counter settings
     __fast_counter_record_length = StatusVar(default=3.0e-6)
     __fast_counter_binwidth = StatusVar(default=1.0e-9)
-    __fast_counter_gates = StatusVar(default=0)
+    __fast_counter_gates = StatusVar(default=50)
 
     # measurement timer settings
     __timer_interval = StatusVar(default=5)
@@ -262,6 +262,7 @@ class PulsedMeasurementLogic(GenericLogic):
         @return:
         """
         # Check if fast counter is running and do nothing if that is the case
+
         counter_status = self.fastcounter().get_status()
         if not counter_status >= 2 and not counter_status < 0:
             # Determine complete settings dictionary
@@ -281,6 +282,7 @@ class PulsedMeasurementLogic(GenericLogic):
                 else:
                     self.__fast_counter_gates = 0
 
+            print()
             # Apply the settings to hardware
             self.__fast_counter_binwidth, \
             self.__fast_counter_record_length, \

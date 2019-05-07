@@ -75,6 +75,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
     _odmr_trigger_line = ConfigOption('odmr_trigger_line', 'Dev1/port0/line0', missing='warn')
     _odmr_switch_line = ConfigOption('odmr_switch_line', 'Dev1/port0/line1', missing='warn')
     _scanner_clock_out_channel = ConfigOption('scanner_clock_out_channel', missing='error')
+    _odmr_clock_channel = ConfigOption('odmr_clock_channel', missing='error')
 
     _gate_in_channel = ConfigOption('gate_in_channel', missing='error')
     # number of readout samples, mainly used for gated counter
@@ -1039,6 +1040,9 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                                   self._scanner_clock_out_channel,
                                   daq.DAQmx_Val_DoNotInvertPolarity)
 
+            daq.DAQmxDisconnectTerms(self._scanner_clock_channel + 'InternalOutput',
+                                     self._odmr_trigger_channel)
+
         except:
             self.log.exception('Error while setting up scanner.')
             retval = -1
@@ -1683,6 +1687,8 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
         @return int: error code (0:OK, -1:error)
         """
+
+
         if self._scanner_clock_daq_task is None and clock_channel is None:
             self.log.error('No clock running, call set_up_clock before starting the counter.')
             return -1
@@ -1707,6 +1713,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             my_photon_source = photon_source
         else:
             my_photon_source = self._photon_sources[0]
+
 
         # this task will count photons with binning defined by the clock_channel
         task = daq.TaskHandle()
@@ -1786,6 +1793,11 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                 self._scanner_clock_channel + 'InternalOutput',
                 self._odmr_trigger_channel,
                 daq.DAQmx_Val_DoNotInvertPolarity)
+
+            daq.DAQmxDisconnectTerms(
+                self._scanner_clock_channel+'InternalOutput',
+                self._scanner_clock_out_channel)
+
             self._scanner_counter_daq_tasks.append(task)
             if len(self._scanner_ai_channels) > 0:
                 self._scanner_analog_daq_task = atask
