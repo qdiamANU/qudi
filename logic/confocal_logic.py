@@ -863,13 +863,13 @@ class ConfocalLogic(GenericLogic):
             else:
                 if n_ch <= 3:
                     return_line = np.vstack([
-                            image[self._scan_counter, 0, 1] * np.ones(self._return_YL.shape),
+                            self._current_x * np.ones(self._return_YL.shape),
                             self._return_YL,
                             image[self._scan_counter, 0, 2] * np.ones(self._return_YL.shape)
                         ][0:n_ch])
                 else:
                     return_line = np.vstack([
-                            image[self._scan_counter, 0, 1] * np.ones(self._return_YL.shape),
+                            self._current_x * np.ones(self._return_YL.shape),
                             self._return_YL,
                             image[self._scan_counter, 0, 2] * np.ones(self._return_YL.shape),
                             np.ones(self._return_YL.shape) * self._current_a
