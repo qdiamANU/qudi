@@ -215,7 +215,7 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
             return 0
 
 
-    def set_list(self, frequency=None, power=None):
+    def set_list(self, frequency=None, power=None, clock_frequency=200):
         """
         Configures the device for list-mode and optionally sets frequencies and/or power
 
@@ -254,6 +254,7 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
 
         name = 'odmr_cw_list'
         self._awg_device.write_triggered_cw_odmr_list_sequence(frequency, name)
+        # self._awg_device.write_cw_odmr_list_sequence(frequency, name, clock_frequency)
 
         # convert AWG power setting to peak-to-peak volts
         awg_amplitude = self.dbm_to_voltsp2p(power)
@@ -406,6 +407,15 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
         limits.supported_modes = (MicrowaveMode.CW, MicrowaveMode.SWEEP, MicrowaveMode.LIST)
         return limits
 
+    def ready_for_next_trigger_check(self):
+        num_sequence_steps = len(self._awg_device.sequence_parameter_list)
+        current_sequence_step = self._awg_device.current_sequence_step()
+
+        if num_sequence_steps == current_sequence_step+1:
+            return True
+        else:
+            return False
+
     def dbm_to_voltsp2p(self, power_dBm):
         """
         converts power in dBm to power in volts p2p, which is the required input for the AWG
@@ -433,4 +443,5 @@ class MicrowaveAwgInterfuseAwgTriggered(GenericLogic, MicrowaveInterface):
         power_dBm = 10*np.log10(power_watts)+30
 
         return power_dBm
+
 

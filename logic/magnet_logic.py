@@ -295,10 +295,14 @@ class MagnetLogic(GenericLogic):
         self.norm = 1000
 
         # use that if only one ODMR transition is available.
-        self.odmr_2d_single_trans = False
+        self.odmr_2d_single_trans = True
 
         # step precision for the magnet, in sig figs of metres. 9 -> 1 nm precision
         self.magnet_step_precision = self._magnet_device.magnet_step_precision
+
+        # LOCALFIX: axis names aren't currently updated by the GUI
+        self._axis0_name = 'x'
+        self._axis1_name = 'y'
 
 
     def on_deactivate(self):
@@ -555,8 +559,8 @@ class MagnetLogic(GenericLogic):
             # that is a map to transform a pathway index value back to an
             # absolute position and index. That will be important for saving the
             # data corresponding to a certain path_index value.
-            back_map = dict()
-            back_map[path_index] = {axis0_name: axis0_pos,
+            self.back_map = dict()
+            self.back_map[path_index] = {axis0_name: axis0_pos,
                                     axis1_name: axis1_pos,
                                     'index': (axis0_index, axis1_index)}
 
@@ -606,7 +610,7 @@ class MagnetLogic(GenericLogic):
 
                     # append to the pathway
                     pathway.append(step_config)
-                    back_map[path_index] = {axis0_name: axis0_pos,
+                    self.back_map[path_index] = {axis0_name: axis0_pos,
                                             axis1_name: axis1_pos,
                                             'index': (axis0_index, axis1_index)}
                     path_index += 1
@@ -638,7 +642,7 @@ class MagnetLogic(GenericLogic):
 
                 pathway.append(step_config)
                 axis1_index += 1
-                back_map[path_index] = {axis0_name: axis0_pos,
+                self.back_map[path_index] = {axis0_name: axis0_pos,
                                         axis1_name: axis1_pos,
                                         'index': (axis0_index, axis1_index)}
                 path_index += 1
@@ -647,7 +651,7 @@ class MagnetLogic(GenericLogic):
         self.axis0_steparray = axis0_steparray
         self.axis1_steparray = axis1_steparray
 
-        return pathway, back_map
+        return pathway, self.back_map
 
 
     def _create_2d_cont_pathway(self, pathway):
@@ -865,7 +869,6 @@ class MagnetLogic(GenericLogic):
         @return:
         The loop body goes through the 1D array
         """
-        # print('_stepwise_loop_body')
 
         if self._stop_measure:
             self._end_alignment_procedure()
@@ -1127,10 +1130,10 @@ class MagnetLogic(GenericLogic):
             if not ii%freq:
                 self._do_optimize_pos()
 
-        elif freq < 0:
-            self.log.error('No refocus happend, because negative frequency was given')
-
         # If frequency is 0, then no refocus will happen at all, which is intended.
+        elif freq < 0:
+            self.log.error('No refocus happened, because negative frequency was given')
+
         return
 
     def _do_optimize_pos(self):
@@ -1184,6 +1187,8 @@ class MagnetLogic(GenericLogic):
     def _do_alignment_measurement(self):
         """ That is the main method which contains all functions with measurement routines.
 
+        This routine is called once for each pixel in the magnet alignment map
+
         Each measurement routine has to output the measurement value, but can
         also provide a dictionary with additional measurement parameters, which
         have been measured either as a pre-requisition for the measurement or
@@ -1199,10 +1204,8 @@ class MagnetLogic(GenericLogic):
                                     additional parameters are saved in a
                                     dictionary form.
         """
-        print('_do_alignment_measurement')
         # perform here one of the selected alignment measurements and return to
         # the loop body the measured values.
-
 
         # self.alignment_methods = ['fluorescence_pointwise',
         #                           'fluorescence_continuous',
@@ -1221,14 +1224,11 @@ class MagnetLogic(GenericLogic):
 
         elif self.curr_alignment_method == '2d_nuclear':
             data, add_data = self._perform_nuclear_measure()
-        # data, add_data = self._perform_odmr_measure(11100e6, 1e6, 11200e6, 5, 10, 'Lorentzian', False,'')
-
 
         return data, add_data
 
 
     def _perform_fluorescence_measure(self):
-        # print('_perform_fluorescence_measure')
         #FIXME: that should be run through the TaskRunner! Implement the call
         #       by not using this connection!
 
@@ -1244,7 +1244,7 @@ class MagnetLogic(GenericLogic):
         data_array, parameters = self._counter_logic.save_data(to_file=False)
 
         data_array = np.array(data_array)[:, 1]
-        # self._awg.laser_off()
+
         return data_array.mean(), parameters
 
     def _perform_odmr_measure(self):
@@ -1255,8 +1255,6 @@ class MagnetLogic(GenericLogic):
 
         store_dict = {}
 
-        # optimize at first the position:
-        self._do_optimize_pos()
         # LOCALFIX Prithvi: What axes do we want to scan over, currently hardcoded to x,y
         self._axis0_name = 'x'
         self._axis1_name = 'y'
@@ -1465,11 +1463,6 @@ class MagnetLogic(GenericLogic):
             contrast as a measure.
         """
 
-        store_dict = {}
-
-        # optimize at first the position:
-        self._do_optimize_pos()
-
         # correct the ODMR alignment the shift of the ODMR lines due to movement
         # in axis0 and axis1, therefore find out how much you will move in each
         # distance:
@@ -1497,12 +1490,12 @@ class MagnetLogic(GenericLogic):
         # odmr_2d_peak_axis1_move_ratio:
         if self._pathway_index > 1:
             # in essence, get the last measurement value for odmr freq:
-            if self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']].get('Frequency') is not None:
-                odmr_freq1 = self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']]['Frequency']['value']*1e6
-                odmr_freq2 = self._2D_add_data_matrix[self._backmap[self._pathway_index-2]['index']]['Frequency']['value']*1e6
-            elif self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']].get('Freq. 1') is not None:
-                odmr_freq1 = self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']]['Freq. 1']['value']*1e6
-                odmr_freq2 = self._2D_add_data_matrix[self._backmap[self._pathway_index-2]['index']]['Freq. 1']['value']*1e6
+            if self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']].get('center') is not None:
+                odmr_freq1 = self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']]['center'].value
+                odmr_freq2 = self._2D_add_data_matrix[self._backmap[self._pathway_index-2]['index']]['center'].value
+            elif self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']].get('l1_center') is not None:
+                odmr_freq1 = self._2D_add_data_matrix[self._backmap[self._pathway_index-1]['index']]['l1_center'].value
+                odmr_freq2 = self._2D_add_data_matrix[self._backmap[self._pathway_index-2]['index']]['l1_center'].value
             else:
                 self.log.error('No previous saved lower odmr freq found in '
                             'ODMR alignment data! Cannot do the ODMR '
@@ -1555,7 +1548,7 @@ class MagnetLogic(GenericLogic):
         step_freq = self.odmr_2d_low_step_freq
         stop_freq = self.odmr_2d_low_center_freq + self.odmr_2d_low_range_freq/2
 
-        param = self._odmr_logic.perform_odmr_measurement(start_freq,
+        _, _, param = self._odmr_logic.perform_odmr_measurement(start_freq,
                                                           step_freq,
                                                           stop_freq,
                                                           self.odmr_2d_low_power,
@@ -1564,20 +1557,25 @@ class MagnetLogic(GenericLogic):
                                                           self.odmr_2d_save_after_measure,
                                                           name_tag)
 
-        param['ODMR peak/Magnet move ratio axis0'] = self.odmr_2d_peak_axis0_move_ratio
-        param['ODMR peak/Magnet move ratio axis1'] = self.odmr_2d_peak_axis1_move_ratio
-
-        # extract the frequency meausure:
-        if param.get('Frequency') is not None:
-            odmr_freq_meas = param['Frequency']['value']*1e6
-            cont_meas = param['Contrast']['value']
-        elif param.get('Freq. 1') is not None:
-            odmr_freq_meas = param['Freq. 1']['value']*1e6
-            cont_meas = param['Contrast 0']['value'] + param['Contrast 1']['value'] + param['Contrast 2']['value']
-        else:
-            # a default value for testing and debugging:
-            odmr_freq_meas = 1000e6
-            cont_meas = 0.0
+        # extract the frequency measure:
+        if param.get('center') is not None:
+            odmr_freq_meas = param['center'].value
+            cont_meas = -param['contrast'].value
+            fwhm_meas = param['fwhm'].value
+        elif param.get('l1_center') is not None:
+            odmr_freq_meas = param['l1_center'].value
+            cont_meas = -param['l1_contrast'].value
+            fwhm_meas = param['l1_fwhm'].value
+        # if param.get('Frequency') is not None:
+        #     odmr_freq_meas = param['Frequency']['value']*1e6
+        #     cont_meas = param['Contrast']['value']
+        # elif param.get('Freq. 1') is not None:
+        #     odmr_freq_meas = param['Freq. 1']['value']*1e6
+        #     cont_meas = param['Contrast 0']['value'] + param['Contrast 1']['value'] + param['Contrast 2']['value']
+        # else:
+        #     # a default value for testing and debugging:
+        #     odmr_freq_meas = 1000e6
+        #     cont_meas = 0.0
 
         self.odmr_2d_low_center_freq = odmr_freq_meas
 
@@ -1587,7 +1585,10 @@ class MagnetLogic(GenericLogic):
         return cont_meas, param
 
     def _perform_nuclear_measure(self):
-        """ Make a single shot alignment. """
+        """ Make a single shot alignment.
+
+        DOES NOT WORK!!!
+        """
 
         # possible parameters for the nuclear measurement:
         # self.nuclear_2d_rabi_period

@@ -40,7 +40,7 @@ from core.util.network import netobtain
 from core.module import Connector
 from logic.generic_logic import GenericLogic
 from interface.single_shot_interface import SingleShotInterface
-
+import time
 
 class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
 
@@ -94,12 +94,12 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         constraints = self._fastcounter.get_constraints()
         return constraints
 
-    def configure_ssr_counter(self, histogram_length_s, n_steps_controlled_variable, bin_width_s, rollover=True):
+    def configure_ssr_counter(self, histogram_length_s, num_of_fastcounter_rows, bin_width_s, rollover=True):
         """ Configuration of the fast counter for SSR. Counter must be gated
 
         @param float histogram_length_s: length of counts histogram for one readout, in seconds.
             Should be slightly longer than readout laser pulse duration
-        @param int n_steps_controlled_variable: number of required histograms, equal to the number of
+        @param int num_of_fastcounter_rows: number of required histograms, equal to the number of
             steps in the controlled variable (e.g. MW frequency) sweep
 
         @return tuple(binwidth_s, gate_length_s, number_of_gates):
@@ -114,11 +114,11 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         print('tt configure ssr')
         self._fastcounter.configure(bin_width_s=bin_width_s,
                                     record_length_s=histogram_length_s,
-                                    number_of_gates=n_steps_controlled_variable,
+                                    number_of_gates=num_of_fastcounter_rows,
                                     next_channel=self.next_channel,
                                     rollover=rollover)
 
-        return (bin_width_s, histogram_length_s, n_steps_controlled_variable)
+        return (bin_width_s, histogram_length_s, num_of_fastcounter_rows)
 
     def get_status(self):
         """ Get the status of the position
@@ -169,87 +169,102 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
         Return value is a numpy array (dtype = int64).
         Will return a 1D-numpy-array
         """
-
         raw_data = netobtain(self._fastcounter.get_data_trace())
         self.raw_data = raw_data
 
         # remove all zeros at the end - useful for analysing data during acquisition, where some fastcounter
         # histogram rows may still be unfilled
-        # first find all rows with only zeros
-        data_size = np.where(~raw_data.any(axis=1))[0]
-        # if there are no empty rows at the end (meaning the last row is not empty), delete nothing
-        if len(data_size)==0 or len(raw_data)-1 not in data_size:
-            ssr_data = raw_data
-        else:
-            # find all entries which have no next lower integer (max element should be the first empty row)
-            test = [i for i, x in enumerate(data_size) if x - 1 not in data_size]
-            # get the first row which should be deleted
-            first_row = max(test)
-            # delete the empty rows
-            ssr_data = np.delete(raw_data, data_size[first_row:], 0)
-
-        self.raw_data = ssr_data
+        self.ssr_data = raw_data[~np.all(raw_data == 0, axis=1)]
 
         if not charge_state_selection:
             charge_signal = np.array([])
-            if normalized:
-                print('normalised, not self.charge_state_selection')
-                return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(ssr_data)
-                laser1 = return_dict['laser_counts_arr0']
-                laser2 = return_dict['laser_counts_arr1']
+            if normalized: ### Normalised, no charge state selection #####
+
+                ### Pulse extraction from raw counts trace #####
+                t3 = time.time()
+                # for some measurement modes, only want 2 bins (one for each laser pulse), to reduce data size
+                # in such cases, regular pulse extraction and pulse analysis are unnecessary, and they also don't work
+                if self.ssr_data.shape[1] <= 1:
+                    self.log.error('Error in SSR counter, get data: expected ssr_data.shape[1] > 1 for normalised SSR (got {})'.format(self.ssr_data.shape[1]))
+                    return -1
+                elif self.ssr_data.shape[1] <= 3:
+                    laser1 = self.ssr_data[:, 0]
+                    laser2 = self.ssr_data[:, 1]
+                    perform_pulse_analysis = False
+                    return_dict = dict()
+                # otherwise, do pulse extraction and analysis as per normal
+                else:
+                    return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(self.ssr_data)
+                    laser1 = return_dict['laser_counts_arr0']
+                    laser2 = return_dict['laser_counts_arr1']
+                    perform_pulse_analysis = True
 
                 self.laser_data = [laser1, laser2]
+
+                t4 = time.time()
+                ### Pulse analysis of extracted data #####
                 if laser1.any() and laser2.any():
-                    tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
-                    tmp_signal2, tmp_error2 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser2)
+                    if perform_pulse_analysis:
+                        tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
+                        tmp_signal2, tmp_error2 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser2)
+                    else:
+                        tmp_signal1, tmp_error1 = laser1, np.sqrt(laser1)
+                        tmp_signal2, tmp_error2 = laser2, np.sqrt(laser2)
+
                     tmp_signal = (tmp_signal1 - tmp_signal2) / (tmp_signal1 + tmp_signal2)
+
+                    # set nan values to zero (nan occurs when both laser1 and laser2 counts are zero)
                     nan_indices = np.isnan(tmp_signal)
                     tmp_signal[nan_indices] = 0
 
-                    # print('tmp_signal1 = {}'.format(tmp_signal1))
-                    # print('tmp_signal2 = {}'.format(tmp_signal2))
                 else:
+                    # fixme: can't call shape on list object
                     tmp_signal = np.zeros(self.laser_data.shape[0])
+                print('ssr_counter_interfuse pulse analysis: time taken = {} ms'.format((time.time() - t4) / 1e-3))
 
-                # # FIXME: here it is important that one laser pulse is on one side respectively
-                # data_width = self.raw_data.shape[1]
-                # print('data_width = {}'.format(data_width))
-                # raw_data1 = self.raw_data[:, :int(data_width / 2)]
-                # raw_data2 = self.raw_data[:, int(data_width / 2):]
-                # print('raw_data1 = {}'.format(raw_data1))
-                # return_dict1 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data1)
-                # print('return_dict1 = {}'.format(return_dict1))
-                # laser1 = return_dict1['laser_counts_arr']
-                # print('laser1 = {}'.format(laser1))
-                # return_dict2 = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(raw_data2)
-                # laser2 = return_dict2['laser_counts_arr']
-                # print('laser2 = {}'.format(laser1))
-            else:
-                print('not normalised')
-                return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(self.raw_data)
-                # print('return_dict = {}'.format(return_dict))
-                self.laser_data = return_dict['laser_counts_arr0']
-                # print('self.laser_data.shape = {}'.format(self.laser_data.shape))
+            else: ### Non-normalised, no charge state selection #####
+
+                ### Pulse extraction from raw counts trace #####
+                # for some measurement modes, only want 2 bins (one for each laser pulse), to reduce data size
+                # in such cases, regular pulse extraction and pulse analysis are unnecessary, and they also don't work
+                if self.ssr_data.shape[1] == 0:
+                    self.log.error('Error in SSR counter, get data: ssr_data.shape[1] = 0!')
+                    return -1
+                elif self.ssr_data.shape[1] <= 2:
+                    self.laser_data = self.ssr_data[:, 0]
+                    perform_pulse_analysis = False
+                    return_dict = dict()
+                # otherwise, do pulse extraction and analysis as per normal
+                else:
+                    return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(self.ssr_data)
+                    self.laser_data = return_dict['laser_counts_arr0']
+                    perform_pulse_analysis = True
+
+                t4 = time.time()
+                ### Pulse analysis of extracted data #####
                 # analyze pulses and get data points for signal array.
                 if self.laser_data.any():
-                    tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
-                        self.laser_data)
+                    if perform_pulse_analysis:
+                        tmp_signal, tmp_error = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(
+                            self.laser_data)
+                    else:
+                        tmp_signal, tmp_error = self.laser_data, np.sqrt(self.laser_data)
+
                     if subtract_mean:
-                        tmp_signal = tmp_signal  - np.mean(tmp_signal)
+                        tmp_signal = tmp_signal - np.mean(tmp_signal)
                         charge_signal = charge_signal - np.mean(charge_signal)
                     else:
-                        tmp_signal = tmp_signal #- np.mean(tmp_signal)
+                        tmp_signal = tmp_signal
+
                 else:
                     tmp_signal = np.zeros(self.laser_data.shape[0])
-                    # get rid of the last point since it is measured with less readouts
-                # print('Indices: laser1 = {}:{}'.format(return_dict['laser_indices_rising'],
-                #                                        return_dict['laser_indices_falling']))
 
-            # print('tmp_signal = {}'.format(tmp_signal))
+        ### Including charge state normalisation #####
+        #todo: not currently working at ANU
         else:
             # separate the charge state and the ssr data
-            ssr_raw = ssr_data[1::2, :]
-            charge_raw = ssr_data[::2, :]
+            ssr_raw = self.ssr_data[1::2, :]
+            charge_raw = self.ssr_data[::2, :]
             # extract the orange laser pulses
             # charge_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(charge_raw)
             # self.charge_dict=charge_dict
@@ -263,8 +278,8 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
                 return_dict = self._pulsedmeasurementlogic._pulseextractor.extract_laser_pulses(ssr_raw)
                 laser1 = return_dict['laser_counts_arr0']
                 laser2 = return_dict['laser_counts_arr1']
-                print('laser1.shape = {}'.format(self.laser1.shape))
-                print('laser2.shape = {}'.format(self.laser2.shape))
+                # print('laser1.shape = {}'.format(self.laser1.shape))
+                # print('laser2.shape = {}'.format(self.laser2.shape))
                 self.laser_data = [laser1, laser2]
                 if laser1.any() and laser2.any():
                     tmp_signal1, tmp_error1 = self._pulsedmeasurementlogic._pulseanalyzer.analyse_laser_pulses(laser1)
@@ -295,8 +310,6 @@ class FastTimeTaggerSSRCounterInterfuse(GenericLogic, SingleShotInterface):
             # data point should be removed, as we don't pre-polarise the nuclear spin
 
         # LOCALFIX Andrew: for debugging purposes:
-        print('tmp_signal[:-1] shape = {}'.format(tmp_signal[:-1].shape))
-        # print('charge_signal = {}, shape = {}'.format(charge_signal, charge_signal.shape))
         self.tmp_signal = tmp_signal # LOCALFIX Andrew 12/2/19: included to enable plotting of tmp_signal from jupyter script
         self.return_dict = return_dict
 

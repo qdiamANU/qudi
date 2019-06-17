@@ -2,6 +2,7 @@ from collections import OrderedDict
 import numpy as np
 import time
 import datetime
+import copy
 import matplotlib.pyplot as plt
 from core.util import units
 from logic.pulsed.pulse_objects import PulseBlock, PulseBlockEnsemble, PulseSequence
@@ -37,7 +38,7 @@ setup['gated'] = True
 setup['sampling_freq'] = pulsedmasterlogic.pulse_generator_settings['sample_rate']
 setup['bin_width_s'] = 1.0e-9
 setup['wait_time'] = 1.0e-6
-setup['laser_delay'] = 150.0e-9
+setup['laser_delay'] = 100.0e-9
 setup['laser_safety'] = 150.0e-9
 
 if setup['gated']:
@@ -54,8 +55,8 @@ setup['trigger_length'] = 20.0e-9
 
 setup['channel_amp'] = 4.0
 setup['microwave_channel'] = 'a_ch1'
-setup['rf_channel'] = 'a_ch2'  # parameter currently unused
-setup['rf_amplitude'] = 0.5  # parameter currently unused
+setup['rf_channel'] = 'a_ch2'
+setup['rf_amplitude'] = 0.5
 setup['optimize_channel'] = '/Dev1/PFI9'
 
 setup['readout_end'] = 0.5e-6
@@ -79,10 +80,12 @@ setup['ext_microwave_frequency'] = 1
 
 
 def do_experiment(experiment, qm_dict, meas_type, meas_info, generate_new=True, save_tag='',
-                                load_tag='', sleep_time=0.2):
+                                load_tag=''):
+    t1 = time.time()
 
     # want to only control AWG output amplitude via sine wave amplitudes, so set AWG channel amplitudes to maximum
-    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().set_analog_level({'a_ch1': 4.0, 'a_ch2': 4.0})
+    # pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().set_analog_level({'a_ch1': 4.0, 'a_ch2': 4.0})
+    pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().set_analog_level({'a_ch1': 4.0})
 
     # add information necessary for measurement type
     qm_dict = meas_info(experiment, qm_dict)
@@ -93,15 +96,17 @@ def do_experiment(experiment, qm_dict, meas_type, meas_info, generate_new=True, 
     if not perform_sanity_check(qm_dict):
         pulsedmasterlogic.log.error('Dictionary sanity check failed')
         return -1
+
     # prepare the measurement by generating and loading the sequence/waveform
+    t2 = time.time()
     prepare_qm(experiment, qm_dict, generate_new)
+    print('do_experiment: prepare_qm time = {} s'.format((time.time() - t2)))
     # perform measurement
-    user_terminated = perform_measurement(qm_dict=qm_dict,meas_type=meas_type, load_tag=load_tag, save_tag=save_tag)
-    # wait for a moment
-    time.sleep(sleep_time)
-    # if ssr:
-    #     # # save the measurement results
-    #     save_ssr_final_result(save_tag)
+    t3 = time.time()
+    user_terminated = perform_measurement(qm_dict=qm_dict, meas_type=meas_type, load_tag=load_tag, save_tag=save_tag)
+    print('do_experiment: perform_measurement time = {} s'.format((time.time() - t3)))
+
+    print('do_experiment: total time = {} s'.format((time.time() - t1)))
     return user_terminated
 
 def perform_sanity_check(qm_dict):
@@ -121,16 +126,11 @@ def perform_sanity_check(qm_dict):
         return False
     return True
 
-
 def add_conventional_information(experiment, qm_dict):
     qm_dict['experiment'] = experiment
-    qm_dict['gated'] = False # todo: why false?
-    qm_dict['sequence_mode'] = False # todo: why false?
-    # LOCALFIX Prithvi: Setting all the rest qm_dict paramters as early as possible to avoid key errors due to execution order.
-    # qm_dict = customise_setup(qm_dict)
-    # qm_dict = set_parameters(qm_dict)
+    qm_dict['gated'] = True
+    qm_dict['sequence_mode'] = False
     return qm_dict
-
 
 ###################################  Upload and set parameters functionality #######################################
 
@@ -147,16 +147,25 @@ def prepare_qm(experiment, qm_dict,  generate_new = True):
         except:
             pulsedmasterlogic.log.error('Experiment parameters are not known. Needs to be generate newly.')
             return cause_an_error
+
     if not qm_dict['sequence_mode']:
         qm_dict['sequence_length'] = \
             pulsedmasterlogic.get_ensemble_info(pulsedmasterlogic.saved_pulse_block_ensembles[qm_dict['name']])[0]
     else:
-        # sequence length is the length of the entire AWG playback
+        # the sequence length obtained directly from pulsedmasterlogic is the length of the entire AWG playback
         # i.e. it is NOT the length of one step of a measurement
-        qm_dict['sequence_length'] = \
-            pulsedmasterlogic.get_sequence_info(pulsedmasterlogic.saved_pulse_sequences[qm_dict['name']])[0]
+        # need to divide by number of steps to obtain appropriate sequence length in current context
+        if 'num_of_points' in qm_dict:
+            qm_dict['sequence_length'] = \
+                pulsedmasterlogic.get_sequence_info(pulsedmasterlogic.saved_pulse_sequences[qm_dict['name']])[0] \
+                / qm_dict['num_of_points']
+        else:
+            qm_dict['sequence_length'] = \
+                pulsedmasterlogic.get_sequence_info(pulsedmasterlogic.saved_pulse_sequences[qm_dict['name']])[0]
+
     # Set the parameters
     set_parameters(qm_dict)
+
     return qm_dict
 
 def customise_setup(dictionary):
@@ -170,8 +179,10 @@ def customise_setup(dictionary):
     return dictionary
 
 def generate_sample_upload(experiment, qm_dict):
+    t1 = time.time()
     qm_dict = customise_setup(qm_dict)
-    # print('generate_sample_upload: qm_dict = {}'.format(qm_dict))
+    print('generate_sample_upload: customise_setup time = {} s'.format((time.time() - t1)))
+
     if not qm_dict['sequence_mode']:
         # make sure a previous ensemble is deleted
         pulsedmasterlogic.delete_block_ensemble(qm_dict['name'])
@@ -188,20 +199,33 @@ def generate_sample_upload(experiment, qm_dict):
         pulsedmasterlogic.sample_ensemble(qm_dict['name'], True)
     else:
         if 'exchange_parts' not in qm_dict or qm_dict['exchange_parts']=={}:
+            t2 = time.time()
             # make sure a previous sequence is deleted
             pulsedmasterlogic.delete_sequence(qm_dict['name'])
             # generate the ensemble or sequence
             try:
                 pulsedmasterlogic.generate_predefined_sequence(experiment, qm_dict.copy())  # generate_predefined_sequence(predefined_sequence_name, kwargs_dict)
             except:
-                pulsedmasterlogic.log.error('Generation failed')
+                pulsedmasterlogic.log.error('generation of predefined sequence failed')
                 return cause_an_error
-            # sample the sequence
-            time.sleep(0.01)
+            print('generate_sample_upload: generate_predefined_sequence time = {} s'.format((time.time() - t2)))
+
+            # time.sleep(0.01)
+
+            # wait until sequence generation is complete
+            t5 = time.time()
             while pulsedmasterlogic.status_dict['predefined_generation_busy']: time.sleep(0.01)
-            # print('qm_dict[name] = {}'.format(qm_dict['name']))
-            if qm_dict['name'] not in pulsedmasterlogic.saved_pulse_sequences: cause_an_error
+            print('generate_sample_upload: predefined_generation_busy time = {} s'.format((time.time() - t5)))
+
+            # Sanity check: make sure that the desired sequence is now stored in the pulsed master logic memory
+            if qm_dict['name'] not in pulsedmasterlogic.saved_pulse_sequences:
+                print('sequence generation error: sequence not in pulsedmasterlogic.saved_pulse_sequences')
+                return cause_an_error
+
+            t3 = time.time()
+            # sample the sequence
             pulsedmasterlogic.sample_sequence(qm_dict['name'], True)
+            print('generate_sample_upload: sample_sequence time = {} s'.format((time.time() - t3)))
         else:
             # get the sequence information
             sequence = pulsedmasterlogic.saved_pulse_sequences.get(qm_dict['name'])
@@ -223,11 +247,13 @@ def generate_sample_upload(experiment, qm_dict):
                 while pulsedmasterlogic.status_dict['sampload_busy']: time.sleep(0.2)
             # load the sequence
             myawg.write_sequence(qm_dict['name'], sequence.sampling_information['step_parameters'])
-            time.sleep(0.2)
+            # time.sleep(0.2)
             myawg.load_sequence(qm_dict['name'])
 
-    # wait till sequence is sampled
-    while pulsedmasterlogic.status_dict['sampload_busy']: time.sleep(0.2)
+    # wait until sequence is finished sampling
+    t4 = time.time()
+    while pulsedmasterlogic.status_dict['sampload_busy']: time.sleep(0.1)
+    print('generate_sample_upload: sampload_busy time = {} s'.format((time.time() - t4)))
     return
 
 
@@ -283,14 +309,18 @@ def perform_measurement(qm_dict, meas_type, load_tag='', save_tag='', analysis_i
         qm_dict['analysis_interval'] = analysis_interval
 
     ################ Start and perform the measurement #################
+    t2 = time.time()
     user_terminated = meas_type(qm_dict)
+    print('perform_measurement: meas_type time = {} s'.format((time.time() - t2)))
     ########################## Save data ###############################
     save_parameters(save_tag=save_tag, save_dict=qm_dict)
     # if if desired
+
     if 'fit_experiment' in qm_dict and qm_dict['fit_experiment']!= 'No fit':
         fit_data, fit_result = pulsedmeasurementlogic.do_fit(qm_dict['fit_experiment'])
-    pulsedmasterlogic.save_measurement_data(save_tag, True)
-    time.sleep(1)
+    if meas_type == conventional_measurement:
+        pulsedmasterlogic.save_measurement_data(save_tag, True)
+        time.sleep(1)
     return user_terminated
 
 
@@ -577,18 +607,6 @@ def optimize_poi(poi):
     additional_time = (time_stop_optimize - time_start_optimize)
     return additional_time
 
-
-
-# def laser_on(pulser_on=True):
-#     # Turns on the laser. If pulser_on the pulser is not stopped
-#     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_on(setup['laser_channel'])
-#     return
-#
-# def laser_off(pulser_on=False):
-#     # Switches off the laser trigger from awg
-#     pulsedmasterlogic.sequencegeneratorlogic().pulsegenerator().laser_off()
-#     return
-
 def _reload_awg(name, asset_type):
     """
     @param str name: name of AWG asset to reload
@@ -608,7 +626,6 @@ def _reload_awg(name, asset_type):
     return additional_time
 
 ######################################## Microwave frequency optimize functions #########################################
-
 
 
 def optimize_frequency_during_experiment(opt_dict, qm_dict):
@@ -665,6 +682,22 @@ def optimize_frequency(opt_dict):
     # generate, sample and upload the new sequence
     return fit_result
 
+def optimize_Rabi(opt_dict):
+    # Generate a new dictionary with the measurement parameters
+    if 'optimization_method' not in opt_dict:
+        pulsedmasterlogic.log.error('No fit method specified. Cannot run optimization')
+        return -1
+
+    # generate sequence, upload it, set the parameters and run optimization experiment
+    do_experiment(experiment=opt_dict['optimization_method'], qm_dict=opt_dict, meas_type=opt_dict['meas_type'],
+                  meas_info=opt_dict['meas_info'], generate_new=opt_dict['generate_new'],
+                  save_tag = opt_dict['save_tag'])
+    # perform a final fit
+    fit_data, fit_result = pulsedmeasurementlogic.do_fit(opt_dict['fit_method'])
+
+    # FIXME:
+    # generate, sample and upload the new sequence
+    return fit_result
 
 ########################################## Qdyne Analysis functions #########################################################
 
@@ -747,8 +780,90 @@ def optimize_frequency(opt_dict):
 
 ################################## Automized measurements for a list of NV centers #####################################
 
-
 def do_automized_measurements(qm_dict, autoexp):
+
+    # make sure there is an option to break the loop
+    pulsedmasterlogic.break_variable = False
+
+    if qm_dict['optimize_at_start']:
+        optimize_position()
+
+    # perform all experiments
+    for experiment in autoexp:
+        if pulsedmasterlogic.break_variable == True: break
+        # perform the measurement
+        do_experiment(experiment=autoexp[experiment]['type'], qm_dict=autoexp[experiment],
+                      meas_type=autoexp[experiment]['meas_type'], meas_info=autoexp[experiment]['meas_info'],
+                      generate_new=autoexp[experiment]['generate_new'],
+                      save_tag=autoexp[experiment]['name'])
+
+        # fit and update parameters
+        if 'fit_experiment' in autoexp[experiment]:
+            if autoexp[experiment]['fit_experiment'] != '':
+                fit_data, fit_result = pulsedmeasurementlogic.do_fit(autoexp[experiment]['fit_experiment'])
+                #pulsedmasterlogic.do_fit(autoexp[experiment]['fit_experiment'])
+               # while pulsedmasterlogic.status_dict['fitting_busy']: time.sleep(0.2)
+                #time.sleep(1)
+                if 'fit_parameter' in autoexp[experiment]:
+                    #fit_dict = pulsedmasterlogic.fit_container.current_fit_result.result_str_dict
+                    #fit_para = fit_dict[autoexp[experiment]['fit_parameter']]['value']
+                    #fit_para = fit_result.best_values[autoexp[experiment]['fit_parameter']]
+                    fit_para = fit_result.result_str_dict[autoexp[experiment]['fit_parameter']]['value']
+                    if 'update_parameters' in autoexp[experiment]:
+                        for key in autoexp[experiment]['update_parameters']:
+                            autoexp[key][autoexp[experiment]['update_parameters'][key]] = fit_para
+                    if 'update_parameters1' in autoexp[experiment]:
+                        fit_para1 = fit_result.result_str_dict[autoexp[experiment]['fit_parameter1']]['value']
+                        for key in autoexp[experiment]['update_parameters1']:
+                            autoexp[key][autoexp[experiment]['update_parameters1'][key]] = fit_para1
+                    if 'update_parameters2' in autoexp[experiment]:
+                        if autoexp[experiment]['fit_parameter2'] == 'RF':
+
+                            LO = 10.65e9
+                            Bdc = (LO + 2.87e9 + fit_result.result_str_dict['Position 1']['value'])/28e9
+                            gammaN14 = 3.0766e6  # [MHz/T]
+                            # fit_para2 = 4.945e6 + Bdc*gammaN14 - 25e3
+                            fit_para2 = 4.945e6 + Bdc*gammaN14
+                            print('Bdc = {} T, rf start freq = {} MHz'.format(Bdc, fit_para2/1e6))
+                        else:
+                            fit_para2 = fit_result.result_str_dict[autoexp[experiment]['fit_parameter2']]['value']
+                        for key in autoexp[experiment]['update_parameters2']:
+                            autoexp[key][autoexp[experiment]['update_parameters2'][key]] = fit_para2
+                if 'update_frequency' in autoexp[experiment]:
+
+                    freqs_list = list()
+
+                    # if only a single frequency fitted, then naming convention is different:
+                    if 'Position' in fit_result.result_str_dict:
+                        # append this frequency to a list
+                        freqs_list.append(fit_result.result_str_dict['Position']['value']-5e6)
+                        for key in autoexp[experiment]['update_frequency']:
+                            autoexp[key][autoexp[experiment]['update_frequency'][key]] = freqs_list
+
+                    # otherwise, first find the number of frequencies fitted:
+                    else:
+                        ii = 0
+                        while 'Position {}'.format(ii) in fit_result.result_str_dict:
+                            ii += 1
+                        n_frequencies = ii
+
+                        # then append these to a list of frequencies
+                        for ii in range(n_frequencies):
+                            freqs_list.append(fit_result.result_str_dict['Position {}'.format(ii)]['value'])
+                        # update subsequent measurements with the frequencies in freq_list
+                        for key in autoexp[experiment]['update_frequency']:
+                            autoexp[key][autoexp[experiment]['update_frequency'][key]] = str(freqs_list)
+
+
+
+        if qm_dict['optimize_between_experiments']:
+            optimize_position()
+
+
+    return
+
+
+def do_automized_measurements_poi(qm_dict, autoexp):
 
     # If there is not list of pois specified, take all pois from the current roi
     if not qm_dict['list_pois']:

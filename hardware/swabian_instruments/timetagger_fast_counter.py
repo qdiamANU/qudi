@@ -19,11 +19,28 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+# LOCALFIX Andrew 6/5/2019: updated timetagger API, previous module loading no longer worked. Changed to
+# module loading suggested in Swabian Instruments quickstart guide. Downside is that we now reference something
+# outside the qudi folder
+# import thirdparty.swabian_instruments.timetagger.TimeTagger as tt
+try:
+    import TimeTagger as tt
+except:
+    import sys
+    pyversion = sys.version_info
+    from winreg import ConnectRegistry, OpenKey, HKEY_LOCAL_MACHINE, QueryValueEx
+    registry_path = "SOFTWARE\\Python\\PythonCore\\" + str(pyversion.major) + "." + str(pyversion.minor) + "\\PythonPath\\Time Tagger"
+    reg = ConnectRegistry(None, HKEY_LOCAL_MACHINE)
+    key = OpenKey(reg, registry_path)
+    module_path = QueryValueEx(key,'')[0]
+    sys.path.append(module_path)
+    import TimeTagger as tt
+
 from interface.fast_counter_interface import FastCounterInterface
 import numpy as np
-import TimeTagger as tt
+# import TimeTagger as tt
 from core.module import Base, ConfigOption
-import os
+import time
 
 
 class TimeTaggerFastCounter(Base, FastCounterInterface):
@@ -46,6 +63,7 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
     _channel_apd_0 = ConfigOption('timetagger_channel_apd_0', missing='error')
     _channel_apd_1 = ConfigOption('timetagger_channel_apd_1')
     _channel_detect = ConfigOption('timetagger_channel_detect', missing='error')
+    _channel_next = ConfigOption('timetagger_channel_next', missing='warn')
     _channel_sequence = ConfigOption('timetagger_channel_sequence')
     _sum_channels = ConfigOption('timetagger_sum_channels', False)
 
@@ -163,13 +181,15 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         self.statusvar = 1
         # Detection channel input voltage is quite low, due to signal being split between laser and timetagger
         # Need to lower the trigger level on this channel, to e.g. 0.9 V
-        self._tagger.setTriggerLevel(self._channel_detect, 0.9)
-        self._tagger.setTriggerLevel(next_channel, 0.9)
+        self._tagger.setTriggerLevel(self._channel_apd, 1.2)
+        self._tagger.setTriggerLevel(self._channel_detect, 1.2)
+        self._tagger.setTriggerLevel(next_channel, 1.2)
 
         print('tt configure. tagger: click_channel={}, start_channel={}, next_channel={}'.format(
             self._channel_apd, self._channel_detect, next_channel))
         binwidth_ps = int(np.round(self._bin_width * 1000))
-        print('binwidth={} ps, n_bins={}, n_histograms={}'.format(binwidth_ps, int(self._record_length), number_of_gates))
+        print('binwidth={} ps, n_bins={}, n_histograms={}, rollover={}'.format(binwidth_ps, int(self._record_length),
+                                                                               number_of_gates, rollover))
         self.pulsed = tt.TimeDifferences(
             tagger=self._tagger,
             click_channel=self._channel_apd,
@@ -249,8 +269,9 @@ class TimeTaggerFastCounter(Base, FastCounterInterface):
         """
 
         # LOCALFIX Andrew: debugging help
+        time_start = time.time()
         self.data = np.array(self.pulsed.getData(), dtype='int64')
-        print('tt get_data_trace, size = {}'.format(self.data.shape))
+        print('tt get_data_trace, time taken = {} ms'.format((time.time() - time_start)/1e-3))
         return self.data
 
         # return np.array(self.pulsed.getData(), dtype='int64')

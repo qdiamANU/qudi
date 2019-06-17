@@ -1236,7 +1236,7 @@ class PredefinedGeneratorBase:
                     frequency_2=freqs[1],
                     phase_1=phases[0],
                     phase_2=phases[1])
-            else:
+            elif sine_number == 3:
                 mw_element.pulse_function[self.microwave_channel] = SamplingFunctions.TripleSinSum(
                     amplitude_1=amps[0],
                     amplitude_2=amps[1],
@@ -1247,6 +1247,12 @@ class PredefinedGeneratorBase:
                     phase_1=phases[0],
                     phase_2=phases[1],
                     phase_3=phases[2])
+            else:
+                mw_element.pulse_function[self.microwave_channel] = SamplingFunctions.NSinSum(
+                    ampls=amps,
+                    freqs=freqs,
+                    phases=phases)
+
         return mw_element
 
     def _get_mw_laser_element(self, length, increment, amp=None, freq=None, phase=None):

@@ -636,6 +636,7 @@ class ODMRGui(GUIBase):
         The update will block the GUI signals from emitting a change back to the
         logic.
         """
+        print('odmr-gui update_parameter')
         param = param_dict.get('sweep_mw_power')
         if param is not None:
             self._mw.sweep_power_DoubleSpinBox.blockSignals(True)

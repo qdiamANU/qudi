@@ -189,14 +189,22 @@ class ODMRLogic(GenericLogic):
                 'fit_function': 'lorentziantriple',
                 'estimator': 'N14'
                 }
+            # d1['N14_C13'] = {
+            #     'fit_function': 'lorentzian_six',
+            #     'estimator': 'N14_C13'
+            # }
             d1['N15'] = {
                 'fit_function': 'lorentziandouble',
                 'estimator': 'N15'
                 }
+            # d1['Gaussian dip'] = {
+            #     'fit_function': 'gaussiandouble',
+            #     'estimator': 'dip'
+            #     }
             d1['Two Gaussian dips'] = {
                 'fit_function': 'gaussiandouble',
                 'estimator': 'dip'
-                }
+            }
             default_fits = OrderedDict()
             default_fits['1d'] = d1
             fc.load_from_dict(default_fits)
@@ -890,6 +898,56 @@ class ODMRLogic(GenericLogic):
         if max(fit_count_vals) > 0:
             ax_mean.plot(fit_freq_vals, fit_count_vals, marker='None')
 
+            # # add then the fit result to the plot:
+            #
+            # # Parameters for the text plot:
+            # # The position of the text annotation is controlled with the
+            # # relative offset in x direction and the relative length factor
+            # # rel_len_fac of the longest entry in one column
+            # rel_offset = 0.02
+            # rel_len_fac = 0.011
+            # entries_per_col = 24
+            #
+            # # create the formatted fit text:
+            # if hasattr(self.fit_result, 'result_str_dict'):
+            #     result_str = units.create_formatted_output(self.fit_result.result_str_dict)
+            # else:
+            #     result_str = ''
+            # # do reverse processing to get each entry in a list
+            # entry_list = result_str.split('\n')
+            # # slice the entry_list in entries_per_col
+            # chunks = [entry_list[x:x + entries_per_col] for x in range(0, len(entry_list), entries_per_col)]
+            #
+            # is_first_column = True  # first entry should contain header or \n
+            #
+            # for column in chunks:
+            #
+            #     max_length = max(column, key=len)  # get the longest entry
+            #     column_text = ''
+            #
+            #     for entry in column:
+            #         column_text += entry + '\n'
+            #
+            #     column_text = column_text[:-1]  # remove the last new line
+            #
+            #     heading = ''
+            #     if is_first_column:
+            #         heading = 'Fit results:'
+            #
+            #     column_text = heading + '\n' + column_text
+            #
+            #     ax1.text(1.00 + rel_offset, 0.99, column_text,
+            #              verticalalignment='top',
+            #              horizontalalignment='left',
+            #              transform=ax1.transAxes,
+            #              fontsize=12)
+            #
+            #     # the rel_offset in position of the text is a linear function
+            #     # which depends on the longest entry in the column
+            #     rel_offset += rel_len_fac * len(max_length)
+            #
+            #     is_first_column = False
+
         ax_mean.set_ylabel('Fluorescence (' + counts_prefix + 'c/s)')
         ax_mean.set_xlim(np.min(freq_data), np.max(freq_data))
 
@@ -949,14 +1007,13 @@ class ODMRLogic(GenericLogic):
 
         return fig
 
-    def perform_odmr_measurement(self, freq_start, freq_stop, freq_step, power, runtime,
+    def perform_odmr_measurement(self, freq_start, freq_step, freq_stop, power, runtime,
                                  fit_function='No Fit', save_after_meas=True, name_tag=''):
         """ An independant method, which can be called by a task with the proper input values
             to perform an odmr measurement.
 
         @return
         """
-        # print('perform_odmr_measurement')
 
         timeout = 30
         start_time = time.time()
@@ -996,6 +1053,5 @@ class ODMRLogic(GenericLogic):
         # Save data if requested
         if save_after_meas:
             self.save_odmr_data(tag=name_tag)
-        print(fit_params)
-
+        # print(fit_params)
         return self.odmr_plot_x, self.odmr_plot_y, fit_params

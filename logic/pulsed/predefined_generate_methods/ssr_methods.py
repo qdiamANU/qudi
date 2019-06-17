@@ -296,7 +296,7 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
             readout_element2 = self._get_readout_element(wait_time=wait_ssr_length, length=laser_ssr_length, trigger=False)
 
-            time_between_trigger = self.laser_length + self.wait_time + self.laser_delay
+            # time_between_trigger = self.laser_length + self.wait_time + self.laser_delay
             # if time_between_trigger > self.laser_length * self.non_normalised_safety:
             #     wait = time_between_trigger - self.laser_length * self.non_normalised_safety
             #     extra_waiting_element = self._get_idle_element(length=wait*1.2, increment=0)
@@ -595,7 +595,12 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                    mw_cnot_frequency2=para_dict['mw_cnot_frequency2'],
                                    mw_cnot_phase2=para_dict['mw_cnot_phase2'],
                                    ssr_normalise=para_dict['ssr_normalise'],
-                                   counts_per_readout=para_dict['counts_per_readout'])
+                                   counts_per_readout=para_dict['counts_per_readout'],
+                                   sync_gate_name=para_dict['sync_gate_name'],
+                                   rf_channel=para_dict['rf_channel'],
+                                   wait_ssr_length=para_dict['wait_ssr_length'],
+                                   laser_ssr_length=para_dict['laser_ssr_length'])
+
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
 
@@ -623,6 +628,60 @@ class SSRPredefinedGeneratorS3(HelperMethods):
     def generate_ssr_nuclear_odmr(self, name='Nuclear-ODMR', freq_start=1.0e6, freq_step=1.0e3, num_of_points=50,
                           laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
                           wait_ssr_length=1.0e-6, laser_ssr_length=500e-9, initial_pi_pulse=False,
+                                  rf_duration=1.0e-3, rf_amp=0.1, rf_phase=0,
+                                  ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=1.0,
+                                  mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=1.0,
+                                  mw_cnot_frequency2=2.8e9,  mw_cnot_phase2=0, ssr_normalise=True,
+                                  counts_per_readout=1000, sync_gate_name='sync_gate', rf_channel='a_ch2'):
+
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+        para_dict = locals()
+
+        # generate the RF-Rabi pieces
+        freq_array = freq_start + np.arange(num_of_points) * freq_step
+        para_list = list()
+        for number, freq in enumerate(freq_array):
+            # name_tmp = name + '_' + str(number)
+            # created_blocks_tmp, created_ensembles_tmp, list1, list2 = \
+            #     self._chopped_rf_pulse(name = name_tmp, rf_duration=rf_duration, rf_amp=rf_amp,
+            #                            rf_freq=freq, rf_phase=rf_phase, rf_channel=rf_channel)
+            # created_blocks += created_blocks_tmp
+            # created_ensembles += created_ensembles_tmp
+            # para_list.append([list1, list2])
+            # # print('\ncreated_blocks_tmp = {}'.format(created_blocks_tmp))
+            # # print('created_ensembles_tmp = {}'.format(created_ensembles_tmp))
+            # # print('list1 = {}'.format(list1))
+            # # print('list2 = {}'.format(list2))
+
+            # LOCALFIX Andrew 6/4/2019: chopped_rf_pulse seems to be causing spurious AWG output, so avoiding use
+            name_tmp = name + '_' + str(number)
+            created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+                self.generate_single_mw_pulse(name=name_tmp, tau=rf_duration,
+                                              microwave_amplitude=rf_amp,
+                                              microwave_frequency=freq, microwave_phase=rf_phase,
+                                              channel=rf_channel
+                                              )
+            created_blocks += created_blocks_tmp
+            created_ensembles += created_ensembles_tmp
+            seq_param = self._customize_seq_para({})
+            para_list.append([name_tmp, seq_param])
+
+        created_blocks, created_ensembles, sequence = \
+            self._nuclear_manipulation(created_blocks, created_ensembles, para_list, para_dict)
+
+        self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
+                                       controlled_variable=freq_array, units=('Hz', ''), number_of_lasers=num_of_points,
+                                       labels=('Frequency', 'Spin flip probability'),
+                                       counting_length=laser_ssr_length * self.normalised_safety if ssr_normalise
+                                       else laser_ssr_length * self.non_normalised_safety)
+        created_sequences.append(sequence)
+        return created_blocks, created_ensembles, created_sequences
+
+    def generate_ssr_nuclear_conditional_odmr(self, name='Nuclear-ODMR', freq_start=1.0e6, freq_step=1.0e3, num_of_points=50,
+                          laser_name='laser_wait', laser_init_length=3.0e-6, wait_init_length=1.0e-6,
+                          wait_ssr_length=1.0e-6, laser_ssr_length=500e-9, initial_pi_pulse=False,
                                   rf_duration=1.0e6, rf_amp=0.1, rf_phase=0,
                                   ssr_name='SSR', mw_cnot_rabi_period=20e-9, mw_cnot_amplitude=1.0,
                                   mw_cnot_frequency=2.8e9, mw_cnot_phase=0, mw_cnot_amplitude2=1.0,
@@ -636,18 +695,23 @@ class SSRPredefinedGeneratorS3(HelperMethods):
 
         # generate the RF-Rabi pieces
         freq_array = freq_start + np.arange(num_of_points) * freq_step
-        para_list=list()
+        para_list = list()
         for number, freq in enumerate(freq_array):
+
             name_tmp = name + '_' + str(number)
-            created_blocks_tmp, created_ensembles_tmp, list1, list2 = \
-                self._chopped_rf_pulse(name = name_tmp, rf_duration=rf_duration, rf_amp=rf_amp,
-                                       rf_freq=freq, rf_phase=rf_phase, rf_channel=rf_channel)
+            created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+                self.generate_single_mw_pulse(name=name_tmp, tau=rf_duration,
+                                              microwave_amplitude=rf_amp,
+                                              microwave_frequency=freq, microwave_phase=rf_phase,
+                                              channel=rf_channel
+                                              )
             created_blocks += created_blocks_tmp
             created_ensembles += created_ensembles_tmp
-            para_list.append([list1, list2])
+            seq_param = self._customize_seq_para({})
+            para_list.append([name_tmp, seq_param])
 
         created_blocks, created_ensembles, sequence = \
-            self._nuclear_manipulation(created_blocks, created_ensembles, para_list, para_dict)
+            self._nuclear_manipulation_conditional(created_blocks, created_ensembles, para_list, para_dict)
 
         self._add_metadata_to_settings(sequence, created_blocks=list(), alternating=False, laser_ignore_list=list(),
                                        controlled_variable=freq_array, units=('Hz', ''), number_of_lasers=num_of_points,
@@ -682,6 +746,19 @@ class SSRPredefinedGeneratorS3(HelperMethods):
             created_blocks += created_blocks_tmp
             created_ensembles += created_ensembles_tmp
             para_list.append([list1, list2])
+
+            # LOCALFIX Andrew 6/4/2019: chopped_rf_pulse seems to be causing spurious AWG output, so avoiding use
+            # name_tmp = name + '_' + str(number)
+            # created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            #     self.generate_single_mw_pulse(name=name_tmp, tau=tau,
+            #                                   microwave_amplitude=rf_amp,
+            #                                   microwave_frequency=rf_freq, microwave_phase=rf_phase,
+            #                                   channel=rf_channel
+            #                                   )
+            # created_blocks += created_blocks_tmp
+            # created_ensembles += created_ensembles_tmp
+            # seq_param = self._customize_seq_para({})
+            # para_list.append([name_tmp, seq_param])
 
         created_blocks, created_ensembles, sequence = \
             self._nuclear_manipulation(created_blocks, created_ensembles, para_list, para_dict)
@@ -757,12 +834,74 @@ class SSRPredefinedGeneratorS3(HelperMethods):
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
 
+        # LOCALFIX Andrew 6/4/2019: chopped_rf_pulse seems to be causing spurious AWG output, so avoiding use
+        # # bring the individual blocks in the correct order
+        # element_list = list()
+        # for ii in range(len(para_list)):
+        #     element_list.append(laser_wait_list.copy())
+        #     element_list.append(para_list[ii][0])
+        #     element_list.append(para_list[ii][1])
+        #     element_list.append(sync_list.copy())
+        #     element_list.append(ssr_list.copy())
+        # # make sequence continuous
+        # element_list = self._make_sequence_continous(element_list)
+
         # bring the individual blocks in the correct order
         element_list = list()
         for ii in range(len(para_list)):
             element_list.append(laser_wait_list.copy())
-            element_list.append(para_list[ii][0])
-            element_list.append(para_list[ii][1])
+            element_list.append(para_list[ii])
+            element_list.append(sync_list.copy())
+            element_list.append(ssr_list.copy())
+        # make sequence continuous
+        element_list = self._make_sequence_continous(element_list)
+
+        sequence = PulseSequence(name=para_dict['name'], ensemble_list=element_list, rotating_frame=False)
+
+
+        return created_blocks, created_ensembles, sequence
+
+    def _nuclear_manipulation_conditional(self, created_blocks, created_ensembles, para_list, para_dict):
+
+        # generate initialization, rf control, and ssr_readout)
+        created_blocks_tmp, created_ensembles_tmp, laser_wait_list, sync_list, ssr_list = \
+            self._initialize_ssr(laser_name=para_dict['laser_name'], laser_init_length=para_dict['laser_init_length'],
+                                   wait_init_length=para_dict['wait_init_length'],
+                                   initial_pi_pulse=para_dict['initial_pi_pulse'],
+                                   ssr_name=para_dict['ssr_name'],
+                                   mw_cnot_rabi_period=para_dict['mw_cnot_rabi_period'],
+                                   mw_cnot_amplitude=para_dict['mw_cnot_amplitude'],
+                                   mw_cnot_frequency=para_dict['mw_cnot_frequency'],
+                                   mw_cnot_phase=para_dict['mw_cnot_phase'],
+                                   mw_cnot_amplitude2=para_dict['mw_cnot_amplitude2'],
+                                   mw_cnot_frequency2=para_dict['mw_cnot_frequency2'],
+                                   mw_cnot_phase2=para_dict['mw_cnot_phase2'],
+                                   ssr_normalise=para_dict['ssr_normalise'],
+                                   counts_per_readout=para_dict['counts_per_readout'],
+                                   wait_ssr_length=para_dict['wait_ssr_length'],
+                                   laser_ssr_length=para_dict['laser_ssr_length'])
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+
+        # Add electron CNOT
+        # ToDo; Add multiple frequency element
+        mw_cnot_name = 'mw_cnot'
+        created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+            self.generate_multiple_mw_pulse(name=mw_cnot_name, tau=para_dict['mw_cnot_rabi_period'] / 2.0,
+                                            microwave_amplitude=para_dict['mw_cnot_amplitude'],
+                                            microwave_frequency=para_dict['mw_cnot_frequency'],
+                                            microwave_phase=para_dict['mw_cnot_phase'])
+        created_blocks += created_blocks_tmp
+        created_ensembles += created_ensembles_tmp
+        seq_param = self._customize_seq_para({})
+        mw_cnot_list = [mw_cnot_name, seq_param]
+
+        # bring the individual blocks in the correct order
+        element_list = list()
+        for ii in range(len(para_list)):
+            element_list.append(laser_wait_list.copy())
+            element_list.append(mw_cnot_list.copy())
+            element_list.append(para_list[ii])
             element_list.append(sync_list.copy())
             element_list.append(ssr_list.copy())
         # make sequence continuous
@@ -801,6 +940,18 @@ class SSRPredefinedGeneratorS3(HelperMethods):
                                    rf_freq=rf_cnot_freq, rf_phase=rf_cnot_phase, rf_channel=rf_channel)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
+        # # LOCALFIX Andrew 6/4/2019: chopped_rf_pulse seems to be causing spurious AWG output, so avoiding use
+        # name_tmp = name + '_' + str(number)
+        # created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
+        #     self.generate_single_mw_pulse(name=name_tmp, tau=tau,
+        #                                   microwave_amplitude=rf_amp,
+        #                                   microwave_frequency=rf_freq, microwave_phase=rf_phase,
+        #                                   channel=rf_channel
+        #                                   )
+        # created_blocks += created_blocks_tmp
+        # created_ensembles += created_ensembles_tmp
+        # seq_param = self._customize_seq_para({})
+        # para_list.append([name_tmp, seq_param])
 
         # Add SSR 'sync' trigger
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \

@@ -570,8 +570,9 @@ class HelperMethods(PredefinedGeneratorBase):
 
     def _chopped_rf_pulse(self, name, rf_duration, rf_amp, rf_freq, rf_phase, rf_channel):
         """
-        The function of chopped_rf_pulse is to reduce the data upload burden to the AWG, by 'chopping' the rf
-        pulse into a number of periods
+        The function of chopped_rf_pulse is to reduce the data upload burden to the AWG, by 'chopping' a sine
+        pulse into a number of periods. The focus on RF is because RF pulses are traditionally much longer than
+        MW pulses, due to the difficulty in achieving large nuclear Rabi frequencies
 
         generates two waveforms - rf pulse 1 which is an integer number of rf periods (or idle if pulse is shorter than
         one period), and rf pulse 2, which is the remaining fractional period.
@@ -600,7 +601,7 @@ class HelperMethods(PredefinedGeneratorBase):
         if n_periods == 0:
             # If there is not more than 1 period just make rf pulse 1 an idle period with minimal length
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_idle_s3(name=name + '1',
+                self.generate_idle_s3(name=name + '_1',
                                       tau=self.minimum_number_of_samples / self.pulse_generator_settings['sample_rate'])
             n_repetitions = 0
             rf_pulse2_duration = rf_duration
@@ -614,12 +615,13 @@ class HelperMethods(PredefinedGeneratorBase):
             # calculate duration for rf pulse 2
             rf_pulse2_duration = rf_duration % rf_pulse1_duration
             rf_pulse2_duration = self._adjust_to_samplingrate(rf_pulse2_duration + rf_period, 2)
-            # extra ps length helps to prevent granularity problems (from Ulm - untested with ANU hardware):
-            rf_pulse2_duration += 1e-12
-            # print('rf_pulse2_duration = {}'.format(rf_pulse2_duration))
+
+            # LOCALFIX Andrew 5/4/2019: commented out in search for spurious digital pulse output bug
+            # # extra ps length helps to prevent granularity problems (from Ulm - untested with ANU hardware):
+            # rf_pulse2_duration += 1e-12
 
             created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-                self.generate_single_mw_pulse(name=name+'1', tau=rf_pulse1_duration,
+                self.generate_single_mw_pulse(name=name+'_1', tau=rf_pulse1_duration,
                                               microwave_amplitude=rf_amp, microwave_frequency=rf_freq,
                                               microwave_phase=rf_phase, channel=rf_channel)
             n_repetitions = int(np.floor(rf_duration / rf_pulse1_duration)-1)
@@ -629,17 +631,17 @@ class HelperMethods(PredefinedGeneratorBase):
         created_ensembles = created_ensembles_tmp
         # add sequence parameters
         seq_param = self._customize_seq_para({'repetitions': n_repetitions})
-        list1 = [name+'1', seq_param]
+        list1 = [name+'_1', seq_param]
 
         # generate second part of rf pulse
         created_blocks_tmp, created_ensembles_tmp, created_sequences_tmp = \
-            self.generate_single_mw_pulse(name=name+'2', tau=rf_pulse2_duration, microwave_amplitude=rf_amp,
+            self.generate_single_mw_pulse(name=name+'_2', tau=rf_pulse2_duration, microwave_amplitude=rf_amp,
                                              microwave_frequency=rf_freq, microwave_phase=rf_phase, channel=rf_channel)
         created_blocks += created_blocks_tmp
         created_ensembles += created_ensembles_tmp
         # add sequence parameters
         seq_param2 = self._customize_seq_para({})
-        list2 = [name+'2', seq_param2]
+        list2 = [name+'_2', seq_param2]
 
         return created_blocks, created_ensembles, list1, list2
 

@@ -656,6 +656,75 @@ class BasicPredefinedGeneratorS3(PredefinedGeneratorBase):
         return created_blocks, created_ensembles, created_sequences
 
 
+    def generate_multifreq_rabi(self, name='multifreq_rabi', amps='[1, 1, 1]', freqs='[10e6, 11e6, 12e6]', phases='[0, 0, 0]',
+                                tau_start=10.0e-9, tau_step=10.0e-9, num_of_points=50):
+        """
+
+        """
+        created_blocks = list()
+        created_ensembles = list()
+        created_sequences = list()
+
+        # amps_list = list(map(float, amps.split(',')))
+        # freqs_list = list(map(float, freqs.split(',')))
+        # phases_list = list(map(float, phases.split(',')))
+        amps_list = eval(amps)
+        freqs_list = eval(freqs)
+        phases_list = eval(phases)
+
+
+        # get tau array for measurement ticks
+        tau_array = tau_start + np.arange(num_of_points) * tau_step
+
+        # create the laser_mw element
+        mw_element = self._get_multiple_mw_element(length=tau_start,
+                                          increment=tau_step,
+                                          amps=amps_list,
+                                          freqs=freqs_list,
+                                          phases=phases_list)
+        readout_element = self._get_readout_element(wait_time=self.wait_time,
+                                                    length=self.laser_length,
+                                                    trigger=True)
+        # waiting_element = self._get_idle_element(length=self.wait_time,
+        #                                          increment=0)
+        # laser_element = self._get_laser_gate_element(length=self.laser_length,
+        #                                              increment=0)
+        # delay_element = self._get_delay_gate_element()
+
+        # Create block and append to created_blocks list
+        rabi_block = PulseBlock(name=name)
+        rabi_block.append(mw_element)
+        # rabi_block.append(laser_element)
+        # rabi_block.append(delay_element)
+        # rabi_block.append(waiting_element)
+        rabi_block.extend(readout_element)
+        created_blocks.append(rabi_block)
+
+        # Create block ensemble
+        block_ensemble = PulseBlockEnsemble(name=name, rotating_frame=False)
+        block_ensemble.append((rabi_block.name, num_of_points - 1))
+
+        # Create and append sync trigger block if needed
+        if self.sync_channel:
+            sync_block = PulseBlock(name='sync_trigger')
+            sync_block.append(self._get_sync_element())
+            created_blocks.append(sync_block)
+            block_ensemble.append((sync_block.name, 0))
+
+        # add metadata to invoke settings later on
+        block_ensemble.measurement_information['alternating'] = False
+        block_ensemble.measurement_information['laser_ignore_list'] = list()
+        block_ensemble.measurement_information['controlled_variable'] = tau_array
+        block_ensemble.measurement_information['units'] = ('s', '')
+        block_ensemble.measurement_information['labels'] = ('Tau', 'Signal')
+        block_ensemble.measurement_information['number_of_lasers'] = num_of_points
+        block_ensemble.measurement_information['counting_length'] = self._get_ensemble_count_length(
+            ensemble=block_ensemble, created_blocks=created_blocks)
+
+        # Append ensemble to created_ensembles list
+        created_ensembles.append(block_ensemble)
+        return created_blocks, created_ensembles, created_sequences
+
 
 
 

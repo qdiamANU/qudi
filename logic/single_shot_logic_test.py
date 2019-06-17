@@ -33,6 +33,7 @@ from logic.generic_logic import GenericLogic
 from qtpy import QtCore
 import scipy.integrate as integrate
 import matplotlib.pyplot as plt
+import copy
 
 
 
@@ -141,6 +142,15 @@ class SingleShotLogic(GenericLogic):
         self.mapped_state = 0
         self.lost_events = 0
         self.lost_events_percent = 0
+        self.threshold_optimal = 0
+        self.fidelity_left = 0
+        self.fidelity_right = 0
+        self.fidelity_total = 0
+        self.fidelity_left_optimal = 0
+        self.fidelity_right_optimal = 0
+        self.fidelity_total_optimal = 0
+
+        self.ssr_counter_rollover = False
 
 
         self._saved_raw_data = OrderedDict()  # temporary saved raw data
@@ -155,6 +165,9 @@ class SingleShotLogic(GenericLogic):
         self.fc = None  # Fit container
         self.signal_fit_data = np.empty((2, 0), dtype=float)  # The x,y data of the fit result
 
+
+        # min trace length for fitting histogram
+        self.min_trace_length = 1
 
         return
 
@@ -328,12 +341,14 @@ class SingleShotLogic(GenericLogic):
     def set_parameters(self, settings_dict):
         # Set parameters if present
         if self.module_state() == 'idle':
+            if 'num_of_points' in settings_dict:
+                self.num_of_points = settings_dict['num_of_points']
             if 'analyze_mode' in settings_dict:
                 self.set_analyze_mode(settings_dict['analyze_mode'])
             if 'ssr_mode' in settings_dict:
                 self.set_ssr_mode(settings_dict['ssr_mode'])
-            if 'num_bins' in settings_dict:
-                self.set_number_of_histogram_bins(settings_dict['num_bins'])
+            # if 'num_bins' in settings_dict:
+            #     self.set_number_of_histogram_bins(settings_dict['num_bins'])
             if 'sequence_length' in settings_dict:
                 self.set_sequence_length(settings_dict['sequence_length'])
             if 'analysis_period' in settings_dict:
@@ -348,6 +363,10 @@ class SingleShotLogic(GenericLogic):
                 self.set_charge_threshold(settings_dict['charge_threshold'])
             if 'subtract_mean' in settings_dict:
                 self.set_subtract_mean(bool(settings_dict['subtract_mean']))
+            if 'x_data' in settings_dict:
+                self.x_data = settings_dict['x_data']
+            else:
+                self.x_data = None
 
         else:
             self.log.warning('SSR measurement is running. CAnnot change parameters')
@@ -379,24 +398,24 @@ class SingleShotLogic(GenericLogic):
             if 'counts_per_readout' in settings_dict:
                 self.counts_per_readout = int(settings_dict['counts_per_readout'])
 
-            if 'num_of_points' in settings_dict:
+            if 'num_of_fastcounter_rows' in settings_dict:
                 # number of fastcounter histogram rows, corresponding to e.g. number of steps of controlled variable,
-                self.num_of_points = settings_dict['num_of_points']
+                self.num_of_fastcounter_rows = settings_dict['num_of_fastcounter_rows']
             if 'countlength' in settings_dict:
                 # fast counter histogram length, roughly laser pulse duration
                 self.histogram_length_s = settings_dict['countlength']
             if 'bin_width_s' in settings_dict:
                 # fast counter histogram length, roughly laser pulse duration
                 self.bin_width_s = settings_dict['bin_width_s']
-            if 'rollover' in settings_dict:
+            if 'ssr_counter_rollover' in settings_dict:
                 # fast counter histogram length, roughly laser pulse duration
-                self.rollover = settings_dict['rollover']
+                self.ssr_counter_rollover = settings_dict['ssr_counter_rollover']
 
             # Apply the settings to hardware
             self.singleshotreadoutcounter().configure_ssr_counter(histogram_length_s=self.histogram_length_s,
-                                                                  n_steps_controlled_variable=self.num_of_points,
+                                                                  num_of_fastcounter_rows=self.num_of_fastcounter_rows,
                                                                   bin_width_s=self.bin_width_s,
-                                                                  rollover=self.rollover)
+                                                                  rollover=self.ssr_counter_rollover)
 
         else:
             self.log.warning('Gated counter is not idle (status: {0}).\n'
@@ -538,72 +557,44 @@ class SingleShotLogic(GenericLogic):
             calculates fluorescence signal and creates plots.
         """
         start_time = time.time()
-        # self.log.error('_ssr_analysis_loop: entered')
         with self._threadlock:
-            # self.log.error('_ssr_analysis_loop:  with self._threadlock')
+            print('singleshot enter threadlock: time taken = {} ms'.format((time.time() - start_time) / 1e-3))
             # Update elapsed time
             self.__elapsed_time = time.time() - self.__start_time
 
             # self.log.error('_ssr_analysis_loop: get_raw_data')
             # Get counter raw data (including recalled raw data from previous measurement)
+            t1 = time.time()
             self.trace, self.charge_state = self._get_raw_data()
-            # print('analysis loop: trace length = {}'.format(len(self.trace)))
+            print('singleshot get data: time taken = {} ms'.format((time.time()-t1)/1e-3))
 
-            # print('_ssr_analysis_loop: len(self.trace)={}, sequence_length = {}')
             self.time_axis = np.arange(1, len(self.trace) + 1) * self.sequence_length
 
+            t2 = time.time()
             # compute spin flip probabilities
-            try:
-                # self.log.error('starting analyze_ssr')
-                self.analyze_ssr()
-                # self.log.error('finished analyze_ssr')
-            except:
-                self.log.warning('Analysis of time traced failed')
-                self.spin_flip_prob, self.error_flip_prob, self.spin_flip_error, self.mapped_state, \
-                    self.lost_events, self.lost_events_percent = 0, 0, 0, 0, 0, 0
+            self.analyze_ssr()
+            print('singleshot analyze_ssr: time taken = {} ms'.format((time.time() - t2) / 1e-3))
 
+            t5 = time.time()
             # update the trace in GUI
             self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob,
                                       self.spin_flip_error, self.mapped_state, self.lost_events,
                                       self.lost_events_percent)
-
+            print('singleshot sigTraceUpdated: time taken = {} ms'.format((time.time() - t5) / 1e-3))
 
             # compute and fit histogram
+            t3 = time.time()
             self.calculate_histogram()
+            print('singleshot calculate_histogram: time taken = {} ms'.format((time.time() - t3)/1e-3))
+            # t4 = time.time()
             self.double_gaussian_fit_histogram()
+            # print('singleshot double_gaussian_fit_histogram: time taken = {} ms'.format((time.time() - t4)/1e-3))
+            # update trace in pulsed gui
+            if self.x_data is not None:
+                self.update_spin_flip_result()
 
-        # start_time = time.time()
-        #
-        # # Update elapsed time
-        # self.__elapsed_time = time.time() - self.__start_time
-        #
-        # # self.log.error('_ssr_analysis_loop: get_raw_data')
-        # # Get counter raw data (including recalled raw data from previous measurement)
-        # self.trace, self.charge_state = self._get_raw_data()
-        #
-        # self.time_axis = np.arange(1, len(self.trace) + 1) * self.sequence_length
-        #
-        # # compute spin flip probabilities
-        # try:
-        #     # self.log.error('starting analyze_ssr')
-        #     self.analyze_ssr()
-        #     # self.log.error('finished analyze_ssr')
-        # except:
-        #     self.log.warning('Analysation of time traced failed')
-        #     self.spin_flip_prob, self.error_flip_prob, self.spin_flip_error, self.mapped_state, \
-        #     self.lost_events, self.lost_events_percent = 0, 0, 0, 0, 0, 0
-        #
-        # # update the trace in GUI
-        # self.sigTraceUpdated.emit(self.time_axis, self.trace, self.spin_flip_prob,
-        #                           self.spin_flip_error, self.mapped_state, self.lost_events,
-        #                           self.lost_events_percent)
-        #
-        # # compute and fit histogram
-        # self.calculate_histogram()
-        # self.double_gaussian_fit_histogram()
-        #
         time_taken = time.time() - start_time
-        print('_ssr_analysis_loop: time = {}'.format(time_taken))
+        print('_ssr_analysis_loop: time = {}\n'.format(time_taken))
 
         return
 
@@ -615,7 +606,6 @@ class SingleShotLogic(GenericLogic):
         :return numpy.ndarray: The count data (1D for ungated, 2D for gated counter)
         """
 
-        # self.log.error('get_raw_data')
         start_time = time.time()
         # get raw data from ssr counter
         # netobtain: Check if something is a rpyc remote object. If so, transfer it (i.e. convert to float??)
@@ -623,7 +613,7 @@ class SingleShotLogic(GenericLogic):
                                                                                          self.charge_state_selection,
                                                                                          self.subtract_mean))
         time_taken = time.time() - start_time
-        print('_get_raw_data.get_data_trace: time = {}, ssr_data.shape = {}'.format(time_taken, ssr_data.shape))
+        print('_get_raw_data.get_data_trace: time = {} ms, ssr_data.shape = {}'.format(time_taken/1e-3, ssr_data.shape))
         # add old raw data from previous measurements if necessary
         if self._saved_raw_data.get(self._recalled_raw_data_tag) is not None:
             if not ssr_data.any():
@@ -654,31 +644,46 @@ class SingleShotLogic(GenericLogic):
         :return:
         """
 
-        start_time = time.time()
-        ## Compare the data to the threshold
-        # find all indices in the trace-array, where the value is above init_threshold[1]
-        init_high = np.where(self.trace[:-1] >= self.init_threshold1)[0]
-        # find all indices in the trace-array, where the value is below init_threshold[0]
-        init_low = np.where(self.trace[:-1] < self.init_threshold0)[0]
-        # find all indices in the trace-array, where the value is above ana_threshold[1]
-        ana_high = np.where(self.trace >= self.ana_threshold1)[0]
-        # find all indices in the trace-array, where the value is below ana_threshold[0]
-        ana_low = np.where(self.trace < self.ana_threshold0)[0]
+        # start_time = time.time()
 
         incorrect_charge = np.where(self.charge_state < self.charge_threshold)[0]
 
-        time_taken = time.time() - start_time
-        print('analyze ssr: init/ana high/low time = {}'.format(time_taken))
+        # create binary array where 1 => initialisation in low-counts state
+        init_low_array = copy.deepcopy(self.trace)
+        init_low_array[init_low_array < self.init_threshold0] = 1
+        init_low_array[init_low_array != 1] = 0
+
+        # create binary array where 1 => initialisation in high-counts state
+        init_high_array = copy.deepcopy(self.trace)
+        init_high_array[init_high_array >= self.init_threshold1] = 1
+        init_high_array[init_high_array != 1] = 0
+
+        # create binary array where 1 => measurement in low-counts state
+        ana_low_array = copy.deepcopy(self.trace)
+        ana_low_array[ana_low_array < self.ana_threshold0] = 1
+        ana_low_array[ana_low_array != 1] = 0
+
+        # create binary array where 1 => measurement in high-counts state
+        ana_high_array = copy.deepcopy(self.trace)
+        ana_high_array[ana_high_array >= self.ana_threshold1] = 1
+        ana_high_array[ana_high_array != 1] = 0
+
+        # time_taken = time.time() - start_time
+        # print('analyze ssr: init/ana high/low time = {} ms'.format(time_taken/1e-3))
 
         if self.ssr_mode == 'flip_probability':
-            start_time = time.time()
-            amount_analyzed_data \
-                = self.analyze_ssr_flip_probability(init_high, init_low, ana_high, ana_low, incorrect_charge)
-            time_taken = time.time() - start_time
-            print('analyze ssr: analyze_ssr_flip_probability time = {}'.format(time_taken))
+            amount_analyzed_data = self.analyze_ssr_flip_probability(init_low_array,
+                                                                     init_high_array,
+                                                                     ana_low_array,
+                                                                     ana_high_array,
+                                                                     incorrect_charge)
 
         elif self.ssr_mode == 'mapping':
-            amount_analyzed_data = self.analyze_ssr_mapping(init_high, init_low, incorrect_charge)
+            amount_analyzed_data = self.analyze_ssr_mapping(init_low_array,
+                                                            init_high_array,
+                                                            ana_low_array,
+                                                            ana_high_array,
+                                                            incorrect_charge)
 
         else:
             self.log.error('Unknown analysis mode')
@@ -691,63 +696,82 @@ class SingleShotLogic(GenericLogic):
         #return self.spin_flip_prob, self.spin_flip_error, self.lost_events, self.lost_events_percent
 
     
-    def analyze_ssr_flip_probability(self, init_high, init_low, ana_high, ana_low, incorrect_charge):
+    def analyze_ssr_flip_probability(self, init_low_array, init_high_array,
+                                     ana_low_array, ana_high_array, incorrect_charge):
         """
         Method which calculates the histogram, the fidelity and the flip probability of a time trace.
+
+        todo: pass data as a variable to function, rather than through self.trace
         :return:
         """
 
-        # calculate the flip probability
-        no_flip = 0.0
-        flip = 0.0
+        # spin flip type 1: was initialised in low-counts state, then measured in high-counts state
+        self.spin_flip_array_low_raw = init_low_array[:-1] * ana_high_array[1:]
+        # spin flip type 2: was initialised in high-counts state, then measured in low-counts state
+        self.spin_flip_array_high_raw = init_high_array[:-1] * ana_low_array[1:]
 
-        # todo: faster analysis than for-loop
-        if self.analyze_mode == 'bright' or self.analyze_mode == 'full':
-            # analyze the trace where the data were the nuclear was initalized into one direction
-            for index in init_high:
-                if (index and index + 1) not in incorrect_charge:
-                    # check if the following data point is in the analysis array
-                    if index + 1 in ana_high:
-                        no_flip += 1
-                    elif index + 1 in ana_low:
-                        flip += 1
-        if self.analyze_mode == 'dark' or self.analyze_mode == 'full':
-            # repeat the same if the nucleus was initalized into the other array
-            for index in init_low:
-                if (index and index + 1) not in incorrect_charge:
-                    # check if the following data point is in the analysis array
-                    if index + 1 in ana_high:
-                        flip += 1
-                    elif index + 1 in ana_low:
-                        no_flip += 1
+        # todo: need to remove data from measurements with the incorrect NV charge state
+        # we have the self.trace indices where the charge state was incorrect
+        # for calculating the mean spin flip probability, we can simply remove the
+        # relevant indicies from self.spin_flip_array_raw
+        # I'm not sure right now how to do this for parameter sweeps without messing up the reshaping / averaging
 
-        # the flip probability is given by the number of flips divided by the total number of analyzed data points
-        if (flip + no_flip) == 0:
-            #self.log.warning('There is not enough data to anaylsis SSR!')
-            self.spin_flip_prob = 0
-            self.spin_flip_error = 0
-        else:
-            self.spin_flip_prob = flip / (flip + no_flip)
-            self.spin_flip_error = np.sqrt((flip*(1-self.spin_flip_prob)**2+no_flip*self.spin_flip_prob**2)\
-                                   /(flip + no_flip-1)/(flip + no_flip))
-        amount_analyzed_data = flip + no_flip
-        print('self.spin_flip_prob = {}'.format(self.spin_flip_prob))
-        return amount_analyzed_data
+        # If performing a parameter sweep (e.g. nuclear rabi), then need to reshape array of individual spin flip
+        # measurements into an array corresponding to the parameter sweep. (Note that for just-SSR measurements,
+        # we set self.num_of_points = 1)
+        # First, we pad the data with zeros so that we end up with length that is an integer multiple of the number
+        # of steps in our parameter sweep
+        padded_len = int(np.ceil(len(self.spin_flip_array_low_raw) / self.num_of_points) * self.num_of_points)
+        spin_flip_array_low_pad = np.pad(self.spin_flip_array_low_raw, (0, padded_len - len(self.spin_flip_array_low_raw)), 'constant')
+        spin_flip_array_high_pad = np.pad(self.spin_flip_array_high_raw, (0, padded_len - len(self.spin_flip_array_high_raw)), 'constant')
+        # We can then reshape the data to match the parameter sweep dimensions (e.g. a Rabi measurement with 50
+        # timesteps will result in a 1D self.spin_flip_array with a length of 50)
+        self.spin_flip_array_low = np.mean(np.reshape(spin_flip_array_low_pad, (-1, self.num_of_points)), 0)
+        self.spin_flip_array_high = np.mean(np.reshape(spin_flip_array_high_pad, (-1, self.num_of_points)), 0)
+
+        # We can also calculate the mean spin flip probability over the entire trace
+        n_datapoints = len(self.spin_flip_array_low_raw)
+        n_flipped = np.sum(self.spin_flip_array_low_raw)
+        n_unflipped = np.sum(1-self.spin_flip_array_low_raw)
+        self.spin_flip_prob = np.mean(self.spin_flip_array_low_raw)
+        self.spin_flip_error = np.sqrt((n_flipped * (1 - self.spin_flip_prob) ** 2 + n_unflipped * self.spin_flip_prob ** 2) \
+                                       / (n_datapoints * (n_datapoints - 1)))
+
+        self.spin_flip_array = self.spin_flip_array_low
+
+        return n_datapoints
 
 
-    def analyze_ssr_mapping(self, high, low, incorrect_charge):
-        # remove all the data with the incorrect charge state
-        self.dark_states = [x for x in low if x not in incorrect_charge]
-        self.bright_states = [x for x in high if x not in incorrect_charge]
-        # compute the probability to be in the bright state
-        if (len(self.bright_states) + len(self.dark_states)) != 0:
-            self.mapped_state = len(self.bright_states) / (len(self.bright_states) + len(self.dark_states))
-        else:
-            self.mapped_state = 0
-        # return the amount of analyzed data
-        amount_analyzed_data = len(self.bright_states) + len(self.dark_states)
-        print('self.mapped_state = {}'.format(self.mapped_state))
-        return amount_analyzed_data
+    def analyze_ssr_mapping(self, init_low_array, init_high_array, ana_low_array, ana_high_array, incorrect_charge):
+        """
+
+        fixme: not currently working
+        need to perform analysis on full vectors, not just averaged values
+
+        :param init_low_array:
+        :param init_high_array:
+        :param ana_low_array:
+        :param ana_high_array:
+        :param incorrect_charge:
+        :return:
+        """
+
+        # # remove all the data with the incorrect charge state
+        # self.dark_states = [x for x in low if x not in incorrect_charge]
+        # self.bright_states = [x for x in high if x not in incorrect_charge]
+        # # compute the probability to be in the bright state
+        # if (len(self.bright_states) + len(self.dark_states)) != 0:
+        #     self.mapped_state = len(self.bright_states) / (len(self.bright_states) + len(self.dark_states))
+        # else:
+        #     self.mapped_state = 0
+        # # return the amount of analyzed data
+        # amount_analyzed_data = len(self.bright_states) + len(self.dark_states)
+        #
+        # print('self.mapped_state = {}'.format(self.mapped_state))
+        # return amount_analyzed_data
+
+        self.log.error('analyze_ssr_mapping not currently implemented')
+        return 0
 
 
     def calculate_histogram(self, custom_bin_arr=None):
@@ -795,25 +819,29 @@ class SingleShotLogic(GenericLogic):
                 hist_y_val, hist_x_val = np.histogram(self.trace, self.num_bins)
 
         self.hist_data = np.array([hist_x_val, hist_y_val])
+
         # update the histogram in GUI
         self.sigHistogramUpdated.emit(self.hist_data)
         return self.hist_data
 
 
     def double_gaussian_fit_histogram(self):
+
+        t1 = time.time()
+
         # fit histogram with a double Gaussian
         axis = self.hist_data[0][:-1] + (self.hist_data[0][1] - self.hist_data[0][0]) / 2.
         data = self.hist_data[1]
 
         add_params = dict()
         add_params['offset'] = {'min': 0, 'max': data.max(), 'value': 1e-15, 'vary': False}
-        if not axis.min() >= self.init_threshold0:
+        if axis.min() < self.init_threshold0:
             add_params['g0_center'] = {'min': axis.min(), 'max': self.init_threshold0,
                                        'value': self.init_threshold0 - (self.init_threshold0 - axis.min()) / 10}
-        else:
+        else: # todo: +/-1 in else cases only makes sense for normalised measurements
             add_params['g0_center'] = {'min': axis.min() - 1, 'max': self.init_threshold0,
                                        'value': self.init_threshold0 - (self.init_threshold0 - axis.min()) / 10}
-        if not axis.max() <= self.init_threshold1:
+        if axis.max() > self.init_threshold1:
             add_params['g1_center'] = {'min': self.init_threshold1, 'max': axis.max(),
                                        'value': self.init_threshold1 + (axis.max() - self.init_threshold1) / 10}
         else:
@@ -823,80 +851,179 @@ class SingleShotLogic(GenericLogic):
         add_params['g1_amplitude'] = {'min': data.max() / 10, 'max': 1.3 * data.max(), 'value': data.max()}
         add_params['g0_sigma'] = {'min': (self.init_threshold0 - axis.min()) / 10,
                                   'max': (axis.max() - axis.min()) / 2,
-                                  'value': (axis.max() - axis.min()) / 5}
+                                  'value': (axis.max() - axis.min()) / 4}
         add_params['g1_sigma'] = {'min': (axis.max() - self.init_threshold1) / 10,
                                   'max': (axis.max() - axis.min()) / 2,
-                                  'value': (axis.max() - axis.min()) / 7}
+                                  'value': (axis.max() - axis.min()) / 4}
 
-        try:
-            hist_fit_x, hist_fit_y, param_dict, fit_result = self.do_doublegaussian_fit(axis, data,
-                                                                                        add_params=add_params)
-            fit_params = fit_result.best_values
+        t2 = time.time()
 
-            # calculate the fidelity for the left and right part from the threshold
+        # Fit histogram of SSR trace with double Gaussian
+        # Only attempt fit if SSR trace is long enough to create a reasonably Gaussian histogram
+        if len(self.trace) > self.min_trace_length:
+            # try fitting the data histogram with a double Gaussian:
+            try:
+                hist_fit_x, hist_fit_y, param_dict, fit_result = self.do_doublegaussian_fit(axis, data,
+                                                                                            add_params=add_params)
+                fit_params = fit_result.best_values
+                fit_success = True
+            except:
+                fit_result = None
+                fit_success = False
+                self.log.error('SSR error in double gaussian fit')
+        else:
+            fit_result = None
+            fit_success = False
+            self.log.warning('SSR trace too short: no fitting performed')
+
+        print('double_gaussian_fit_histogram: fit time = {} ms'.format((time.time() - t2) / 1e-3))
+
+        if fit_success:
+            # create two Gaussian functions from the two Gaussians in the double-Gaussian fit
+            # These will be used for fidelity analysis
             center1 = fit_params['g0_center']
             center2 = fit_params['g1_center']
             std1 = fit_params['g0_sigma']
             std2 = fit_params['g1_sigma']
-            gaussian1 = lambda x: fit_params['g0_amplitude'] * np.exp(-(x - center1) ** 2 / (2 * std1 ** 2))
-            gaussian2 = lambda x: fit_params['g1_amplitude'] * np.exp(-(x - center2) ** 2 / (2 * std2 ** 2))
+            self.gaussian1 = lambda x: fit_params['g0_amplitude'] * np.exp(-(x - center1) ** 2 / (2 * std1 ** 2))
+            self.gaussian2 = lambda x: fit_params['g1_amplitude'] * np.exp(-(x - center2) ** 2 / (2 * std2 ** 2))
             if center1 > center2:
-                gaussian = gaussian1
-                gaussian1 = gaussian2
-                gaussian2 = gaussian
-            area_left1 = integrate.quad(gaussian1, -np.inf, self.init_threshold0)
-            area_left2 = integrate.quad(gaussian2, -np.inf, self.init_threshold0)
-            area_right1 = integrate.quad(gaussian1, self.init_threshold1, np.inf)
-            area_right2 = integrate.quad(gaussian2, self.init_threshold1, np.inf)
+                gaussian = self.gaussian1
+                self.gaussian1 = self.gaussian2
+                self.gaussian2 = gaussian
+
+            t4 = time.time()
+            self.area_left = integrate.quad(self.gaussian1, -np.inf, np.inf)[0]
+            self.area_right = integrate.quad(self.gaussian2, -np.inf, np.inf)[0]
+
+            #### calculate the fidelity for the left and right part from the input threshold ###################
+
+            # LOCALFIX Andrew 1/4/2019: want to scan ana_threshold without perturbing fit
+            # area_left1 = integrate.quad(gaussian1, -np.inf, self.init_threshold0)
+            # area_left2 = integrate.quad(gaussian2, -np.inf, self.init_threshold0)
+            # area_right1 = integrate.quad(gaussian1, self.init_threshold1, np.inf)
+            # area_right2 = integrate.quad(gaussian2, self.init_threshold1, np.inf)
+            area_left1 = integrate.quad(self.gaussian1, -np.inf, self.ana_threshold0)
+            area_left2 = integrate.quad(self.gaussian2, -np.inf, self.ana_threshold0)
+            area_right1 = integrate.quad(self.gaussian1, self.ana_threshold1, np.inf)
+            area_right2 = integrate.quad(self.gaussian2, self.ana_threshold1, np.inf)
             self.fidelity_left = area_left1[0] / (area_left1[0] + area_left2[0])
             self.fidelity_right = area_right2[0] / (area_right1[0] + area_right2[0])
             self.fidelity_total = (area_left1[0] + area_right2[0]) / (
                 area_left1[0] + area_left2[0] + area_right1[0] + area_right2[0])
 
-            self.area_left = integrate.quad(gaussian1, -np.inf, np.inf)[0]
-            self.area_right = integrate.quad(gaussian2, -np.inf, np.inf)[0]
+            #### calculate the optimal readout fidelity #######################
+            # individual Gaussians
+            hist_fit_x12 = np.linspace(min(hist_fit_x), max(hist_fit_x), len(hist_fit_x) * 10)
+            hist_fit_y1 = self.gaussian1(hist_fit_x12)
+            hist_fit_y2 = self.gaussian2(hist_fit_x12)
+
+            print('double_gaussian_fit_histogram: integrate time = {} ms'.format((time.time() - t4) / 1e-3))
+
+            # find crossover point between the two Gaussians, and so the optimal analysis threshold
+            self.index_crossover_raw = np.argwhere(np.diff(np.sign(hist_fit_y1 - hist_fit_y2))).flatten()
+            # Sometimes there are crossing points at the outer tails of the two Gaussians
+            # we only want the central crossing point. We can identify this central crossover from
+            # its y-value, which should be the largest of the possible crossovers
+            if len(self.index_crossover_raw) != 0:
+                # find index with highest y-value
+                idx = np.argmax(hist_fit_y1[self.index_crossover_raw])
+                index_crossover = self.index_crossover_raw[idx]
+            else:
+                index_crossover = None
+
+            # Calculate optimal threshold and fidelities
+            if index_crossover is None:
+                self.threshold_optimal = 0
+                self.fidelity_left_optimal = 0
+                self.fidelity_right_optimal = 0
+                self.fidelity_total_optimal = 0
+            else:
+                self.threshold_optimal = hist_fit_x12[index_crossover]
+                area_left1 = integrate.quad(self.gaussian1, -np.inf, self.threshold_optimal)
+                area_left2 = integrate.quad(self.gaussian2, -np.inf, self.threshold_optimal)
+                area_right1 = integrate.quad(self.gaussian1, self.threshold_optimal, np.inf)
+                area_right2 = integrate.quad(self.gaussian2, self.threshold_optimal, np.inf)
+                self.fidelity_left_optimal = area_left1[0] / (area_left1[0] + area_left2[0])
+                self.fidelity_right_optimal = area_right2[0] / (area_right1[0] + area_right2[0])
+                self.fidelity_total_optimal = (area_left1[0] + area_right2[0]) / (
+                        area_left1[0] + area_left2[0] + area_right1[0] + area_right2[0])
 
             fit_dict = dict()
             fit_dict['fit_result'] = fit_result
             fit_dict['fit_x'] = hist_fit_x
             fit_dict['fit_y'] = hist_fit_y
+            fit_dict['fit_y1'] = self.gaussian1(hist_fit_x)
+            fit_dict['fit_y2'] = self.gaussian2(hist_fit_x)
             fit_dict['fidelity_left'] = self.fidelity_left
             fit_dict['fidelity_right'] = self.fidelity_right
             fit_dict['fidelity_total'] = self.fidelity_total
+            fit_dict['threshold_optimal'] = self.threshold_optimal
+            fit_dict['init_threshold0'] = self.init_threshold0
+            fit_dict['init_threshold1'] = self.init_threshold1
+            fit_dict['ana_threshold0'] = self.ana_threshold0
+            fit_dict['ana_threshold1'] = self.ana_threshold1
+            fit_dict['fidelity_left_optimal'] = self.fidelity_left_optimal
+            fit_dict['fidelity_right_optimal'] = self.fidelity_right_optimal
+            fit_dict['fidelity_total_optimal'] = self.fidelity_total_optimal
             fit_dict['relative_area_left'] = self.area_left/(self.area_left+self.area_right)
             fit_dict['relative_area_right'] = self.area_right/(self.area_left+self.area_right)
+            fit_dict['gaussian1_func'] = self.gaussian1
+            fit_dict['gaussian2_func'] = self.gaussian2
 
-        except:
+            # # update the histogram in GUI with fit traces
+            # self.sigFitUpdated.emit(fit_dict)
+
+        # If fit unsuccessful:
+        else:
+
             fit_dict = dict()
             fit_dict['fit_result'] = None
             fit_dict['fit_x'] = axis
             fit_dict['fit_y'] = data
+            fit_dict['fit_y1'] = data*0
+            fit_dict['fit_y2'] = data*0
             fit_dict['fidelity_left'] = 0
             fit_dict['fidelity_right'] = 0
             fit_dict['fidelity_total'] = 0
+            fit_dict['threshold_optimal'] = self.threshold_optimal
+            fit_dict['init_threshold0'] = self.init_threshold0
+            fit_dict['init_threshold1'] = self.init_threshold1
+            fit_dict['ana_threshold0'] = self.ana_threshold0
+            fit_dict['ana_threshold1'] = self.ana_threshold1
+            fit_dict['fidelity_left_optimal'] = 0
+            fit_dict['fidelity_right_optimal'] = 0
+            fit_dict['fidelity_total_optimal'] = 0
             fit_dict['relative_area_left'] = 0
             fit_dict['relative_area_right'] = 0
+            fit_dict['gaussian1_func'] = 0
+            fit_dict['gaussian2_func'] = 0
 
-
+        # update the histogram in GUI with fit traces
         self.sigFitUpdated.emit(fit_dict)
+
         self.fit_dict = fit_dict
+        print('double_gaussian_fit_histogram: total time = {} ms'.format((time.time() - t1) / 1e-3))
+
         return fit_dict
 
     def do_doublegaussian_fit(self, axis, data, add_params=None):
         model, params = self.fitlogic().make_gaussiandouble_model()
 
         if len(axis) < len(params):
-            #self.log.warning('Fit could not be performed because number of '
-             #                'parameters is larger than data points')
+            self.log.warning('Fit could not be performed because number of '
+                            'parameters is larger than data points')
             return self.do_no_fit()
 
         else:
             result = self.fitlogic().make_gaussiandouble_fit(axis, data, self.fitlogic().estimate_gaussiandouble_peak,
                                                              add_params=add_params)
+            self.result = result # LOCALFIX Andrew 2/4/2019: included for debugging
 
             # 1000 points in x axis for smooth fit data
             hist_fit_x = np.linspace(axis[0], axis[-1], 1000)
             hist_fit_y = model.eval(x=hist_fit_x, params=result.params)
+
 
             # this dict will be passed to the formatting method
             param_dict = OrderedDict()
@@ -983,12 +1110,40 @@ class SingleShotLogic(GenericLogic):
     #             hist_fit_x, hist_fit_y, fit_param_dict, fit_result = self.do_doublepossonian_fit(axis, data)
     #             return hist_fit_x, hist_fit_y, fit_param_dict, fit_result
 
+    def update_spin_flip_result(self):
+        """
+        send data to pulsed measurement gui for analysis
 
+        pulsedmeasurementlogic.signal_data: 2D array, 1st dim = x data, 2nd dim = y data
+        same for measurement_error
+
+        :param spin_flip_tmp:
+        :param error_spin_flip_tmp:
+        :param rep:
+        :param index:
+        :return:
+        """
+
+        temp = np.zeros((2, len(self.spin_flip_array)))
+        temp[0, :] = self.x_data
+        temp[1, :] = self.spin_flip_array
+
+        temp2 = np.zeros((2, len(self.spin_flip_array)))
+        temp2[0, :] = self.x_data
+        temp2[1, :] = np.ones(len(self.spin_flip_array)) * self.spin_flip_error
+
+        self.pulsedmeasurementlogic().signal_data = temp
+        self.pulsedmeasurementlogic().measurement_error = temp2
+
+        self.pulsedmeasurementlogic().sigMeasurementDataUpdated.emit()
+        return
 
     ############################################################################
     def save_measurement(self, save_tag):
 
-        filepath = self.savelogic().get_path_for_module('PulsedMeasurement')
+        t1 = time.time()
+
+        # filepath = self.savelogic().get_path_for_module('PulsedMeasurement')
         timestamp = datetime.datetime.now()
 
         data = OrderedDict()
@@ -998,7 +1153,7 @@ class SingleShotLogic(GenericLogic):
         else:
             data['Counts'] = np.array(self.trace)
 
-        # write the parameters:
+        # create a parameters dictionary to be saved to file:
         parameters = OrderedDict()
         parameters['number bins'] = self.num_bins
         parameters['init_threshold0'] = self.init_threshold0
@@ -1007,7 +1162,11 @@ class SingleShotLogic(GenericLogic):
         parameters['ana_threshold1'] = self.ana_threshold1
         parameters['counts_per_readout'] = self.counts_per_readout
         parameters['countlength'] = self.countlength
+        parameters['threshold_optimal'] = self.fit_dict['threshold_optimal']
+        parameters['fidelity_total_optimal'] = self.fit_dict['fidelity_total_optimal']
+        parameters['fit_dict'] = self.fit_dict
 
+        ###### plot timetrace ###########
         plt.style.use(self.savelogic().mpl_qd_style)
         fig, (ax1, ax2) = plt.subplots(2, 1)
         ax1.plot(self.time_axis, self.trace, '-o', color='blue',
@@ -1018,63 +1177,96 @@ class SingleShotLogic(GenericLogic):
         rel_offset = 0.02
         if self.analyze_mode == 'mapping':
             ax1.text(1.00 + rel_offset, 0.99, 'mapping prob.: ' + str(round(self.mapped_state * 100, 2)),
-                     verticalalignment='top', horizontalalignment='left', transform=ax1.transAxes, fontsize=12)
+                     verticalalignment='top', horizontalalignment='left', transform=ax1.transAxes, fontsize=18)
         else:
             ax1.text(1.00 + rel_offset, 0.99, 'spin flip prob.: ' + str(round(self.spin_flip_prob * 100, 2)),
-                     verticalalignment='top', horizontalalignment='left', transform=ax1.transAxes, fontsize=12)
+                     verticalalignment='top', horizontalalignment='left', transform=ax1.transAxes, fontsize=18)
         ax1.set_xlabel('time [s]')
         ax1.set_ylabel('norm. intensity')
-        try:
-            ax2.hist(self.trace, self.num_bins)
 
-            # include fit curve and fit parameters.
-            fit_result = self.fit_dict['fit_result']
-            hist_fit_x = self.fit_dict['fit_x']
-            hist_fit_y = self.fit_dict['fit_y']
-            ax2.plot(hist_fit_x, hist_fit_y,
-                     marker='None', linewidth=1.5,  # color='o',
-                     label='fit: double Gaussian')
+        print('save ssr measurement: plot1 time = {} ms'.format((time.time() - t1) / 1e-3))
 
-            # add then the fit result to the second plot:
-            # Parameters for the text plot:
-            # create the formatted fit text:
-            if hasattr(fit_result, 'result_str_dict'):
-                fit_res = units.create_formatted_output(fit_result.result_str_dict)
-            else:
-                self.savelogic().log.warning('The fit container does not contain any data '
-                                      'from the fit! Apply the fit once again.')
-                fit_res = ''
-            # do reverse processing to get each entry in a list
-            entry_list = fit_res.split('\n')
-            entry_text = 'Fit results: \n'
-            for entry in entry_list:
-                entry_text += entry + '\n'
-            entry_text += 'fidelity left: ' + str(round(self.fidelity_left * 100, 2)) + '\n'
-            entry_text += 'fidelity right: ' + str(round(self.fidelity_right * 100, 2)) + '\n'
-            entry_text += 'fidelity total: ' + str(round(self.fidelity_total * 100, 2))
+        ###### plot histogram ###########
+        t2 = time.time()
+        ax2.hist(self.trace, self.num_bins)
 
-            ax2.text(1.00 + rel_offset, 0.99, entry_text,
-                     verticalalignment='top', horizontalalignment='left', transform=ax2.transAxes, fontsize=12)
-            if self.normalized:
-                ax2.set_xlabel('norm. intensity')
-            else:
-                ax2.set_xlabel('counts')
-            ax2.set_ylabel('occurence')
+        # include fit curve and fit parameters.
 
-            fig.tight_layout()
+        # double-gaussian fit to total histogram
+        fit_result = self.fit_dict['fit_result']
+        hist_fit_x = self.fit_dict['fit_x']
+        hist_fit_y = self.fit_dict['fit_y']
 
-            self.savelogic().save_data(data, timestamp=timestamp,
-                                parameters=parameters, fmt='%.15e',
-                                filepath=self.savelogic().get_path_for_module('SSR'),
-                                filelabel=save_tag,
-                                delimiter='\t', plotfig=fig)
-        except:
-            pass
+        # individual gaussians
+        hist_fit_y1 = self.fit_dict['fit_y1']
+        hist_fit_y2 = self.fit_dict['fit_y2']
 
+        ax2.plot([self.threshold_optimal, self.threshold_optimal], [0, max(hist_fit_y)],
+                 marker='None', linewidth=1.5, color='k')
+        ax2.plot(hist_fit_x, hist_fit_y1,
+                 marker='None', linewidth=1.5,  # color='o',
+                 label='fit: Gaussian left')
+        ax2.plot(hist_fit_x, hist_fit_y2,
+                 marker='None', linewidth=1.5,  # color='o',
+                 label='fit: Gaussian right')
+        ax2.plot(hist_fit_x, hist_fit_y,
+                 marker='None', linewidth=1.5,  # color='o',
+                 label='fit: double Gaussian')
+
+        # add then the fit result to the second plot:
+        # Parameters for the text plot:
+        # create the formatted fit text:
+        if hasattr(fit_result, 'result_str_dict'):
+            fit_res = units.create_formatted_output(fit_result.result_str_dict)
+        else:
+            self.savelogic().log.warning('The fit container does not contain any data '
+                                  'from the fit! Apply the fit once again.')
+            fit_res = ''
+        # do reverse processing to get each entry in a list
+        entry_list = fit_res.split('\n')
+        entry_text = 'Fit results: \n'
+        # for entry in entry_list:
+        #     entry_text += entry + '\n'
+        entry_text += 'set threshold: ' + str(round(np.mean((self.ana_threshold0, self.ana_threshold1)), 3)) + '\n'
+        entry_text += 'fidelity left: ' + str(round(self.fidelity_left * 100, 2)) + '\n'
+        entry_text += 'fidelity right: ' + str(round(self.fidelity_right * 100, 2)) + '\n'
+        entry_text += 'fidelity total: ' + str(round(self.fidelity_total * 100, 2)) + '\n\n'
+        entry_text += 'optimal threshold: ' + str(round(self.threshold_optimal, 3)) + '\n'
+        entry_text += 'fidelity left (optimal): ' + str(round(self.fidelity_left_optimal * 100, 2)) + '\n'
+        entry_text += 'fidelity right (optimal): ' + str(round(self.fidelity_right_optimal * 100, 2)) + '\n'
+        entry_text += 'fidelity total (optimal): ' + str(round(self.fidelity_total_optimal * 100, 2))
+
+        ax2.text(1.00 + rel_offset, 0.99, entry_text,
+                 verticalalignment='top', horizontalalignment='left', transform=ax2.transAxes, fontsize=18)
+        if self.normalized:
+            ax2.set_xlabel('norm. intensity')
+        else:
+            ax2.set_xlabel('counts')
+        ax2.set_ylabel('occurence')
+
+        fig.tight_layout()
+
+        print('save ssr measurement: plot2 time = {} ms'.format((time.time()-t2) / 1e-3))
+
+        ###### save plots and parameter dictionary ###########
+
+        t3 = time.time()
+        self.savelogic().save_data(data, timestamp=timestamp,
+                            parameters=parameters, fmt='%.15e',
+                            filepath=self.savelogic().get_path_for_module('SSR'),
+                            filelabel=save_tag,
+                            delimiter='\t', plotfig=fig)
+        print('save ssr measurement: savelogic().save_data time = {} ms'.format((time.time() - t3) / 1e-3))
+
+        t4 = time.time()
         np.savez(self.savelogic().get_path_for_module('SSR') + '\\' + timestamp.strftime(
             '%Y%m%d-%H%M-%S') + '_' + save_tag + '_fastcounter', self.raw_data)
         # np.savez(save_directory + save_tag + '_summed_rows', tmp_signal)
+        print('save ssr measurement: np.savez time = {} ms'.format((time.time() - t4) / 1e-3))
+
         plt.close()
+
+        print('save ssr measurement: total time = {} ms'.format((time.time() - t1) / 1e-3))
         return
 
 

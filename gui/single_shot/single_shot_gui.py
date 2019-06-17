@@ -131,6 +131,17 @@ class SingleShotGui(GUIBase):
         # Configure the fit of the data in the main pulse analysis display:
         self._fit_image = pg.PlotCurveItem()
         self._hp.addItem(self._fit_image)
+        # add additional items for the left/right gaussians, and analysis thresholds
+        self._fit_image1 = pg.PlotCurveItem()
+        self._hp.addItem(self._fit_image1)
+        self._fit_image2 = pg.PlotCurveItem()
+        self._hp.addItem(self._fit_image2)
+        self._fit_image_optthresh = pg.PlotCurveItem()
+        self._hp.addItem(self._fit_image_optthresh)
+        self._fit_image_ana_threshold0 = pg.PlotCurveItem()
+        self._hp.addItem(self._fit_image_ana_threshold0)
+        self._fit_image_ana_threshold1 = pg.PlotCurveItem()
+        self._hp.addItem(self._fit_image_ana_threshold1)
 
         # setting the x axis length correctly
         self._gp.setXRange(0, 10)
@@ -579,7 +590,8 @@ class SingleShotGui(GUIBase):
 
     def trace_updated(self, x_data, y_data, spin_flip_prob, spin_flip_error, mapped_state, lost_events, lost_events_percent):
         """ The function that grabs the data and sends it to the plot. """
-        self._trace1.setData(x=x_data, y=y_data)
+        self._trace1.setData(x=x_data, y=y_data, symbol='o', connect='all',
+                             symbolSize=2, pen=pg.mkPen('w', width=0.5))
         self._mw.spin_flip_prob_DSpinBox.setValue(spin_flip_prob*100)
         self._mw.spin_flip_error_DSpinBox.setValue(spin_flip_error * 100)
         self._mw.mapped_state_DSpinBox.setValue(mapped_state * 100)
@@ -613,8 +625,30 @@ class SingleShotGui(GUIBase):
     def fit_updated(self, fit_param_dict):
 
         self._mw.fit_param_TextEdit.clear()
+
+
+        # optimal threshold
+        self._fit_image_optthresh.setData(x=[fit_param_dict['threshold_optimal'], fit_param_dict['threshold_optimal']],
+                                y=[min(fit_param_dict['fit_y']), max(fit_param_dict['fit_y'])],
+                                pen=pg.mkPen(palette.c6, width=2))
+        # analysis left threshold
+        self._fit_image_ana_threshold0.setData(x=[fit_param_dict['ana_threshold0'], fit_param_dict['ana_threshold0']],
+                                y=[min(fit_param_dict['fit_y']), max(fit_param_dict['fit_y'])],
+                                pen=pg.mkPen(palette.c5, width=2, style=QtCore.Qt.DotLine))
+        # analysis right threshold
+        self._fit_image_ana_threshold1.setData(x=[fit_param_dict['ana_threshold1'], fit_param_dict['ana_threshold1']],
+                                y=[min(fit_param_dict['fit_y']), max(fit_param_dict['fit_y'])],
+                                pen=pg.mkPen(palette.c5, width=2, style=QtCore.Qt.DotLine))
+        # double gaussian
         self._fit_image.setData(x=fit_param_dict['fit_x'], y=fit_param_dict['fit_y'],
                                 pen=pg.mkPen(palette.c2, width=2))
+        # left gaussian
+        self._fit_image1.setData(x=fit_param_dict['fit_x'], y=fit_param_dict['fit_y1'],
+                                          pen=pg.mkPen(palette.c3, width=2))
+        # right gaussian
+        self._fit_image2.setData(x=fit_param_dict['fit_x'], y=fit_param_dict['fit_y2'],
+                                          pen=pg.mkPen(palette.c4, width=2))
+
         if fit_param_dict['fit_result'] is None:
             fit_result = 'No Fit parameter passed.'
         else:
@@ -626,5 +660,7 @@ class SingleShotGui(GUIBase):
         self._mw.fidelity_total_DSpinBox.setValue(fit_param_dict['fidelity_total'] * 100)
         self._mw.relative_area_left_DSpinBox.setValue(fit_param_dict['relative_area_left'] * 100)
         self._mw.relative_area_right_DSpinBox.setValue(fit_param_dict['relative_area_right'] * 100)
+        self._mw.optimal_threshold_DSpinBox.setValue(fit_param_dict['threshold_optimal'])
+        self._mw.optimal_fidelity_DSpinBox.setValue(fit_param_dict['fidelity_total_optimal'] * 100)
         return
 

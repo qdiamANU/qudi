@@ -2964,8 +2964,9 @@ class PulsedMeasurementGui(GUIBase):
                 widget.setChecked(value)
                 widget.stateChanged.connect(self.extraction_settings_changed)
             else:
-                self.log.error('Could not create widget for extraction parameter "{0}".\n'
-                               'Default parameter value is of invalid type.'.format(param_name))
+                # self.log.error('Could not create widget for extraction parameter "{0}".\n'
+                #                'Default parameter value is of invalid type.'.format(param_name))
+                pass # LOCALFIX Andrew 31/3/2019 - scripted SSR measurements trigger this error every time, through use of absolute_timing extraction method, as it has a dict() input parameter
                 continue
             widget.setObjectName('extract_param_' + param_name)
             widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)

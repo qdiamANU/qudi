@@ -278,7 +278,7 @@ class PulsedMeasurementLogic(GenericLogic):
                     self.__fast_counter_gates = int(settings_dict['number_of_gates'])
                 else:
                     self.__fast_counter_gates = 0
-
+            # print('pulsed measurement logic: configure TT')
             # Apply the settings to hardware
             self.__fast_counter_binwidth, \
             self.__fast_counter_record_length, \

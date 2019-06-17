@@ -105,7 +105,7 @@ class BasicPulseAnalyzer(PulseAnalyzerBase):
         # Convert the times in seconds to bins (i.e. array indices)
         signal_start_bin = round(signal_start / bin_width)
         signal_end_bin = round(signal_end / bin_width)
-        print('signal_end_bin = {}'.format(signal_end_bin))
+        # print('signal_end_bin = {}'.format(signal_end_bin))
 
         # initialize data arrays for signal and measurement error
         signal_data = np.empty(num_of_lasers, dtype=float)

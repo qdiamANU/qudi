@@ -646,7 +646,7 @@ class PulsedMasterLogic(GenericLogic):
         still_busy = self.status_dict['sampling_ensemble_busy'] or self.status_dict[
             'sampling_sequence_busy'] or self.status_dict['loading_busy'] or self.status_dict[
                                    'sampload_busy']
-        print(self.status_dict)
+        # print(self.status_dict)
         if still_busy:
             self.log.error('Can not clear pulse generator. Sampling/Loading still in progress.')
         elif self.status_dict['measurement_running']:
@@ -665,8 +665,9 @@ class PulsedMasterLogic(GenericLogic):
         already_busy = self.status_dict['sampling_ensemble_busy'] or self.status_dict[
             'sampling_sequence_busy'] or self.sequencegeneratorlogic().module_state() == 'locked'
         if already_busy:
-            self.log.error('Sampling of a different asset already in progress.\n'
-                           'PulseBlockEnsemble "{0}" not sampled!'.format(ensemble_name))
+            # self.log.error('Sampling of a different asset already in progress.\n'
+            #                'PulseBlockEnsemble "{0}" not sampled!'.format(ensemble_name))
+            pass  # LOCALFIX Andrew 31/3/2019: scripted measurements trigger this error every time
         else:
             if with_load:
                 self.status_dict['sampload_busy'] = True
@@ -692,8 +693,9 @@ class PulsedMasterLogic(GenericLogic):
         already_busy = self.status_dict['sampling_ensemble_busy'] or self.status_dict[
             'sampling_sequence_busy'] or self.sequencegeneratorlogic().module_state() == 'locked'
         if already_busy:
-            self.log.error('Sampling of a different asset already in progress.\n'
-                           'PulseSequence "{0}" not sampled!'.format(sequence_name))
+            # self.log.error('Sampling of a different asset already in progress.\n'
+            #                'PulseSequence "{0}" not sampled!'.format(sequence_name))
+            pass # LOCALFIX Andrew 31/3/2019: scripted measurements trigger this error every time
         else:
             if with_load:
                 self.status_dict['sampload_busy'] = True

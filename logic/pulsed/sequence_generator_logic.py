@@ -433,13 +433,12 @@ class SequenceGeneratorLogic(GenericLogic):
 
         @param str|PulseBlockEnsemble ensemble:
         """
-        print('\nload_ensemble()')
-        print('ensemble1 = {}'.format(ensemble))
+        # print('\nload_ensemble()')
+        # print('ensemble1 = {}'.format(ensemble))
 
         # If str has been passed, get the ensemble object from saved ensembles
         if isinstance(ensemble, str):
             ensemble = self.saved_pulse_block_ensembles[ensemble]
-            print('ensemble2 = {}'.format(ensemble))
             if ensemble is None:
                 self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
                 return
@@ -449,10 +448,10 @@ class SequenceGeneratorLogic(GenericLogic):
             self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
             return
 
-        print('self.sampled_waveforms = {}\n'.format(self.sampled_waveforms))
+        # print('self.sampled_waveforms = {}\n'.format(self.sampled_waveforms))
         # Check if the PulseBlockEnsemble has been sampled already.
         if ensemble.sampling_information:
-            print('ensemble.sampling_information[waveforms] = {}'.format(ensemble.sampling_information['waveforms']))
+            # print('ensemble.sampling_information[waveforms] = {}'.format(ensemble.sampling_information['waveforms']))
             # Check if the corresponding waveforms are present in the pulse generator memory
             ready_waveforms = self.sampled_waveforms
             for waveform in ensemble.sampling_information['waveforms']:
@@ -482,6 +481,8 @@ class SequenceGeneratorLogic(GenericLogic):
 
         @param str|PulseSequence sequence:
         """
+
+        t1 = time.time()
         # If str has been passed, get the sequence object from saved sequences
         if isinstance(sequence, str):
             sequence = self.saved_pulse_sequences.get(sequence)
@@ -516,6 +517,8 @@ class SequenceGeneratorLogic(GenericLogic):
             self.log.error('Loading of PulseSequence "{0}" failed.\n'
                            'It has not been generated yet.'.format(sequence.name))
         self.sigLoadedAssetUpdated.emit(*self.loaded_asset)
+
+        print('seq gen logic: load_sequence time = {} ms'.format((time.time() - t1) / 1e-3))
         return 0
 
     def _read_settings_from_device(self):
@@ -523,9 +526,7 @@ class SequenceGeneratorLogic(GenericLogic):
         """
         # Read activation_config from device.
         channel_state = self.pulsegenerator().get_active_channels()
-        print(channel_state)
         current_config = {chnl for chnl in channel_state if channel_state[chnl]}
-        print(current_config)
 
         # Check if the read back config is a valid config in constraints
         avail_configs = self.pulse_generator_constraints.activation_config
@@ -905,7 +906,6 @@ class SequenceGeneratorLogic(GenericLogic):
         """
 
         print('get_sequence: name = {}'.format(name))
-        # print('get_sequence: self._saved_pulse_sequences = {}'.format(self._saved_pulse_sequences))
         if name not in self._saved_pulse_sequences:
             self.log.warning('PulseSequence "{0}" could not be found in saved pulse sequences.\n'
                              'Returning None.'.format(name))
@@ -1059,6 +1059,7 @@ class SequenceGeneratorLogic(GenericLogic):
             self.log.debug('Unused params during predefined sequence generation "{0}":\n'
                            '{1}'.format(predefined_sequence_name, thrown_out_params))
         try:
+            # print('sequence generation, kwargs = {}'.format(kwargs_dict))
             blocks, ensembles, sequences = gen_method(**kwargs_dict)
         except:
             self.log.error('Generation of predefined sequence "{0}" failed.'
@@ -1444,9 +1445,10 @@ class SequenceGeneratorLogic(GenericLogic):
 
         # Take current time
         start_time = time.time()
-
+        t2 = time.time()
         # get important parameters from the ensemble
         ensemble_info = self.analyze_block_ensemble(ensemble)
+        # print('sample_pulse_block_ensemble: analyze_block_ensemble time = {} s'.format((time.time() - t2)))
 
         # Fixme: not correct for Spectrum AWG?
         # Calculate the byte size per sample.
@@ -1464,6 +1466,7 @@ class SequenceGeneratorLogic(GenericLogic):
         else:
             array_length = self._overhead_bytes // bytes_per_sample
 
+        t3 = time.time()
         # Allocate the sample arrays that are used for a single write command
         analog_samples = dict()
         digital_samples = dict()
@@ -1481,7 +1484,8 @@ class SequenceGeneratorLogic(GenericLogic):
                 self.module_state.unlock()
             self.sigSampleEnsembleComplete.emit(None)
             return -1, list(), dict()
-
+        # print('sample_pulse_block_ensemble: allocate arrays time = {} s'.format((time.time() - t3)))
+        t4 = time.time()
         # integer to keep track of the sampls already processed
         processed_samples = 0
         # Index to keep track of the samples written into the preallocated samples array
@@ -1627,6 +1631,8 @@ class SequenceGeneratorLogic(GenericLogic):
 
         More sophisticated sequence sampling method can be implemented here.
         """
+        t1 = time.time()
+
         # Get PulseSequence from saved sequences if string has been passed as argument
         if isinstance(sequence, str):
             sequence = self.get_sequence(sequence)
@@ -1660,6 +1666,8 @@ class SequenceGeneratorLogic(GenericLogic):
         sequence.sampling_information = dict()
         self.save_sequence(sequence)
 
+        print('seq gen logic: sample sequence prep time = {} s'.format((time.time() - t1)))
+        t2 = time.time()
         # Take current time
         start_time = time.time()
 
@@ -1713,17 +1721,19 @@ class SequenceGeneratorLogic(GenericLogic):
             # Append written sequence step to sequence_param_dict_list
             sequence_param_dict_list.append(
                 (tuple(generated_ensembles[name_tag]['waveforms']), seq_step))
-
+        print('seq gen logic: sampling time = {} s'.format((time.time() - t2)))
+        t21 = time.time()
         # pass the whole information to the sequence creation method:
         steps_written = self.pulsegenerator().write_sequence(sequence.name,
                                                              sequence_param_dict_list)
+        print('seq gen logic: actual sequence writing time = {} s'.format((time.time() - t21)))
         if steps_written != len(sequence_param_dict_list):
             self.log.error('Writing PulseSequence "{0}" to the device memory failed.\n'
                            'Returned number of sequence steps ({1:d}) does not match desired '
                            'number of steps ({2:d}).'.format(sequence.name,
                                                              steps_written,
                                                              len(sequence_param_dict_list)))
-
+        t22 = time.time()
         # get important parameters from the sequence and save them to the sequence object
         sequence.sampling_information.update(self.analyze_sequence(sequence))
         sequence.sampling_information['ensemble_info'] = generated_ensembles
@@ -1731,6 +1741,7 @@ class SequenceGeneratorLogic(GenericLogic):
         sequence.sampling_information['waveforms'] = sorted(written_waveforms)
         sequence.sampling_information['step_parameters'] = sequence_param_dict_list
         self.save_sequence(sequence)
+        print('seq gen logic: sample sequence final stuff time = {} s'.format((time.time() - t22)))
 
         self.log.info('Time needed for sampling and writing PulseSequence {0} to device: {1} sec.'
                       ''.format(sequence.name, int(np.rint(time.time() - start_time))))
@@ -1740,6 +1751,8 @@ class SequenceGeneratorLogic(GenericLogic):
         self.__sequence_generation_in_progress = False
         self.sigAvailableSequencesUpdated.emit(self.sampled_sequences)
         self.sigSampleSequenceComplete.emit(sequence)
+
+        print('seq gen logic: sample sequence total time = {} s'.format((time.time() - t1)))
         return
 
     def _delete_waveform(self, names):
