@@ -254,11 +254,11 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
 
         # check whether only one clock pair is available, since in some NI cards
         # (e.g. M-series) only one clock channel pair can be used.
-        if self._scanner_clock_daq_task is not None:
-            self.log.error('Only one clock channel is available!\n'
-                           'Another clock is already running, close this one '
-                           'first in order to use it for your purpose!')
-            return -1
+        # if self._scanner_clock_daq_task is not None:
+        #     self.log.error('Only one clock channel is available!\n'
+        #                    'Another clock is already running, close this one '
+        #                    'first in order to use it for your purpose!')
+        #     return -1
 
         # Create handle for task, this task will generate pulse signal for
         # photon counting
@@ -350,7 +350,7 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
                            'starting the counter!')
             return -1
 
-        if self._counter_daq_task is not None or self._scanner_counter_daq_task is not None:
+        if self._scanner_counter_daq_task is not None:
             self.log.error('Another counter is already running, close this one '
                            'first.')
             return -1
@@ -411,6 +411,22 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
                 # assign a named Terminal
                 curr_clock_channel + 'InternalOutput')
 
+            # If the counter is not the same device as the photon source - use RTSI connections
+            if not re.search('Dev(\d)', str(curr_counter_ch), re.IGNORECASE).group(1) == re.search('Dev(\d)',
+                                                                                      str(curr_photon_source),
+                                                                                      re.IGNORECASE).group(1):
+                counterdev = re.search('Dev(\d)', str(curr_counter_ch), re.IGNORECASE).group(1)
+                photondev = re.search('Dev(\d)', str(curr_photon_source), re.IGNORECASE).group(1)
+                RTSI = 1
+                temp_photon_terminal = '/Dev{0}/RTSI{1}'.format(counterdev, str(RTSI))
+                # connect the photons to the above RTSI terminal
+                daq.DAQmxConnectTerms(curr_photon_source,
+                                      '/Dev{0}/RTSI{1}'.format(photondev, str(RTSI)),
+                                      daq.DAQmx_Val_DoNotInvertPolarity)
+            else:
+
+                temp_photon_terminal = curr_photon_source
+
             # Set a Counter Input Control Timebase Source.
             # Specify the terminal of the timebase which is used for the counter:
             # Define the source of ticks for the counter as self._photon_source for
@@ -421,7 +437,7 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
                 # counter channel
                 curr_counter_ch,
                 # counter channel to output the counting results
-                curr_photon_source)
+                temp_photon_terminal)
 
             # Configure Implicit Timing.
             # Set timing to continuous, i.e. set only the number of samples to
@@ -819,12 +835,12 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
 
         # check whether only one clock pair is available, since in some NI cards
         # (e.g. M-series) only one clock channel pair can be used.
-        if self._clock_daq_task is not None:
-            self.log.error('Only one clock channel is available!\n'
-                           'Another counter clock is already running, close '
-                           'this one first in order to use it for your '
-                           'purpose!')
-            return -1
+        # if self._clock_daq_task is not None:
+        #     self.log.error('Only one clock channel is available!\n'
+        #                    'Another counter clock is already running, close '
+        #                    'this one first in order to use it for your '
+        #                    'purpose!')
+        #     return -1
 
         # Create handle for task, this task will generate pulse signal for
         # photon counting
@@ -904,7 +920,7 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
                            'starting the counter!')
             return -1
 
-        if self._scanner_counter_daq_task is not None or self._counter_daq_task is not None:
+        if self._scanner_counter_daq_task is not None: # or self._counter_daq_task is not None:
             self.log.error('Another counter is already running, close this one '
                            'first.')
             return -1
@@ -1368,7 +1384,7 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
 
         # check whether only one clock pair is available, since in some NI cards
         # (e.g. M-series) only one clock channel pair can be used.
-        if self._clock_daq_task is not None or self._scanner_clock_daq_task is not None:
+        if self._scanner_clock_daq_task is not None:
             self.log.error('Only one clock channel is available!\n'
                            'Another scanner counter clock is already running, '
                            'close this one first in order to use it for your '
@@ -1453,8 +1469,7 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
             return -1
 
         if (self._odmr_counter_daq_task is not None or
-                self._scanner_counter_daq_task is not None or
-                self._counter_daq_task is not None):
+                self._scanner_counter_daq_task is not None):
             self.log.error('Another counter is already running, close this '
                            'one first.')
             return -1
@@ -1495,6 +1510,10 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
                 0,
                 # Specifies whether to increment or decrement the counter on each edge.
                 daq.DAQmx_Val_CountUp)
+
+            daq.DAQmxConnectTerms(curr_clock_channel + 'InternalOutput',
+                                  self._trigger_channel,
+                                  daq.DAQmx_Val_DoNotInvertPolarity)
 
 
         except:
@@ -1630,14 +1649,14 @@ class NI6229Card(Base, SlowCounterInterface, ConfocalScannerInterface,
             # if len(self._scanner_ai_channels) > 0:
             #     all_data[1:] = self._odmr_analog_data[:, :-1]
 
-            return all_data
+            return False, all_data
 
         except:
             # self.log.exception('Error while counting for ODMR.')
             # return np.array([-1.])
 
             self.log.exception('Error while counting for ODMR.')
-            return np.full((len(self.get_odmr_channels()), 1), [-1.])
+            return True, np.full((len(self.get_odmr_channels()), 1), [-1.])
 
     def close_odmr(self):
         """ Closes the odmr and cleans up afterwards.
