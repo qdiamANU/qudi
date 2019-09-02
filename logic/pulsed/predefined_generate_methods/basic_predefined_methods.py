@@ -431,7 +431,7 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         created_ensembles.append(block_ensemble)
         return created_blocks, created_ensembles, created_sequences
 
-    def generate_hahnecho(self, name='hahn_echo', tau_start=0.0e-6, tau_step=1.0e-6,
+    def generate_hahnecho(self, name='hahnecho', tau_start=0.0e-6, tau_step=1.0e-6,
                           num_of_points=50, alternating=True):
         """
 

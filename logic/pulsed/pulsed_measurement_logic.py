@@ -92,7 +92,7 @@ class PulsedMeasurementLogic(GenericLogic):
 
     # alternative signal computation settings:
     _alternative_data_type = StatusVar(default=None)
-    zeropad = StatusVar(default=0)
+    zeropad = StatusVar(default=4)
     psd = StatusVar(default=False)
     window = StatusVar(default='none')
     base_corr = StatusVar(default=True)

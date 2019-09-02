@@ -1064,6 +1064,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         volts[0, :] += Xoffset
         volts[1, :] += Yoffset
 
+
         return volts
 
 
