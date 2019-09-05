@@ -62,7 +62,7 @@ class PulsedMeasurementLogic(GenericLogic):
     # ext. microwave settings
     __microwave_power = StatusVar(default=-30.0)
     __microwave_freq = StatusVar(default=2870e6)
-    __use_ext_microwave = StatusVar(default=False)
+    __use_ext_microwave = StatusVar(default=True)
 
     # fast counter settings
     __fast_counter_record_length = StatusVar(default=3.0e-6)
@@ -92,7 +92,7 @@ class PulsedMeasurementLogic(GenericLogic):
 
     # alternative signal computation settings:
     _alternative_data_type = StatusVar(default=None)
-    zeropad = StatusVar(default=4)
+    zeropad = StatusVar(default=2)
     psd = StatusVar(default=False)
     window = StatusVar(default='none')
     base_corr = StatusVar(default=True)

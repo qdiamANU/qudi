@@ -79,7 +79,19 @@ class NIMagnet(Base):
         Bz = r*np.cos(theta)
         return self.write_fields(np.array([Bx,By,Bz]))
 
-
+    def _fields_to_polar(self,fields):
+        Bx,By,Bz = fields
+        R = np.sqrt(Bx ** 2 + By ** 2 + Bz ** 2)
+        if R > 0:
+            theta = np.arccos(Bz/R)
+        else:
+            theta = 0
+        if Bx > 0:
+            phi = np.arctan(By/Bx)
+        else:
+            phi = 0
+        return R, theta, phi
+    
 
 
 
