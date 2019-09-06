@@ -55,6 +55,7 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
     _modtype = 'hardware'
     _gpib_address = ConfigOption('gpib_address', missing='error')
     _gpib_timeout = ConfigOption('gpib_timeout', 10, missing='warn')
+    _vector = ConfigOption('use_vector', False, missing='warn')
     _gpib_baud_rate = ConfigOption('gpib_baud_rate', None)
     _config_freq_min = ConfigOption('frequency_min', None)
     _config_freq_max = ConfigOption('frequency_max', None)
@@ -170,6 +171,9 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
         if not is_running:
             return 0
 
+        if self._vector:
+            self._command_wait('SOUR:DM:IQ:STAT OFF')
+
         if mode == 'list':
             self._command_wait(':FREQ:MODE CW')
 
@@ -239,6 +243,7 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+
         current_mode, is_running = self.get_status()
         if is_running:
             if current_mode == 'cw':
@@ -248,6 +253,11 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
 
         if current_mode != 'cw':
             self._command_wait(':FREQ:MODE CW')
+
+        if self._vector:
+            self._command_wait('SOUR:DM:IQ:STAT ON')
+        else:
+            self._command_wait('SOUR:DM:IQ:STAT OFF')
 
         self._gpib_connection.write(':OUTP:STAT ON')
         self._gpib_connection.write('*WAI')
