@@ -24,22 +24,15 @@ import thirdparty.swabian_instruments.timetagger.TimeTagger as tt
 import time
 import numpy as np
 
-<<<<<<< HEAD
-=======
 
->>>>>>> qcomp
-from core.module import Base, ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
 from interface.slow_counter_interface import CountingMode
 from interface.odmr_counter_interface import ODMRCounterInterface
 
-<<<<<<< HEAD
-class TimeTaggerCounter(Base, SlowCounterInterface, ODMRCounterInterface):
-=======
+
 class TimeTaggerCounter(Base, SlowCounterInterface):
     """ Using the TimeTagger as a slow counter.
->>>>>>> upstream/master
 
     Example config for copy-paste:
 
@@ -50,9 +43,6 @@ class TimeTaggerCounter(Base, SlowCounterInterface):
         timetagger_sum_channels: 2
 
     """
-
-    _modtype = 'TTCounter'
-    _modclass = 'hardware'
 
     _channel_apd_0 = ConfigOption('timetagger_channel_apd_0', missing='error')
     _channel_apd_1 = ConfigOption('timetagger_channel_apd_1', None, missing='warn')
