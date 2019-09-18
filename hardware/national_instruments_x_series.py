@@ -86,6 +86,8 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
     _RWTimeout = ConfigOption('read_write_timeout', 10)
     _counting_edge_rising = ConfigOption('counting_edge_rising', True)
 
+    tiltcorrection = False #ignore tilt interfuse for now
+
     def on_activate(self):
         """ Starts up the NI Card at activation.
         """

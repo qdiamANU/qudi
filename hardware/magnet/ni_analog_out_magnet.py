@@ -19,8 +19,6 @@ class NIMagnet(Base):
     A 3 axis electromagnet controlled by analog outs from an National Instruments (static only).
     '''
 
-    _modtype = 'NIMagnet'
-    _modclass = 'hardware'
     _channels = ConfigOption('channels',missing='error')
     _xy_calib = 1/(150./10.)  #150 G is at 0.3 A and that corresponds to 10V
     _z_calib = 1./(130./10.)   #zfield is a bit weaker at the position of the diamond
