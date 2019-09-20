@@ -510,7 +510,7 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
             else:
                 self._command_wait(":SOUR2:FREQ {0:f}".format(freq))
         if amplitude is not None:
-            if amplitude < 4 and amplitude > 0:
+            if amplitude <= 4 and amplitude > 0:
                 self._command_wait(":OUTP2:VOLT {0:f}".format(amplitude))
             else:
                 self.log.warning("Exceeding voltage bounds of SMIQ LF output")
