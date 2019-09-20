@@ -40,6 +40,9 @@ class PulseStreamer(Base, PulserInterface):
     _pulsestreamer_ip = ConfigOption('pulsestreamer_ip', '192.168.1.100', missing='warn')
     _laser_channel = ConfigOption('laser_channel', 1, missing='warn')
     _uw_x_channel = ConfigOption('uw_x_channel', 3, missing='warn')
+    _use_external_clock = ConfigOption('use_external_clock',False,missing='warn')
+    _external_clock_option = ConfigOption('external_clock_option', 0, missing='warn')
+    # 0: Internal (default), 1: External 125 MHz, 2: External 10 MHz
 
     __current_waveform = StatusVar(name='current_waveform', default={})
     __current_waveform_name = StatusVar(name='current_waveform_name', default='')
@@ -58,6 +61,11 @@ class PulseStreamer(Base, PulserInterface):
     def on_activate(self):
         """ Establish connection to pulse streamer and tell it to cancel all operations """
         self.pulse_streamer = ps.PulseStreamer(self._pulsestreamer_ip)
+        if self._use_external_clock:
+            if int(self._external_clock_option) in [0,1,2]:
+                self.pulse_streamer.selectClock(ps.ClockSource(int(self._external_clock_option)))
+            else:
+                self.log.error('pulsestreamer external clock selection not allowed')
         self.__samples_written = 0
         self.__currently_loaded_waveform = ''
         self.current_status = 0
