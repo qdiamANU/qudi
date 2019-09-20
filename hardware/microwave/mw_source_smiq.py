@@ -524,6 +524,7 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
         Gets the LF generator output state, freq and amplitude
 
         @return bool,float,float: state,freq,amplitude
+        minro
         """
 
         state = None
