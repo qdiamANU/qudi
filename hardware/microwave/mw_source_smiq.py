@@ -486,6 +486,67 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
         else:
             return TriggerEdge.RISING, timing
 
+    def set_LF_output(self, state=None, freq=None, amplitude=None):
+        """
+        Sets the output of the LF generator (CW only - it can sweep etc, but not yet implemented)
+
+        @param bool state: turn LF output on or off
+        @param float freq: output frequency in Hertz
+        @param float amplitude: output voltage in Volts
+
+        @return int: error code (0:OK, -1:error)
+        """
+
+        if state is not None:
+            if isinstance(state,bool) or int(state)==0 or int(state)==1:
+                self._command_wait(":OUTP2 {0}".format(str(int(state))))
+            else:
+                self.log.warning('LF generator state not boolean')
+                return -1
+        if freq is not None:
+            if freq > 1.e6 or freq <= 0:
+                self.log.warning("Exceeding frequency bounds of SMIQ LF output")
+                return -1
+            else:
+                self._command_wait(":SOUR2:FREQ {0:f}".format(freq))
+        if amplitude is not None:
+            if amplitude < 4 and amplitude > 0:
+                self._command_wait(":OUTP2:VOLT {0:f}".format(amplitude))
+            else:
+                self.log.warning("Exceeding voltage bounds of SMIQ LF output")
+                return -1
+
+        return 0
+
+    def get_LF_output(self):
+
+        """
+        Gets the LF generator output state, freq and amplitude
+
+        @return bool,float,float: state,freq,amplitude
+        """
+
+        state = None
+        freq = None
+        amplitude = None
+
+        try:
+            freq = float(self._gpib_connection.query(':SOUR2:FREQ?'))
+        except:
+            self.log.error("failed to read SMIQ LF Freq")
+
+        try:
+            amplitude = float(self._gpib_connection.query(':OUTP2:VOLT?'))
+        except:
+            self.log.error("failed to read SMIQ LF amplitude")
+
+        try:
+            state = bool(int(self._gpib_connection.query(':OUTP2?')))
+        except:
+            self.log.error("failed to read SMIQ LF Freq")
+
+        return state,freq,amplitude
+
     def trigger(self):
         """ Trigger the next element in the list or sweep mode programmatically.
 
