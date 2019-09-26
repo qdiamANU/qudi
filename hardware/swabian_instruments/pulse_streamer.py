@@ -62,8 +62,12 @@ class PulseStreamer(Base, PulserInterface):
         """ Establish connection to pulse streamer and tell it to cancel all operations """
         self.pulse_streamer = ps.PulseStreamer(self._pulsestreamer_ip)
         if self._use_external_clock:
-            if int(self._external_clock_option) in [0,1,2]:
-                self.pulse_streamer.selectClock(ps.ClockSource(int(self._external_clock_option)))
+            if int(self._external_clock_option) is 2:
+                self.pulse_streamer.selectClock(ps.ClockSource.EXT_10MHZ)
+            elif int(self._external_clock_option) is 1:
+                self.pulse_streamer.selectClock(ps.ClockSource.EXT_125MHZ)
+            elif int(self._external_clock_option) is 0:
+                self.pulse_streamer.selectClock(ps.ClockSource.INTERNAL)
             else:
                 self.log.error('pulsestreamer external clock selection not allowed')
         self.__samples_written = 0
