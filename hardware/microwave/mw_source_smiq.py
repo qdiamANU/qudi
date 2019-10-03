@@ -61,6 +61,8 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
     _config_freq_max = ConfigOption('frequency_max', None)
     _config_power_min = ConfigOption('power_min', None)
     _config_power_max = ConfigOption('power_max', None)
+    _use_external_clock = ConfigOption('use_external_clock', False)
+    _external_clock_frequency = ConfigOption('external_clock_frequency', 10e6)
 
     # Indicate how fast frequencies within a list or sweep mode can be changed:
     _FREQ_SWITCH_SPEED = 0.003  # Frequency switching speed in s (acc. to specs)
@@ -87,6 +89,14 @@ class MicrowaveSmiq(Base, MicrowaveInterface):
         self.model = self._gpib_connection.query('*IDN?').split(',')[1]
         self._command_wait('*CLS')
         self._command_wait('*RST')
+
+        if self._use_external_clock:
+            if isinstance(float(self._external_clock_frequency),float):
+                self._command_wait('SOUR:ROSC:EXT:FREQ {0:f}'.format(float(self._external_clock_frequency)))
+            else:
+                self.log.error('SMIQ external clock frequency is not understood')
+            self._command_wait('SOUR:ROSC:SOUR EXT')
+
         return
 
     def on_deactivate(self):
