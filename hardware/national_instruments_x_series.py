@@ -1263,7 +1263,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             return np.array([np.NaN])
 
         vlist = []
-        for i, position in enumerate(positions):
+        for i, position in enumerate(positions[:2]):
             vlist.append(
                 (self._afm_voltage_ranges[i][1] - self._afm_voltage_ranges[i][0])
                 / (self._afm_position_ranges[i][1] - self._afm_position_ranges[i][0])
