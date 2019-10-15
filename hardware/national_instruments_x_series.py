@@ -108,8 +108,8 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         self._lock_in_active = False
         self._do_afm_scan = False
         self._afm_voltage_offset = (0.,0.)
-        self._afm_Xconv = 12./10.
-        self._afm_Yconv = -12./10.
+        self._afm_Xconv = 10./7.7 #12./10.
+        self._afm_Yconv = -10/7.7 #-12./10.
 
         # handle all the parameters given by the config
         self._current_position = np.zeros(len(self._scanner_ao_channels))
