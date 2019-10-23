@@ -1038,9 +1038,9 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                 self._scanner_analog_daq_task = atask
 
             ## output of scanner clock to AFM analog out clock input terminal
-            daq.DAQmxConnectTerms(self._scanner_clock_channel + 'InternalOutput',
-                                  self._scanner_clock_out_channel,
-                                  daq.DAQmx_Val_DoNotInvertPolarity)
+            # daq.DAQmxConnectTerms(self._scanner_clock_channel + 'InternalOutput',
+            #                       self._scanner_clock_out_channel,
+            #                       daq.DAQmx_Val_DoNotInvertPolarity)
 
             daq.DAQmxDisconnectTerms(self._scanner_clock_channel + 'InternalOutput',
                                      self._odmr_trigger_channel)
@@ -1491,11 +1491,18 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                 voltages=line_volts_confocal,
                 length=self._line_length,
                 start=False)
+
             if self._do_afm_scan and afm_path is not None:
                 written_voltages_afm = self._write_afm_ao(
                     voltages=line_volts_afm,
                     length=self._line_length,
                     start=False)
+
+            if pixel_clock and self._pixel_clock_channel is not None:
+                daq.DAQmxConnectTerms(
+                    self._scanner_clock_channel + 'InternalOutput',
+                    self._pixel_clock_channel,
+                    daq.DAQmx_Val_DoNotInvertPolarity)
 
             # start the timed analog output task
             daq.DAQmxStartTask(self._scanner_ao_task)
@@ -1507,11 +1514,6 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
             daq.DAQmxStopTask(self._scanner_clock_daq_task)
 
-            if pixel_clock and self._pixel_clock_channel is not None:
-                daq.DAQmxConnectTerms(
-                    self._scanner_clock_channel + 'InternalOutput',
-                    self._pixel_clock_channel,
-                    daq.DAQmx_Val_DoNotInvertPolarity)
 
             # start the scanner counting task that acquires counts synchroneously
             for i, task in enumerate(self._scanner_counter_daq_tasks):
@@ -1797,9 +1799,9 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
                 self._odmr_trigger_channel,
                 daq.DAQmx_Val_DoNotInvertPolarity)
 
-            daq.DAQmxDisconnectTerms(
-                self._scanner_clock_channel+'InternalOutput',
-                self._scanner_clock_out_channel)
+            # daq.DAQmxDisconnectTerms(
+            #     self._scanner_clock_channel+'InternalOutput',
+            #     self._scanner_clock_out_channel)
 
             self._scanner_counter_daq_tasks.append(task)
             if len(self._scanner_ai_channels) > 0:
