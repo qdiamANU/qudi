@@ -107,9 +107,10 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
         self._oversampling = 0
         self._lock_in_active = False
         self._do_afm_scan = False
-        self._afm_voltage_offset = (0.,0.)
+        self._afm_voltage_offset = (0.,0.,0.)
         self._afm_Xconv = 10./7.7 #12./10.
         self._afm_Yconv = -10/7.7 #-12./10.
+        self._afm_Zconv = 10./1.8
 
         # handle all the parameters given by the config
         self._current_position = np.zeros(len(self._scanner_ao_channels))
@@ -1051,21 +1052,26 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
 
         return retval
 
-    def _scanner_to_afm_transformation(self, volts, Xconv = None, Yconv= None):
+    def _scanner_to_afm_transformation(self, volts, Xconv = None, Yconv = None, Zconv = None):
 
         # Map voltages on the confocal scale to the AFM scale -> +1 V = 10 um on confocal and -12 um on AFM
-        Xoffset, Yoffset = self._afm_voltage_offset
+        Xoffset, Yoffset, Zoffset = self._afm_voltage_offset
         if Xconv is None:
             Xconv = self._afm_Xconv
         if Yconv is None:
             Yconv = self._afm_Yconv
+        if Zconv is None:
+            Zconv = self._afm_Zconv
 
         volts[0,:] *= Xconv
         volts[1,:] *= Yconv
+        if volts.shape[0] > 2:
+            volts[2,:] *= Zconv
 
         volts[0, :] += Xoffset
         volts[1, :] += Yoffset
-
+        if volts.shape[0] > 2:
+            volts[2, :] += Zoffset
 
         return volts
 
@@ -1263,7 +1269,7 @@ class NationalInstrumentsXSeries(Base, SlowCounterInterface, ConfocalScannerInte
             return np.array([np.NaN])
 
         vlist = []
-        for i, position in enumerate(positions[:2]):
+        for i, position in enumerate(positions[:]):
             vlist.append(
                 (self._afm_voltage_ranges[i][1] - self._afm_voltage_ranges[i][0])
                 / (self._afm_position_ranges[i][1] - self._afm_position_ranges[i][0])
