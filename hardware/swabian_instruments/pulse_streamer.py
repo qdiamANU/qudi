@@ -21,21 +21,21 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 
+from core.module import Base
+from core.configoption import ConfigOption
+from core.statusvariable import  StatusVar
 from core.util.modules import get_home_dir
-from core.module import Base, ConfigOption, StatusVar
 from interface.pulser_interface import PulserInterface, PulserConstraints
 from collections import OrderedDict
 import numpy as np
 
 import pulsestreamer as ps
 
+
 class PulseStreamer(Base, PulserInterface):
     """ Interface class to define the abstract controls and
     communication with all pulsing devices.
     """
-
-    _modclass = 'pulserinterface'
-    _modtype = 'hardware'
 
     _pulsestreamer_ip = ConfigOption('pulsestreamer_ip', '192.168.1.100', missing='warn')
     _laser_channel = ConfigOption('laser_channel', 1, missing='warn')

@@ -20,8 +20,8 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-import abc
-from core.util.interfaces import InterfaceMetaclass
+from core.interface import abstract_interface_method
+from core.meta import InterfaceMetaclass
 
 
 class MotorInterface(metaclass=InterfaceMetaclass):
@@ -31,68 +31,8 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         methods for the hardware class, which get called by the general method.
     """
 
-    _modtype = 'MotorInterface'
-    _modclass = 'interface'
-    '''
-    @abc.abstractmethod
-    def on_activate(self):
-        """ Initialise and activate the hardware module.
-            @return int error code (0:OK, -1:error)
-        """
 
-        """ Example (from piezo_stage_pi_usb_gcs2.py)
-        path_dll = os.path.join(self.get_main_dir(),
-                                'thirdparty',
-                                'physik_instrumente',
-                                'PI_GCS2_DLL_x64.dll'
-                                )
-        self._pidll = ctypes.windll.LoadLibrary(path_dll)
-
-        # Find out what devices are connected
-        emptybufferpy = ' ' * 1000  # TODO find out how long this should be?
-        charBuffer = ctypes.c_char_p(emptybufferpy.encode())
-        bufSize = ctypes.c_int(1000)
-
-        numofdevs = self._pidll.PI_EnumerateUSB(charBuffer, bufSize, ctypes.c_char_p(b''))
-
-        # read the device list out of ctype charBuffer into a regular python list of strings
-        device_list = charBuffer.value.decode().split('\n')
-
-        # split list into elements, check for PI devices
-        pi_devices = [device for device in device_list if 'PI' in device]
-
-        if len(pi_devices) == 1:
-            device_name = ctypes.c_char_p(pi_devices[0].encode())
-            self._pidll.PI_ConnectUSB(device_name)
-            self._devID = ctypes.c_int(0)
-
-        elif len(pi_devices) > 1:
-            self.log.warning('There is more than 1 PI device connected, I do not know which one to choose!')
-
-        else:
-            self.log.warning('I cannot find any connected devices with "PI" in their name.')
-
-        if self._pidll.PI_IsConnected(self._devID) is False:
-            return 1
-        else:
-            self._set_servo_state(True)
-            self._configured_constraints = self.get_constraints()
-            return 0
-        """
-
-    @abc.abstractmethod
-    def on_deactivate(self):
-        """ Deinitialise and deactivate the hardware module.
-            @return: error code (0:OK, -1:error)
-        """
-
-        """ Example (from piezo_stage_pi_usb_gcs2.py)
-        self._set_servo_state(False)
-        self._pidll.PI_RTO(self._devID, ctypes.c_char_p(''.encode()))
-        return 0
-        """
-    '''
-    @abc.abstractmethod
+    @abstract_interface_method
     def get_constraints(self):
         """ Retrieve the hardware constrains from the motor device.
 
@@ -155,7 +95,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def move_rel(self,  param_dict):
         """ Moves stage in given direction (relative movement)
 
@@ -171,7 +111,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def move_abs(self, param_dict):
         """ Moves stage to absolute position (absolute movement)
 
@@ -185,7 +125,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def abort(self):
         """ Stops movement of the stage
 
@@ -193,7 +133,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def get_pos(self, param_list=None):
         """ Gets current position of the stage arms
 
@@ -208,7 +148,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def get_status(self, param_list=None):
         """ Get the status of the position
 
@@ -222,7 +162,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def calibrate(self, param_list=None):
         """ Calibrates the stage.
 
@@ -240,7 +180,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def get_velocity(self, param_list=None):
         """ Gets the current velocity for all connected axes.
 
@@ -254,7 +194,7 @@ class MotorInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def set_velocity(self, param_dict):
         """ Write new value for velocity.
 
