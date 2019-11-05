@@ -1,7 +1,8 @@
 import PyDAQmx as daq
 import numpy as np
 
-from core.module import Base, ConfigOption
+from core.module import Base
+from core.configoption import ConfigOption
 
 
 # output = np.array([3.])
