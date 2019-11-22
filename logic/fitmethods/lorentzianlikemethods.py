@@ -486,6 +486,12 @@ def make_lorentziandouble_fit(self, x_axis, data, estimator, units=None, add_par
                                               result.params['l1_center'].stderr),
                                     'unit': units[0]}
 
+    result_str_dict['Mean'] = {'value': (result.params['l1_center'].value +
+                                              result.params['l0_center'].value)/2.,
+                                    'error': (result.params['l0_center'].stderr +
+                                              result.params['l1_center'].stderr)/2.,
+                                    'unit': units[0]}
+
     result_str_dict['Contrast 0'] = {'value': abs(result.params['l0_contrast'].value),
                                      'error': result.params['l0_contrast'].stderr,
                                      'unit': '%'}

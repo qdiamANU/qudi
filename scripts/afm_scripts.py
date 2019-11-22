@@ -171,16 +171,17 @@ def measure_spin_echo(poi, freq=2.87e9, power=5., rabi_period=140.e9, runtime=10
     return t2
 
 
-def align_field(poi=None, sweep_direction='azimuthal', iterations=3, grid_points=5, Rmag=50,
-                polar=np.arccos(1 / np.sqrt(3)), azimuthal=0, do_refocus=True, refocus_interval=100, odmr_power=0,
-                odmr_time=5):
+def align_field(poi=None, sweep_direction='azimuthal', iterations=3, grid_points=5, Rmag=50, parallel=True, polar=np.arccos(1 / np.sqrt(3)), azimuthal=0, do_refocus=True, refocus_interval=100, odmr_power=0, odmr_time=5):
     # work out microwave limits
     f1, f2 = 2870 - Rmag * 2.8, 2870. + Rmag * 2.8
+    f1 *= 1.e6
+    f2 *= 1.e6
     Nsteps = 100
     fstep = (f2 - f1) / Nsteps
-    odmrlogic.set_sweep_parameters(f1 * 1e6, f2 * 1e6, fstep * 1e6, odmr_power)
+    odmrlogic.set_sweep_parameters(f1, f2, fstep, odmr_power)
     odmrlogic.set_runtime(odmr_time)
-    refocus(poi)
+    if do_refocus:
+        refocus(poi)
     refocus_last = time.time()
 
     # azimuthal sweep first
@@ -206,7 +207,8 @@ def align_field(poi=None, sweep_direction='azimuthal', iterations=3, grid_points
             time.sleep(0.5)
 
             if time.time() - refocus_last > refocus_interval:
-                refocus(poi)
+                if do_refocus:
+                    refocus(poi)
                 refocus_last = time.time()
             time.sleep(0.5)
 
@@ -240,7 +242,10 @@ def align_field(poi=None, sweep_direction='azimuthal', iterations=3, grid_points
                 splitting.append(np.nan)
                 means.append(np.nan)
 
-        max_splitting_indice = np.argmax(splitting)
+        if parallel:
+            max_splitting_indice = np.argmax(splitting)
+        else:
+            max_splitting_indice = np.argmax(means)
         best_angle = sweep_variable[max_splitting_indice]
         angle_spacing = sweep_variable[1] - sweep_variable[0]
         start = best_angle - 1.5 * angle_spacing
@@ -255,11 +260,27 @@ def align_field(poi=None, sweep_direction='azimuthal', iterations=3, grid_points
         if breaknext == True:
             break
 
+        if not parallel:
+            mean = means[max_splitting_indice]
+            old_range = f2-f1
+            frange = old_range/3*2#Hz
+            print(frange,mean)
+            f1 = mean-frange/2.
+            f2 = mean + frange/2.
+            fstep = (f2-f1)/Nsteps
+            odmrlogic.set_sweep_parameters(f1, f2, fstep, odmr_power)
+
     return best_angles, allangles, allfrequencies, allsplittings, allmeans
 
 
-def coscan(resolution, scanner_clock_frequency, scan_size, do_refocus=True, refocus_interval=180, nap_mode=False,
-           do_measurement=False, nap_height=1.e-6):
+def align_field_both_directions(Bmag,poi=None,iterations=3,grid_points=6,odmr_power=0):
+    best_angles,allangles,allfrequencies,allsplittings,allmeans = align_field(poi=poi,iterations=3,grid_points=6,refocus_interval=60,Rmag=Bmag, odmr_power=odmr_power)
+    best_angles2,allangles2,allfrequencies2,allsplittings2,allmeans2 = align_field(poi=poi,iterations=3,grid_points=6,refocus_interval=60, sweep_direction='polar',azimuthal=best_angles[-1], Rmag=Bmag, odmr_power=odmr_power)
+    return best_angles2[-1],best_angles[-1]
+
+
+def coscan(resolution, scanner_clock_frequency, scan_size, do_refocus=True, refocus_interval=180, nap_mode=False, do_measurement=False, nap_height=1.e-6):
+
     scannerlogic.loop_breaker = False
     scannerlogic.update_do_afm(True)
 
@@ -280,7 +301,7 @@ def coscan(resolution, scanner_clock_frequency, scan_size, do_refocus=True, refo
             if not optimizerlogic.module_state() == 'locked':
                 break
             else:
-                time.sleep(0.1)
+                time.sleep(1)
         time.sleep(1)
 
     x0, y0, z0 = confocal._scanning_logic.get_position()
@@ -288,6 +309,8 @@ def coscan(resolution, scanner_clock_frequency, scan_size, do_refocus=True, refo
     coords, data = [], []
     afm_coords = []
     focus_history = []
+    if do_refocus:
+        focus_history.append(confocal._scanning_logic.get_position())
     stepsize = scan_size / float(resolution - 1)
 
     # set up counter and scanner
@@ -321,6 +344,7 @@ def coscan(resolution, scanner_clock_frequency, scan_size, do_refocus=True, refo
 
         # if even line, move x in positive direction
         xi, yi, zi = confocal._scanning_logic.get_position()
+        print(zi)
         if j % 2 == 0:
             xline = np.linspace(xi, xi + scan_size, resolution)
         else:
@@ -361,6 +385,7 @@ def coscan(resolution, scanner_clock_frequency, scan_size, do_refocus=True, refo
 
         # get pulsed measurement data
         if do_measurement:
+            time.sleep(0.5) # little pause for aquisition to finish
             if nap_mode:
                 if j % 2 == 0:
                     contact_measurement_data.append(contactmeasurement.stop())
@@ -448,21 +473,19 @@ def coscan(resolution, scanner_clock_frequency, scan_size, do_refocus=True, refo
 
     # clean up
 
-    if len(focus_history) > 1:
+    if False: #len(focus_history) > 1:
         focus_history = np.array(focus_history)
         offset_from_start = focus_history[-1, :] - focus_history[0, :]
     else:
         offset_from_start = [0, 0, 0]
     myafmnicard.close_scanner()
     myafmnicard.close_scanner_clock()
-    confocal._scanning_logic.set_position('scanner', x=x0 + offset_from_start[0], y=y0 + offset_from_start[1],
-                                          z=z0 + offset_from_start[2])
+    confocal._scanning_logic.set_position('scanner', x=x0 + offset_from_start[0], y=y0 + offset_from_start[1], z=z0 + offset_from_start[2])
     myafmnicard.afm_set_position(x=0, y=0, )
     # confocal.refocus_clicked()
     confocal._scanning_logic.update_do_afm(False)
 
-    scan_results = np.array(data), np.array(coords), np.array(
-        afm_coords), contact_measurement_data, non_contact_measurement_data, focus_history
+    scan_results = np.array(data), np.array(coords), np.array(afm_coords), contact_measurement_data, non_contact_measurement_data, focus_history
     data_dict = {}
     keys = ['confocal_data', 'confocal_coords', 'afm_coords', 'contact_data', 'non_contact_data', 'focus_history']
     for i, d in enumerate(scan_results):
@@ -504,7 +527,7 @@ class Scanning_CW_ODMR():
 
     def setup(self, fstart, fstop, fstep, power, scanner_frequency=10, resolution=20):
         # set up microwaves
-        smiqset = smiqmicrowave.set_sweep(fstart, fstop, fstep, power)
+        self.smiqset = smiqmicrowave.set_sweep(fstart, fstop, fstep, power)
 
         # define channels on pulsestreamer
         ps_smiq_trigger_channel = 7
@@ -519,7 +542,7 @@ class Scanning_CW_ODMR():
 
         # construct pulse sequences
         safety_factor = 0.99
-        num_freqs = len(np.arange(smiqset[0], smiqset[1], smiqset[2]))
+        num_freqs = len(np.arange(self.smiqset[0], self.smiqset[1], self.smiqset[2]))
         num_freqs += 2  # mysterious extra two points for SMIQ
         time_per_pixel = 1. / scanner_frequency * safety_factor
         time_per_freq = time_per_pixel / num_freqs
@@ -556,10 +579,93 @@ class Scanning_CW_ODMR():
         self.odmr_counter.clear()
         self.odmr_counter.start()
         self.pixel_counter.start()
-        mypulser.pulse_streamer.setTrigger(
-            ps.TriggerStart.HARDWARE_RISING)  # user hardware trigger (scanner clock edge)
-        mypulser.pulse_streamer.stream(self.seq, n_runs=1,
-                                       final=mypulser._laser_mw_on_state)  # only one frequency sweep per pixel
+        mypulser.pulse_streamer.setTrigger(ps.TriggerStart.HARDWARE_RISING)  # user hardware trigger (scanner clock edge)
+        mypulser.pulse_streamer.stream(self.seq, n_runs=1,final=mypulser._laser_mw_on_state)  # only one frequency sweep per pixel
+
+    def stop(self):
+        self.odmr_counter.stop()
+        self.pixel_counter.stop()
+        smiqmicrowave.off()
+        mypulser.pulse_streamer.setTrigger(ps.TriggerStart.IMMEDIATE)
+        data = self.odmr_counter.getData()
+        pixel_counts = self.pixel_counter.getCountsTotal()
+
+        return data, pixel_counts, self.smiqset
+
+
+class Scanning_pulsed_ODMR():
+    '''
+    Performs a CW ODMR scan for a single line
+    '''
+
+    def setup(self, fstart, fstop, fstep, power, scanner_frequency=10, resolution=20):
+        # set up microwaves
+        smiqset = smiqmicrowave.set_sweep(fstart, fstop, fstep, power)
+
+        # define channels on pulsestreamer
+        ps_smiq_trigger_channel = 7
+        ps_laser_channel = mypulser._laser_channel
+        ps_sequence_channel = 0
+        ps_mw_switch_channel = 7  # normally closed
+
+        # define channels on timetagger
+        apd_channel = 0
+        tt_smiq_trigger = 5
+        tt_sequence = 3
+        tt_scanner_clock = 4
+
+
+        # construct pulse sequences
+        safety_factor = 0.99
+        num_freqs = len(np.arange(smiqset[0], smiqset[1], smiqset[2]))
+        num_freqs += 2  # mysterious extra two points for SMIQ
+        time_per_pixel = 1. / scanner_frequency * safety_factor
+        time_per_freq = time_per_pixel / num_freqs
+        pulse_width = 100.e-9
+        sync_channel_pulses = [(int(pulse_width * 1.e9), 1), (int((time_per_pixel - pulse_width) * 1.e9), 0)]
+        smiq_trigger_pulses = [(int(time_per_freq / 2 * 1e9), 1), (int(time_per_freq / 2 * 1e9), 0)] * num_freqs
+
+        laser_time = 500 #ns
+        wait_time = 1000
+        pi_time = 1000
+        laser_pulses = [(laser_time, 1),(wait_time+pi_time,0)]
+        mw_switch_pulses = [(laser_time+wait_time,1),(pi_time,0)] #normally closed switch config
+        N_laser_pulses_per_pixel = 1.e9*time_per_pixel/np.sum([x[0] for x in laser_pulses])
+        laser_pulses *= int(np.floor(N_laser_pulses_per_pixel))
+        mw_switch_pulses *= int(np.floor(N_laser_pulses_per_pixel))
+
+
+        # create sequencer
+        self.seq = mypulser.pulse_streamer.createSequence()
+        self.seq.setDigital(ps_smiq_trigger_channel, smiq_trigger_pulses)
+        self.seq.setDigital(ps_laser_channel, laser_pulses)
+        self.seq.setDigital(ps_sequence_channel, sync_channel_pulses)
+        self.seq.setDigital(ps_mw_switch_channel, mw_switch_pulses)
+
+        # set up time-tagger
+        num_scanner_cycles = (resolution + 1)
+        self.pixel_counter = tt.Countrate(myfastcounter._tagger, [tt_smiq_trigger, tt_scanner_clock])
+        self.odmr_counter = tt.TimeDifferences(myfastcounter._tagger,
+                                               apd_channel,
+                                               start_channel=tt_smiq_trigger,
+                                               next_channel=tt_smiq_trigger,
+                                               sync_channel=tt.CHANNEL_UNUSED,
+                                               binwidth=int(time_per_freq * 1e12),
+                                               n_bins=1,
+                                               n_histograms=num_freqs * (num_scanner_cycles * 2))
+
+    def start(self):
+        # reset and start smiq
+        smiqmicrowave.reset_sweeppos()
+        smiqmicrowave.sweep_on()
+
+        # reset and start pulser and timetagger
+        self.pixel_counter.clear()
+        self.odmr_counter.clear()
+        self.odmr_counter.start()
+        self.pixel_counter.start()
+        mypulser.pulse_streamer.setTrigger(ps.TriggerStart.HARDWARE_RISING)  # user hardware trigger (scanner clock edge)
+        mypulser.pulse_streamer.stream(self.seq, n_runs=1, final=mypulser._laser_mw_on_state)  # only one frequency sweep per pixel
 
     def stop(self):
         self.odmr_counter.stop()
@@ -572,6 +678,91 @@ class Scanning_CW_ODMR():
         return data, pixel_counts
 
 
+
+class Test_Scanning_pulsed_ODMR():
+    '''
+    Performs a CW ODMR scan for a single line
+    '''
+
+    def setup(self, fstart, fstop, fstep, power, scanner_frequency=10, resolution=20):
+        # set up microwaves
+        self.smiqset = smiqmicrowave.set_sweep(fstart, fstop, fstep, power)
+
+        # define channels on pulsestreamer
+        ps_smiq_trigger_channel = 7
+        ps_laser_channel = mypulser._laser_channel
+        ps_sequence_channel = 0
+        ps_mw_switch_channel = 7  # normally closed
+
+        # define channels on timetagger
+        apd_channel = 0
+        tt_smiq_trigger = 5
+        tt_sequence = 3
+        tt_scanner_clock = 4
+
+
+        # construct pulse sequences
+        safety_factor = 0.99
+        num_freqs = len(np.arange(self.smiqset[0], self.smiqset[1], self.smiqset[2]))
+        num_freqs += 2  # mysterious extra two points for SMIQ
+        time_per_pixel = 1. / scanner_frequency * safety_factor
+        time_per_freq = time_per_pixel / num_freqs
+        pulse_width = 100.e-9
+        sync_channel_pulses = [(int(pulse_width * 1.e9), 1), (int((time_per_pixel - pulse_width) * 1.e9), 0)]
+        smiq_trigger_pulses = [(int(time_per_freq / 2 * 1e9), 1), (int(time_per_freq / 2 * 1e9), 0)] * num_freqs
+
+        laser_time = 500 #ns
+        wait_time = 1000
+        pi_time = 1000
+        laser_pulses = [(laser_time, 1),(wait_time+pi_time,0)]
+        mw_switch_pulses = [(laser_time+wait_time,1),(pi_time,0)] #normally closed switch config
+        N_laser_pulses_per_pixel = 1.e9*time_per_pixel/np.sum([x[0] for x in laser_pulses])
+        laser_pulses *= int(np.floor(N_laser_pulses_per_pixel))
+        mw_switch_pulses *= int(np.floor(N_laser_pulses_per_pixel))
+
+
+        # create sequencer
+        self.seq = mypulser.pulse_streamer.createSequence()
+        self.seq.setDigital(ps_smiq_trigger_channel, smiq_trigger_pulses)
+        self.seq.setDigital(ps_laser_channel, laser_pulses)
+        self.seq.setDigital(ps_sequence_channel, sync_channel_pulses)
+        self.seq.setDigital(ps_mw_switch_channel, mw_switch_pulses)
+
+        # set up time-tagger
+        num_scanner_cycles = (resolution + 1)
+        self.pixel_counter = tt.Countrate(myfastcounter._tagger, [tt_smiq_trigger, tt_scanner_clock])
+        self.odmr_counter = tt.TimeDifferences(myfastcounter._tagger,
+                                               apd_channel,
+                                               start_channel=tt_smiq_trigger,
+                                               next_channel=tt_smiq_trigger,
+                                               sync_channel=tt.CHANNEL_UNUSED,
+                                               binwidth=int(time_per_freq * 1e12),
+                                               n_bins=1,
+                                               n_histograms=num_freqs * (num_scanner_cycles * 2))
+
+    def start(self):
+        # reset and start smiq
+        smiqmicrowave.reset_sweeppos()
+        smiqmicrowave.sweep_on()
+
+        # reset and start pulser and timetagger
+        self.pixel_counter.clear()
+        self.odmr_counter.clear()
+        self.odmr_counter.start()
+        self.pixel_counter.start()
+        mypulser.pulse_streamer.setTrigger(ps.TriggerStart.IMMEDIATE)  # user hardware trigger (scanner clock edge)
+        mypulser.pulse_streamer.stream(self.seq, n_runs=20, final=mypulser._laser_mw_on_state)  # only one frequency sweep per pixel
+
+    def stop(self):
+        self.odmr_counter.stop()
+        self.pixel_counter.stop()
+        smiqmicrowave.off()
+        mypulser.pulse_streamer.setTrigger(ps.TriggerStart.IMMEDIATE)
+        data = self.odmr_counter.getData()
+        pixel_counts = self.pixel_counter.getCountsTotal()
+
+        return data, pixel_counts, self.smiqset
+
 # due to the large array of possible measurements, I have put them into this class so you can change them here if you want
 class ContactMeasurement():
 
@@ -581,8 +772,7 @@ class ContactMeasurement():
         self.resolution = resolution
 
     def run(self):
-        self.scanning_cw_odmr.setup(2.7e9, 3.05e9, 3.e9, -5, self.scanner_frequency,
-                                    self.resolution)  # self,fstart,fstop,fstep,power,scanner_frequency=10,resolution=20
+        self.scanning_cw_odmr.setup(2.864e9, 2.878e9, 150.e3, -20, self.scanner_frequency, self.resolution)  # self,fstart,fstop,fstep,power,scanner_frequency=10,resolution=20
         time.sleep(0.5)
         self.scanning_cw_odmr.start()
 
